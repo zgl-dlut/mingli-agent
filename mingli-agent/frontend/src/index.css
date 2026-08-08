@@ -1,0 +1,509 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+/* 垂直文字 */
+.writing-vertical {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: #fdf8f6;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d2bab0;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #bfa094;
+}
+
+/* ===== 命格翻牌卡片动画 ===== */
+
+/* 翻牌容器 */
+.bazi-card-flip {
+  perspective: 1000px;
+  width: 100%;
+  min-height: 420px;
+  position: relative;
+}
+
+.bazi-card-flip .bazi-card-back,
+.bazi-card-flip .bazi-card-front {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  min-height: 420px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+/* 背面：初始可见，翻牌后隐藏 */
+.bazi-card-back {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%);
+  z-index: 2;
+  transform: rotateY(0deg);
+  transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bazi-card-flip.flipped .bazi-card-back {
+  transform: rotateY(-180deg);
+}
+
+/* 正面：初始隐藏，翻牌后显示 */
+.bazi-card-front {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%);
+  transform: rotateY(180deg);
+  transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1) 0.1s;
+  z-index: 1;
+}
+
+.bazi-card-flip.flipped .bazi-card-front {
+  transform: rotateY(0deg);
+  z-index: 2;
+}
+
+/* 卡片背面内容 */
+.bazi-card-back-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  padding: 2rem;
+}
+
+.bazi-card-mystic {
+  font-size: 5rem;
+  animation: mysticGlow 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(129, 140, 248, 0.6));
+}
+
+.bazi-card-back-title {
+  color: #c7d2fe;
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-top: 1.5rem;
+  letter-spacing: 0.3em;
+}
+
+.bazi-card-back-subtitle {
+  color: #818cf8;
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+  opacity: 0.7;
+}
+
+/* 卡片正面内容 */
+.bazi-card-content {
+  padding: 1.25rem;
+}
+
+.bazi-card-sizu {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+/* 容器入场/退场动画 */
+.bazi-card-container {
+  animation: cardEnter 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.bazi-card-container.card-exit {
+  animation: cardExit 0.6s cubic-bezier(0.55, 0, 1, 0.45) forwards;
+}
+
+/* 开始解读按钮渐入 */
+.start-reading-btn {
+  margin-top: 1.5rem;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.start-reading-btn.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 加载动画 */
+.bazi-loading-mystic {
+  font-size: 4rem;
+  animation: mysticSpin 3s linear infinite, mysticGlow 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 15px rgba(129, 140, 248, 0.5));
+}
+
+/* ===== Keyframes ===== */
+
+@keyframes cardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(60px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cardExit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-80px) scale(0.95);
+  }
+}
+
+@keyframes mysticGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 15px rgba(129, 140, 248, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 30px rgba(129, 140, 248, 0.8));
+  }
+}
+
+@keyframes mysticSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== 侧滑历史面板动画 ===== */
+.history-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 50;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.history-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 320px;
+  max-width: 85vw;
+  background: white;
+  z-index: 51;
+  animation: slideInLeft 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1);
+}
+
+.history-panel.panel-exit {
+  animation: slideOutLeft 0.25s ease-in forwards;
+}
+
+/* 桌面端历史面板 - 固定在左侧，覆盖导航栏 */
+@media (min-width: 768px) {
+  .history-panel-desktop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 320px;
+    max-width: 320px;
+    z-index: 50;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1);
+    animation: none;
+    flex-shrink: 0;
+    transition: width 0.3s ease;
+  }
+
+  .history-panel-overlay {
+    background: transparent;
+  }
+  
+  .history-panel-desktop.panel-exit {
+    animation: none;
+    width: 0;
+    overflow: hidden;
+    box-shadow: none;
+  }
+}
+
+/* ===== 充值弹层动画 ===== */
+.recharge-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.recharge-modal-content {
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  background: white;
+  border-radius: 1.5rem 1.5rem 0 0;
+  z-index: 61;
+  animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow-y: auto;
+}
+
+/* ===== 通用动画关键帧 ===== */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slideOutLeft {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(40px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ===== 报告 HTML 排版样式（参考周算网站） ===== */
+.report-content {
+  font-size: 1rem;
+  line-height: 1.9;
+  color: #333333;
+  max-width: none;
+  letter-spacing: 0.02em;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* 主标题：<h2>一、命盘解码：五行能量格局</h2> */
+.report-content h2 {
+  font-size: 1.1rem !important;
+  font-weight: 700 !important;
+  color: #2d2d2d !important;
+  margin-top: 2rem;
+  margin-bottom: 1.2rem;
+  line-height: 1.5;
+  padding-bottom: 0.3rem;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+/* 二级标题：<h3>【关键词：描述】</h3> 子段落小标题，无横线，紧凑 */
+.report-content h3 {
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  color: #2d2d2d !important;
+  margin-top: 1.25rem;
+  margin-bottom: 0.4rem;
+  line-height: 1.55;
+}
+
+/* 标题后第一个段落收紧顶部间距，让内容更紧凑 */
+.report-content h3 + p {
+  margin-top: 0.25rem;
+}
+
+/* 二级标题：<h4>关键词标题</h4> （如优先级、风险提示） */
+.report-content h4 {
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  color: #2d2d2d !important;
+  margin-top: 1rem;
+  margin-bottom: 0.6rem;
+  line-height: 1.55;
+}
+
+/* 二级标题样式（在p标签内的strong） */
+.report-content p strong:first-child {
+  font-size: 1em !important;
+  font-weight: 700 !important;
+  color: #2d2d2d !important;
+}
+
+.report-content p {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  line-height: 2.0;
+  color: #333333;
+  text-align: justify;
+}
+
+/* 加粗样式 */
+.report-content strong {
+  color: #1a1a1a !important;
+  font-weight: 700 !important;
+  font-size: 1em !important;
+}
+
+/* 【关键词】格式的加粗效果 */
+.report-content strong:contains("【") {
+  font-weight: 800;
+  color: #2d2d2d;
+}
+
+/* 段落总结关键词样式 */
+.report-content strong:contains("段落总结") {
+  font-weight: 700;
+  color: #8b5cf6;
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.9em;
+}
+
+.report-content em {
+  color: #666666;
+  font-style: italic;
+}
+
+/* 无序列表样式 - 紧凑缩进，与标题对齐 */
+.report-content ul {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-left: 0.8rem;
+  list-style: none;
+  position: relative;
+}
+
+/* 有序列表样式 */
+.report-content ol {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-left: 1.5rem;
+  list-style: decimal;
+}
+.report-content ol > li {
+  padding-left: 0.3rem;
+}
+
+.report-content li {
+  margin-top: 0.6rem;
+  margin-bottom: 0.6rem;
+  line-height: 2.0;
+  padding-left: 0.8rem;
+  position: relative;
+}
+
+/* 自定义 • 标记，对齐标题文字 */
+.report-content ul > li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #bfa094;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+/* hr分隔线样式 - 精致细线条 */
+.report-content hr {
+  border: none;
+  height: 0.5px;
+  background-color: #e8e0da;
+  margin: 1.5rem 0;
+  opacity: 0.6;
+}
+
+.report-content blockquote {
+  border-left: 3px solid #999999;
+  padding-left: 0.875rem;
+  margin: 1rem 0;
+  color: #666666;
+  line-height: 1.8;
+  background-color: #fafafa;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+/* 表格样式 - 用于总结中的收支对照表等 */
+.report-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+.report-content th {
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  color: #5b21b6;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e5e7eb;
+}
+
+.report-content td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  color: #374151;
+}
+
+.report-content tr:nth-child(even) td {
+  background-color: #fafafa;
+}
+
+/* 复选框样式 - 用于行动清单 */
+.report-content input[type="checkbox"] {
+  margin-right: 0.5rem;
+  accent-color: #6366f1;
+}
+
+/* 不换行文本（用于日期时间等） */
+.nowrap-text {
+  white-space: nowrap;
+}
+
+/* 代码块样式 - 用于行动口诀等 */
+.report-content code {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.88em;
+  font-weight: 500;
+}
+
+/* ===== 进度条动画 ===== */
+@keyframes progress {
+  0% { width: 0%; }
+  50% { width: 70%; }
+  100% { width: 95%; }
+}
+
+.animate-progress {
+  animation: progress 2s ease-in-out infinite;
+}

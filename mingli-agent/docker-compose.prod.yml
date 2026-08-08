@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mingli-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: mingli
+      POSTGRES_USER: mingli
+      POSTGRES_PASSWORD: mingli123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mingli"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: mingli-backend
+    # 注意：后端不再直接暴露给公网，只暴露给内部网络
+    # ports: - "8000:8000"  # 删除此端口暴露
+    environment:
+      DATABASE_URL: postgresql://mingli:mingli123@postgres:5432/mingli
+      SECRET_KEY: mingli-agent-production-secret-key-2026-shisuansuan
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-your-api-key}
+      AI_MODEL: qwen3.6-flash
+      AI_BASE_URL: https://ws-ekdxihtd67l14sw6.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+      AI_MODELS: qwen3.6-flash,qwen-2.5-7b,qwen2-7b-chat
+      # 短信服务配置
+      SMS_ACCESS_KEY_ID: ${SMS_ACCESS_KEY_ID:-your-access-key-id}
+      SMS_ACCESS_KEY_SECRET: ${SMS_ACCESS_KEY_SECRET:-your-access-key-secret}
+      SMS_SIGN_NAME: ${SMS_SIGN_NAME:-趣算算}
+      SMS_TEMPLATE_CODE: ${SMS_TEMPLATE_CODE:-SMS_46543210}
+      SMS_MOCK_MODE: ${SMS_MOCK_MODE:-true}
+      WECHAT_APP_ID: your-wechat-app-id
+      WECHAT_MCH_ID: your-wechat-mch-id
+      WECHAT_API_KEY: your-wechat-api-key-v3
+      WECHAT_NOTIFY_URL: https://shisuansuan.com/api/payment/wechat/callback
+      ALIPAY_APP_ID: your-alipay-app-id
+      ALIPAY_PRIVATE_KEY: your-alipay-private-key
+      ALIPAY_PUBLIC_KEY: your-alipay-public-key
+      # Gunicorn 配置 (可选，用于后端性能优化)
+      WORKERS_CLASS: sync
+      WORKERS: 2
+      TIMEOUT: 300
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+
+  frontend:
+    build: ./frontend
+    container_name: mingli-frontend
+    # 注意：前端不再直接暴露给公网
+    # ports: - "3000:80"  # 删除此端口暴露
+    depends_on:
+      - backend
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    container_name: mingli-nginx
+    ports:
+      - "80:80"
+      # 如果配置了 SSL，还需要暴露 443 端口
+      # - "443:443"
+    volumes:
+      # 挂载前端构建产物 (假设已构建在 frontend/dist 目录下，且 docker build 时已 COPY 进去，
+      # 这里我们需要直接挂载 frontend 容器的文件系统或者本地的 dist 目录)
+      # 方案 A：直接从本地 dist 目录挂载（最简单，但需手动 build 前端）
+      - ./frontend/dist:/usr/share/nginx/html:ro
+      # 挂载 Nginx 配置文件
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # 挂载密码认证文件（在服务器上生成后，需要确保此文件存在）
+      - ./.htpasswd:/etc/nginx/.htpasswd:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: always
+
+volumes:
+  postgres_data:

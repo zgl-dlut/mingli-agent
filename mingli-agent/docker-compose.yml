@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mingli-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: mingli
+      POSTGRES_USER: mingli
+      POSTGRES_PASSWORD: mingli123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mingli"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: mingli-backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://mingli:mingli123@postgres:5432/mingli
+      SECRET_KEY: your-secret-key-here-change-in-production
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      OPENAI_API_KEY: your-openai-api-key-here
+      WECHAT_APP_ID: your-wechat-app-id
+      WECHAT_MCH_ID: your-wechat-mch-id
+      WECHAT_API_KEY: your-wechat-api-key
+      ALIPAY_APP_ID: your-alipay-app-id
+      ALIPAY_PRIVATE_KEY: your-alipay-private-key
+      ALIPAY_PUBLIC_KEY: your-alipay-public-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build: ./frontend
+    container_name: mingli-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_BACKEND_URL: http://backend:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
