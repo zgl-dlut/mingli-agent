@@ -1,0 +1,65 @@
+# ===== 凭证与配置 =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.htpasswd
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+mingli-agent/backend/venv/
+mingli-agent/backend/.venv/
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+build/
+dist-packages/
+
+# ===== 测试与缓存 =====
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+mingli-agent/backend/feedback.db
+mingli-agent/backend/feedback.db-journal
+*.db-journal
+
+# ===== 前端 =====
+mingli-agent/frontend/node_modules/
+mingli-agent/frontend/dist/
+mingli-agent/frontend/.vite/
+
+# ===== IDE / 编辑器 =====
+.vscode/
+.idea/
+.trae/
+.workbuddy/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# ===== 日志与临时文件 =====
+*.log
+logs/
+tmp/
+*.tmp
+
+# ===== 系统 =====
+.DS_Store
+Thumbs.db
+
+# ===== 备份与产物 =====
+*.bak
+*.orig
+mingli-agent/test_report_*.json

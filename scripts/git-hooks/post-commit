@@ -1,0 +1,129 @@
+#!/bin/bash
+# post-commit hook: 自动追加变更记录到 docs/change-logs/YYYY-MM-DD.md
+#
+# 触发条件：每次 git commit 成功后自动执行
+# 跳过条件：
+#   1. 环境变量 SKIP_CHANGELOG=1
+#   2. merge commit
+#   3. commit message body 不包含「变更目标」字段
+#
+# 依赖 commit message 格式约定，详见 docs/change-log-rules.md
+
+set -u
+
+# ===== 跳过条件 =====
+
+# 1. 环境变量手动跳过
+if [ "${SKIP_CHANGELOG:-0}" = "1" ]; then
+    exit 0
+fi
+
+# 2. merge commit 跳过（MERGE_HEAD 存在说明是 merge）
+if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+    exit 0
+fi
+
+# ===== 获取 commit message =====
+
+# %B: 完整 commit message（含标题和 body）
+COMMIT_MSG=$(git log -1 --pretty=%B)
+
+# 标题行（第一行）
+SUBJECT=$(printf '%s\n' "$COMMIT_MSG" | head -1)
+
+# 跳过 merge 开头的提交信息
+case "$SUBJECT" in
+    "Merge "*|"merge "*) exit 0 ;;
+esac
+
+# ===== 字段提取 =====
+# 约定：每个字段独占一行，格式为 "字段名：内容"
+# 字段顺序不强制，但建议：变更目标/涉及文件/主要改动/验证方式/风险点
+
+extract_field() {
+    local field="$1"
+    # grep 匹配行首字段名+全角冒号，head -1 只取第一条，sed 去掉前缀
+    printf '%s\n' "$COMMIT_MSG" | grep "^${field}：" | head -1 | sed "s/^${field}：//"
+}
+
+FIELD_TARGET=$(extract_field "变更目标")
+FIELD_FILES=$(extract_field "涉及文件")
+FIELD_CHANGES=$(extract_field "主要改动")
+FIELD_VERIFY=$(extract_field "验证方式")
+FIELD_RISK=$(extract_field "风险点")
+
+# 3. 不包含「变更目标」字段 → 视为普通提交，跳过归档
+if [ -z "$FIELD_TARGET" ]; then
+    exit 0
+fi
+
+# 缺失字段填默认值
+[ -z "$FIELD_FILES" ] && FIELD_FILES="（未填写）"
+[ -z "$FIELD_CHANGES" ] && FIELD_CHANGES="（未填写）"
+[ -z "$FIELD_VERIFY" ] && FIELD_VERIFY="（未填写）"
+[ -z "$FIELD_RISK" ] && FIELD_RISK="无"
+
+# ===== 路径计算 =====
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+CHANGELOG_DIR="$REPO_ROOT/docs/change-logs"
+mkdir -p "$CHANGELOG_DIR"
+
+DATE_STR=$(date +"%Y-%m-%d")
+TIME_STR=$(date +"%H:%M")
+CHANGELOG_FILE="$CHANGELOG_DIR/$DATE_STR.md"
+
+# 获取 commit hash 短形式
+COMMIT_HASH=$(git rev-parse --short HEAD)
+
+# ===== 构造记录 =====
+
+# 处理涉及文件：按中英文逗号分割为列表项
+format_files() {
+    local files="$1"
+    printf '%s\n' "$files" | tr ',，' '\n\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' | sed 's/^/  - /'
+}
+
+FORMATTED_FILES=$(format_files "$FIELD_FILES")
+
+RECORD="## ${TIME_STR} ${SUBJECT}
+
+- 变更目标：${FIELD_TARGET}
+- 涉及文件：
+${FORMATTED_FILES}
+- 主要改动：${FIELD_CHANGES}
+- 验证方式：${FIELD_VERIFY}
+- 风险点：${FIELD_RISK}
+- commit：${COMMIT_HASH}"
+
+# ===== 追加到归档文件 =====
+
+if [ ! -f "$CHANGELOG_FILE" ]; then
+    # 新建文件
+    {
+        printf '# 变更归档 — %s\n\n' "$DATE_STR"
+        printf '%s\n' "$RECORD"
+    } > "$CHANGELOG_FILE"
+    echo "[post-commit] 已创建归档文件并追加记录: $CHANGELOG_FILE"
+else
+    # 文件已存在，检查是否需要加分隔符
+    # 读取文件末尾，判断是否以换行结尾
+    if [ -s "$CHANGELOG_FILE" ]; then
+        # 确保文件以换行结尾，然后追加分隔符和记录
+        {
+            # 确保末尾有换行
+            printf '\n'
+            printf -- '---\n\n'
+            printf '%s\n' "$RECORD"
+        } >> "$CHANGELOG_FILE"
+    else
+        # 空文件
+        {
+            printf '# 变更归档 — %s\n\n' "$DATE_STR"
+            printf '%s\n' "$RECORD"
+        } > "$CHANGELOG_FILE"
+    fi
+    echo "[post-commit] 已追加变更记录到: $CHANGELOG_FILE"
+fi
+
+exit 0
