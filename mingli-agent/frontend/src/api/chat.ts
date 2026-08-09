@@ -52,7 +52,7 @@ export const chatApi = {
   },
 
   /** 发送消息（流式 SSE） */
-  sendMessageStream: (sessionId: number, content: string) => {
+  sendMessageStream: (sessionId: number, content: string, signal?: AbortSignal) => {
     const token = localStorage.getItem('mingli_token')
     return fetch(`/api/chat/sessions/${sessionId}/messages`, {
       method: 'POST',
@@ -61,18 +61,26 @@ export const chatApi = {
         'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({ content }),
+      signal,
     })
   },
 
   /** 获取/生成首次解读（流式 SSE） */
-  getFirstReadingStream: (sessionId: number) => {
+  getFirstReadingStream: (sessionId: number, signal?: AbortSignal) => {
     const token = localStorage.getItem('mingli_token')
     return fetch(`/api/chat/sessions/${sessionId}/first-reading`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
       },
+      signal,
     })
+  },
+
+  /** 查询会话是否正在后台生成追问报告（刷新后恢复进度条用） */
+  getGeneratingStatus: async (sessionId: number): Promise<{ generating: boolean; error?: string | null }> => {
+    const res = await apiClient.get<{ generating: boolean; error?: string | null }>(`/chat/sessions/${sessionId}/generating-status`)
+    return res.data
   },
 
   /** AI 对话流式接口（无 job_id，旧版，保留兼容） */

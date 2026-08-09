@@ -90,17 +90,12 @@ def _render_subtopic(subtopic: Subtopic, index: int) -> str:
 
 
 def _render_keyword_block(block: KeywordBlock) -> str:
-    """渲染关键词段落：**keyword**：narrative + 可选term_explain + 可选sub_items"""
+    """渲染关键词段落：**keyword**：narrative + 可选sub_items"""
     parts: list[str] = []
 
     # 关键词行：**关键词**：描述（冒号在加粗外）
     main_line = f"**{block.keyword}**：{block.narrative.strip()}"
     parts.append(main_line)
-
-    # 术语解释（如有）
-    if block.term_explain:
-        parts.append("")
-        parts.append(block.term_explain.strip())
 
     # 子要点列表（如有）
     if block.sub_items:

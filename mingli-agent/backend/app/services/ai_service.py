@@ -3,6 +3,7 @@ from openai import AsyncOpenAI, APIConnectionError, APIStatusError, Authenticati
 from pydantic import BaseModel
 import asyncio
 import logging
+import time
 
 from app.config import settings
 
@@ -87,7 +88,8 @@ async def generate_ai_response(
         try:
             client = await get_client(model_config)
             logger.info(f"[AI] 尝试模型: {model_config.name} (第{attempt + 1}次)")
-            
+
+            start_ts = time.time()
             if stream:
                 stream_response = await client.chat.completions.create(
                     model=model_config.name,
@@ -100,9 +102,42 @@ async def generate_ai_response(
                     presence_penalty=0.3,
                     timeout=120
                 )
+                first_chunk_ts = None
+                chunk_count = 0
+                total_chars = 0
+                stream_usage = None
                 async for chunk in stream_response:
                     if chunk.choices and chunk.choices[0].delta.content:
+                        if first_chunk_ts is None:
+                            first_chunk_ts = time.time()
+                        chunk_count += 1
+                        total_chars += len(chunk.choices[0].delta.content)
                         yield chunk.choices[0].delta.content
+                    # 捕获流末尾的 usage（部分模型在最后一个 chunk 携带）
+                    _usage = getattr(chunk, "usage", None)
+                    if _usage is not None:
+                        stream_usage = _usage
+                elapsed = time.time() - start_ts
+                ttft = (first_chunk_ts - start_ts) if first_chunk_ts else None
+                ttft_str = f"{ttft:.2f}s" if ttft is not None else "N/A"
+                # token 用量：流式响应 usage 可能为 None（多数 OpenAI 兼容端点不返回），尽力读取
+                usage = stream_usage
+                if usage is not None:
+                    p_tok = getattr(usage, "prompt_tokens", 0) or 0
+                    c_tok = getattr(usage, "completion_tokens", 0) or 0
+                    t_tok = getattr(usage, "total_tokens", 0) or (p_tok + c_tok)
+                    logger.info(
+                        f"[AI] 模型 {model_config.name} 流式调用成功: 状态=成功, 耗时={elapsed:.1f}s, "
+                        f"首token={ttft_str}, "
+                        f"chunk数={chunk_count}, 字符数={total_chars}, "
+                        f"token用量: prompt={p_tok}, completion={c_tok}, total={t_tok}"
+                    )
+                else:
+                    logger.info(
+                        f"[AI] 模型 {model_config.name} 流式调用成功: 状态=成功, 耗时={elapsed:.1f}s, "
+                        f"首token={ttft_str}, "
+                        f"chunk数={chunk_count}, 字符数={total_chars}, token用量: 未返回"
+                    )
             else:
                 response = await client.chat.completions.create(
                     model=model_config.name,
@@ -113,24 +148,40 @@ async def generate_ai_response(
                     presence_penalty=0.3,
                     timeout=120
                 )
+                elapsed = time.time() - start_ts
+                content_len = len(response.choices[0].message.content or "") if response.choices else 0
+                usage = getattr(response, "usage", None)
+                if usage is not None:
+                    p_tok = getattr(usage, "prompt_tokens", 0) or 0
+                    c_tok = getattr(usage, "completion_tokens", 0) or 0
+                    t_tok = getattr(usage, "total_tokens", 0) or (p_tok + c_tok)
+                    logger.info(
+                        f"[AI] 模型 {model_config.name} 非流式调用成功: 状态=成功, 耗时={elapsed:.1f}s, "
+                        f"长度={content_len}, token用量: prompt={p_tok}, completion={c_tok}, total={t_tok}"
+                    )
+                else:
+                    logger.info(
+                        f"[AI] 模型 {model_config.name} 非流式调用成功: 状态=成功, 耗时={elapsed:.1f}s, "
+                        f"长度={content_len}, token用量: 未返回"
+                    )
                 if response.choices:
                     yield response.choices[0].message.content or ""
                 else:
                     yield ""
-            
+
             # 成功：更新健康状态，模型保持在首位
             model_health[model_config.name] = True
-            logger.info(f"[AI] 模型 {model_config.name} 调用成功")
             return
-            
+
         except (APIConnectionError, APIStatusError, AuthenticationError) as e:
-            logger.warning(f"[AI] 模型 {model_config.name} 失败: {str(e)[:200]}")
+            elapsed = time.time() - start_ts
+            logger.warning(f"[AI] 模型 {model_config.name} 失败: 状态=异常, 耗时={elapsed:.1f}s, 错误={str(e)[:200]}")
             model_health[model_config.name] = False
-            
+
             # 失败：将模型移到末尾，降低优先级
             model_order.pop(0)
             model_order.append(current_idx)
-            
+
             # 继续尝试下一个模型（不向前端暴露切换细节，仅记录日志）
             if attempt < max_attempts - 1:
                 next_model = model_pool[model_order[0]]
@@ -141,9 +192,10 @@ async def generate_ai_response(
                 logger.error(f"[AI] 所有 {max_attempts} 个模型均不可用")
                 yield "抱歉，服务器当前异常，请稍后重试。"
                 return
-                
+
         except Exception as e:
-            logger.error(f"[AI] 未知错误: {str(e)[:200]}")
+            elapsed = time.time() - start_ts
+            logger.error(f"[AI] 未知错误: 状态=异常, 耗时={elapsed:.1f}s, 错误={str(e)[:200]}")
             yield "抱歉，服务器当前异常，请稍后重试。"
             return
 

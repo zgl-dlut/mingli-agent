@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { usePersonStore } from '../store/personStore'
 import { useUserStore } from '../store/userStore'
 import { useChatStore } from '../store/chatStore'
-import { useTransactionStore } from '../store/transactionStore'
 import Logo from './Logo'
 import type { Person } from '../types'
 
@@ -18,10 +17,9 @@ interface HistoryPanelProps {
 export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavigateToAddPerson, isDesktop = false }: HistoryPanelProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { persons, deletePerson, renamePerson, clearPersons } = usePersonStore()
+  const { persons, deletePerson, renamePerson } = usePersonStore()
   const { user, logout, clearUser } = useUserStore()
-  const { deletePersonChat, deleteAllChats } = useChatStore()
-  const { clearTransactions } = useTransactionStore()
+  const { deletePersonChat } = useChatStore()
   const [isExiting, setIsExiting] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
@@ -104,10 +102,7 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
 
   const handleReset = () => {
     if (confirm('确定要清空所有数据吗？此操作不可恢复。')) {
-      // 一次性清除所有数据，避免多次状态更新导致页面卡死
-      deleteAllChats()
-      clearPersons()
-      clearTransactions()
+      // clearUser 已包含清空 chats/persons/transactions + token/user
       clearUser()
       navigate('/login', { replace: true })
     }

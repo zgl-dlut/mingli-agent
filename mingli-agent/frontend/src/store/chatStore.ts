@@ -48,15 +48,15 @@ function saveAllChats(chats: Record<number, PersonChat>) {
 interface ChatStore {
   messages: ChatMessage[]
   currentPersonId: number | null
-  isGenerating: boolean
+  generatingPersonIds: number[]
   currentMessage: string
-  streamingPersonId: number | null
   error: string | null
   fetchMessages: (personId: number, sessionId: number) => Promise<void>
   addMessage: (personId: number, role: 'user' | 'assistant', content: string) => void
   setCurrentPerson: (personId: number) => void
   setCurrentMessage: (content: string, personId?: number | null) => void
-  setIsGenerating: (generating: boolean, personId?: number | null) => void
+  setPersonGenerating: (personId: number, generating: boolean) => void
+  isPersonGenerating: (personId: number) => boolean
   clearMessages: () => void
   hasFirstReading: (personId: number) => boolean
   setFirstReadingGenerated: (personId: number) => void
@@ -69,12 +69,11 @@ let allChats: Record<number, PersonChat> = loadAllChats()
 /** 导出 allChats 供外部去重使用（只读引用） */
 export { allChats }
 
-export const useChatStore = create<ChatStore>((set) => ({
+export const useChatStore = create<ChatStore>((set, get) => ({
   messages: [],
   currentPersonId: null,
-  isGenerating: false,
+  generatingPersonIds: [],
   currentMessage: '',
-  streamingPersonId: null,
   error: null,
   fetchMessages: async (personId, sessionId) => {
     logger.info(`fetchMessages`, { personId, sessionId })
@@ -91,11 +90,22 @@ export const useChatStore = create<ChatStore>((set) => ({
       }
       allChats[personId].messages = mapped
       saveAllChats(allChats)
-      set({ messages: mapped, currentPersonId: personId, currentMessage: '', isGenerating: false, streamingPersonId: null })
+      // 仅当拉取的是当前会话才更新可视 messages，避免后台生成完成时把视图切走
+      // 不触碰 generatingPersonIds，让生成中切换会话后进度条保留
+      set((state) => {
+        if (state.currentPersonId !== personId) {
+          logger.info(`fetchMessages 后台静默更新（非当前会话）`, { personId, current: state.currentPersonId })
+          return {}
+        }
+        return { messages: mapped }
+      })
     } catch (e) {
       logger.error(`fetchMessages 拉取失败，降级读本地缓存`, String(e))
-      const chat = allChats[personId]
-      set({ messages: chat?.messages || [], currentPersonId: personId, currentMessage: '', isGenerating: false, streamingPersonId: null })
+      set((state) => {
+        if (state.currentPersonId !== personId) return {}
+        const chat = allChats[personId]
+        return { messages: chat?.messages || [] }
+      })
     }
   },
   addMessage: (personId, role, content) => {
@@ -181,17 +191,24 @@ export const useChatStore = create<ChatStore>((set) => ({
   setCurrentPerson: (personId) => {
     const chat = allChats[personId]
     logger.info(`setCurrentPerson`, { personId, msgCount: chat?.messages?.length || 0 })
-    set({ currentPersonId: personId, messages: chat?.messages || [], currentMessage: '', isGenerating: false, streamingPersonId: null })
+    // 不重置 generatingPersonIds/currentMessage：让生成中切换会话后进度条保留
+    set({ currentPersonId: personId, messages: chat?.messages || [] })
   },
-  setCurrentMessage: (content, personId = null) => {
-    logger.debug(`setCurrentMessage`, { personId, contentLen: content?.length || 0 })
-    set({ currentMessage: content, streamingPersonId: personId })
+  setCurrentMessage: (content, _personId = null) => {
+    logger.debug(`setCurrentMessage`, { contentLen: content?.length || 0 })
+    set({ currentMessage: content })
   },
-  setIsGenerating: (generating, personId = null) => {
-    logger.info(`setIsGenerating`, { generating, personId })
-    set({ isGenerating: generating, streamingPersonId: generating ? personId : null })
+  setPersonGenerating: (personId, generating) => {
+    logger.info(`setPersonGenerating`, { personId, generating })
+    set((state) => {
+      const has = state.generatingPersonIds.includes(personId)
+      if (generating && !has) return { generatingPersonIds: [...state.generatingPersonIds, personId] }
+      if (!generating && has) return { generatingPersonIds: state.generatingPersonIds.filter(id => id !== personId) }
+      return {}
+    })
   },
-  clearMessages: () => set({ messages: [], currentMessage: '', streamingPersonId: null }),
+  isPersonGenerating: (personId) => get().generatingPersonIds.includes(personId),
+  clearMessages: () => set({ messages: [], currentMessage: '' }),
   hasFirstReading: (personId) => {
     return allChats[personId]?.firstReadingGenerated === true
   },
@@ -207,15 +224,23 @@ export const useChatStore = create<ChatStore>((set) => ({
     delete allChats[personId]
     saveAllChats(allChats)
     set((state) => {
+      // 若删除的正是后台生成中的人物，从生成列表移除，避免状态残留
+      const wasGenerating = state.generatingPersonIds.includes(personId)
+      const generatingPersonIds = state.generatingPersonIds.filter(id => id !== personId)
       if (state.currentPersonId === personId) {
-        return { messages: [], currentPersonId: null, currentMessage: '', streamingPersonId: null }
+        return {
+          messages: [],
+          currentPersonId: null,
+          currentMessage: '',
+          generatingPersonIds,
+        }
       }
-      return {}
+      return wasGenerating ? { generatingPersonIds } : {}
     })
   },
   deleteAllChats: () => {
     allChats = {}
     saveAllChats(allChats)
-    set({ messages: [], currentPersonId: null, currentMessage: '', streamingPersonId: null })
+    set({ messages: [], currentPersonId: null, currentMessage: '', generatingPersonIds: [] })
   },
 }))

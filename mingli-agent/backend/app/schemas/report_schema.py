@@ -39,8 +39,10 @@ class KeywordBlock(BaseModel):
     """关键词段落：**关键词**：描述内容"""
     type: Literal["keyword"] = "keyword"
     keyword: str = Field(description="叙事化关键词短语，贴合子问题，可含命理术语+括号解释")
-    narrative: str = Field(description="描述内容2-3句，可内联**加粗**，命理术语用(括号)或=解释")
-    term_explain: Optional[str] = Field(None, description="可选，命理术语单独解释一句")
+    narrative: str = Field(
+        description="描述内容2-3句，可内联**加粗**。命理术语必须用括号或'='或'也就是'"
+                    "紧跟解释融入句子，禁止单独成段解释"
+    )
     sub_items: Optional[List[str]] = Field(
         None, description="可选，并列子要点列表，每项独占一行渲染为 - 列表项"
     )
@@ -71,14 +73,20 @@ Block = Annotated[
 # ============================================================
 
 class Subtopic(BaseModel):
-    """一个子问题：标题 + blocks"""
+    """一个子问题：标题 + 可选引导段 + blocks + 可选总结句"""
     title: str = Field(
         description="子问题标题，直接引用或微调用户原话，贴合用户问题核心关切。"
                     "不要用命理术语，让用户一眼看出在回答他的哪个问题"
     )
+    lead: Optional[str] = Field(
+        None, description="可选，子问题开头的承上启下/总结性引导段落，1-2句，引出下面内容，可内联**加粗**"
+    )
     blocks: List[Block] = Field(
-        description="子问题内部段落，1-3个block。简单结论用keyword，"
-                    "过渡补充用narrative，复杂命理分析用group"
+        description="子问题内部段落，2-4个block。每个block必须用keyword类型（keyword+narrative齐全），"
+                    "禁止narrative纯叙事块和group块；每个block只讲一个现实维度（现实走向/应对办法/时间窗口/心态宽慰）"
+    )
+    closing: Optional[str] = Field(
+        None, description="可选，根据子问题实际情况决定；若输出则2-3句朋友式嘱咐/鼓励/情绪收尾，有感情叙事化；没必要则不填"
     )
 
 
@@ -111,7 +119,7 @@ class Summary(BaseModel):
     narrative: Optional[str] = Field(
         None, description="整段叙事式总结（无并列项时用）。与 items 二选一"
     )
-    closing: Optional[str] = Field(None, description="可选收尾一句话")
+    closing: Optional[str] = Field(None, description="可选，根据实际情况决定；若输出则2-3句朋友式嘱咐/鼓励/情绪收尾，有感情叙事化；没必要则不填")
 
 
 # ============================================================

@@ -62,6 +62,21 @@ SAN_HE: Dict[str, Set[str]] = {
     "木": {"亥", "卯", "未"},
 }
 
+# 三合中神（帝旺位）：半合带中神力量较强，不带中神半合力弱
+SAN_HE_ZHONG_SHEN: Set[str] = {"子", "午", "卯", "酉"}
+
+# 三会局：寅卯辰会木、巳午未会火、申酉戌会金、亥子丑会水
+# 三会力量强于三合，且无半会（必须三支齐全方论会）
+SAN_HUI: Dict[str, Set[str]] = {
+    "木": {"寅", "卯", "辰"},
+    "火": {"巳", "午", "未"},
+    "金": {"申", "酉", "戌"},
+    "水": {"亥", "子", "丑"},
+}
+
+# 月令五行（地支当令本气五行，用于合化"化神得令"校验）
+DIZHI_LING_WUXING = DIZHI_WUXING  # 当令本气即地支本五行
+
 # 自刑
 ZI_XING: Dict[str, str] = {
     "辰": "辰辰自刑",
@@ -146,6 +161,73 @@ def _check_san_he(dz1: str, dz2: str) -> str:
     return ""
 
 
+def _check_full_san_he(di: str, pillar_dz_list: List[str]) -> str:
+    """检测流年/大运地支与原局地支是否构成完整三合局，返回合化五行或空字符串。
+
+    三合局需三个地支齐全（如原局已有亥、卯，流年未到则亥卯未全化木）。
+    半合（仅两个地支）力量弱，不在此判定，走 _check_san_he。
+    """
+    all_dz = set(pillar_dz_list)
+    all_dz.add(di)
+    for wuxing, members in SAN_HE.items():
+        if members <= all_dz:
+            return wuxing
+    return ""
+
+
+def _check_full_san_hui(di: str, pillar_dz_list: List[str]) -> str:
+    """检测流年/大运地支与原局地支是否构成完整三会局，返回合化五行或空字符串。
+
+    三会局（寅卯辰会木等）需三支齐全，力量强于三合，且无半会。
+    """
+    all_dz = set(pillar_dz_list)
+    all_dz.add(di)
+    for wuxing, members in SAN_HUI.items():
+        if members <= all_dz:
+            return wuxing
+    return ""
+
+
+def _san_he_ban_he_has_zhongshen(dz1: str, dz2: str) -> bool:
+    """半合是否带中神（子午卯酉帝旺位），带中神半合力量较强。"""
+    return dz1 in SAN_HE_ZHONG_SHEN or dz2 in SAN_HE_ZHONG_SHEN
+
+
+def _he_hua_relation(he_wx: str, day_tian: str, yongshen: str, jishen: str) -> str:
+    """合化五行与日主/用忌的关系。
+
+    返回: '忌'(合化忌神或克日主=七杀攻身) / '用'(合化用神或生日主=印星生身) / '平'。
+    """
+    day_wx = TIANGAN_WUXING[day_tian]
+    if he_wx == jishen or WUXING_KE.get(he_wx) == day_wx:
+        return "忌"
+    if he_wx == yongshen or WUXING_SHENG.get(he_wx) == day_wx:
+        return "用"
+    return "平"
+
+
+def _check_hua_shen_deling(he_wx: str, month_dz: str, extra_dz: str = "") -> bool:
+    """化神是否得令（合化成立条件）。
+
+    标准命理：合化需化神得令或有根。此处校验：
+    - 原局月支五行==化神（化神当令）
+    - 原局月支五行生化神（如月亥水生木）
+    - 流年/大运地支五行==化神（动态助化）
+    满足其一即真化；否则合而不化，只论合绊。
+    无月令信息时默认真化（兼容旧调用）。
+    """
+    if not month_dz:
+        return True
+    m_wx = DIZHI_WUXING.get(month_dz, "")
+    if m_wx == he_wx:
+        return True
+    if WUXING_SHENG.get(m_wx) == he_wx:
+        return True
+    if extra_dz and DIZHI_WUXING.get(extra_dz, "") == he_wx:
+        return True
+    return False
+
+
 def _wuxing_judge(wuxing: str, yongshen: str, jishen: str) -> str:
     """判断单个五行与用神/忌神的关系，返回 '吉'/'凶'/'平'。"""
     if wuxing == yongshen:
@@ -221,11 +303,19 @@ def _analyze_interactions(
     """
     分析某个干支（大运或流年）与原局四柱的相互作用，返回描述列表。
     source_label: "大运" 或 "流年"
+
+    标注规范（_compute_overall_judge 据此计分）：
+    - 冲：'冲用神'(凶) / '冲忌神'(去忌为吉) / '相冲，主变动'(中性)
+    - 合化：'三合X局克身/生身' / '三会X局克身/生身' / '半合X局（带中神）克身/生身'
+    - 天干合：'合化X（忌神/用神/中性）' / '合而不化'
+    - 六合绊：'六合绊用神'(减吉) / '六合绊忌神'(减凶) / '六合，主合作'(中性)
+    - 合而不化时只论合绊，不计合化吉凶
     """
     interactions: List[str] = []
     tian_wx = TIANGAN_WUXING[tian]
     di_wx = DIZHI_WUXING[di]
     shishen = _get_shishen_name(day_tian, tian)
+    month_dz = pillars.get("月", {}).get("di", "")  # 原局月支，用于合化得令校验
 
     # --- 天干与原局天干的关系 ---
     pillar_tg_list = _get_pillar_tiangang_list(pillars)
@@ -233,9 +323,16 @@ def _analyze_interactions(
         pname = PILLAR_NAMES[i]
         if _check_tiangang_he(tian, p_tg):
             he_wx = _get_tiangang_he_wuxing(tian, p_tg)
-            interactions.append(
-                f"{source_label}天干{tian}与{pname}柱{p_tg}天干五合，合化{he_wx}"
-            )
+            if _check_hua_shen_deling(he_wx, month_dz, di):
+                rel = _he_hua_relation(he_wx, day_tian, yongshen, jishen)
+                tag = {"忌": "忌神", "用": "用神", "平": "中性"}.get(rel, "中性")
+                interactions.append(
+                    f"{source_label}天干{tian}与{pname}柱{p_tg}天干五合，合化{he_wx}（{tag}）"
+                )
+            else:
+                interactions.append(
+                    f"{source_label}天干{tian}与{pname}柱{p_tg}天干五合，合而不化（合绊）"
+                )
         # 天干相克
         p_tg_wx = TIANGAN_WUXING[p_tg]
         if TIANGAN_KE.get(tian_wx) == p_tg_wx:
@@ -251,18 +348,37 @@ def _analyze_interactions(
     pillar_dz_list = _get_pillar_dizhi_list(pillars)
     for i, p_dz in enumerate(pillar_dz_list):
         pname = PILLAR_NAMES[i]
+        p_wx = DIZHI_WUXING[p_dz]
 
-        # 六冲
+        # 六冲：区分冲用神(凶)/冲忌神(去忌为吉)/中性冲(主变动)
         if _check_chong(di, p_dz):
-            interactions.append(
-                f"{source_label}地支{di}与{pname}柱{p_dz}相冲，主变动"
-            )
+            if p_wx == yongshen:
+                interactions.append(
+                    f"{source_label}地支{di}冲{pname}柱{p_dz}（冲用神，凶）"
+                )
+            elif p_wx == jishen:
+                interactions.append(
+                    f"{source_label}地支{di}冲{pname}柱{p_dz}（冲忌神，去忌为吉）"
+                )
+            else:
+                interactions.append(
+                    f"{source_label}地支{di}与{pname}柱{p_dz}相冲，主变动"
+                )
 
-        # 六合
+        # 六合：六合不化，论合绊（绊用神减吉/绊忌神减凶/中性合作）
         if _check_he(di, p_dz):
-            interactions.append(
-                f"{source_label}地支{di}与{pname}柱{p_dz}六合，主合作"
-            )
+            if p_wx == yongshen or di_wx == yongshen:
+                interactions.append(
+                    f"{source_label}地支{di}与{pname}柱{p_dz}六合绊用神"
+                )
+            elif p_wx == jishen or di_wx == jishen:
+                interactions.append(
+                    f"{source_label}地支{di}与{pname}柱{p_dz}六合绊忌神"
+                )
+            else:
+                interactions.append(
+                    f"{source_label}地支{di}与{pname}柱{p_dz}六合，主合作"
+                )
 
         # 自刑
         zx = _check_zi_xing(di, p_dz)
@@ -271,11 +387,63 @@ def _analyze_interactions(
                 f"{source_label}地支{di}与{pname}柱{p_dz}{zx}，注意内心冲突"
             )
 
-        # 三合半合
+        # 三合半合：带中神且化神得令时，化忌克身/化用生身参与吉凶
         san_he_wx = _check_san_he(di, p_dz)
         if san_he_wx:
+            has_zs = _san_he_ban_he_has_zhongshen(di, p_dz)
+            if has_zs and _check_hua_shen_deling(san_he_wx, month_dz, di):
+                rel = _he_hua_relation(san_he_wx, day_tian, yongshen, jishen)
+                tag = {"忌": "克身", "用": "生身"}.get(rel, "")
+                zs_tag = "（带中神）"
+                if tag:
+                    interactions.append(
+                        f"{source_label}地支{di}与{pname}柱{p_dz}半合{san_he_wx}局{zs_tag}{tag}"
+                    )
+                else:
+                    interactions.append(
+                        f"{source_label}地支{di}与{pname}柱{p_dz}半合{san_he_wx}局{zs_tag}"
+                    )
+            else:
+                interactions.append(
+                    f"{source_label}地支{di}与{pname}柱{p_dz}半合{san_he_wx}局"
+                )
+
+    # 完整三合局：力量强，化神得令则化忌克身/化用生身，否则合而不化
+    full_san_he = _check_full_san_he(di, pillar_dz_list)
+    if full_san_he:
+        if _check_hua_shen_deling(full_san_he, month_dz, di):
+            rel = _he_hua_relation(full_san_he, day_tian, yongshen, jishen)
+            tag = {"忌": "克身", "用": "生身"}.get(rel, "")
+            if tag:
+                interactions.append(
+                    f"{source_label}地支{di}与原局构成三合{full_san_he}局{tag}"
+                )
+            else:
+                interactions.append(
+                    f"{source_label}地支{di}与原局构成三合{full_san_he}局"
+                )
+        else:
             interactions.append(
-                f"{source_label}地支{di}与{pname}柱{p_dz}半合{san_he_wx}局"
+                f"{source_label}地支{di}与原局构成三合{full_san_he}局（合而不化）"
+            )
+
+    # 完整三会局：力量强于三合，化神得令则化忌克身/化用生身
+    full_san_hui = _check_full_san_hui(di, pillar_dz_list)
+    if full_san_hui:
+        if _check_hua_shen_deling(full_san_hui, month_dz, di):
+            rel = _he_hua_relation(full_san_hui, day_tian, yongshen, jishen)
+            tag = {"忌": "克身", "用": "生身"}.get(rel, "")
+            if tag:
+                interactions.append(
+                    f"{source_label}地支{di}与原局构成三会{full_san_hui}局{tag}"
+                )
+            else:
+                interactions.append(
+                    f"{source_label}地支{di}与原局构成三会{full_san_hui}局"
+                )
+        else:
+            interactions.append(
+                f"{source_label}地支{di}与原局构成三会{full_san_hui}局（合而不化）"
             )
 
     # --- 用神/忌神天干描述 ---
@@ -301,30 +469,77 @@ def _analyze_interactions(
 
 def _compute_overall_judge(
     tian_wx: str, di_wx: str, yongshen: str, jishen: str,
-    interactions: List[str], has_chong: bool = False, has_zi_xing: bool = False,
+    interactions: List[str],
 ) -> str:
-    """
-    综合判定吉凶。
+    """综合判定吉凶，从 interactions 解析冲合化刑要素计分。
+
     返回: "大吉" / "吉" / "平" / "凶" / "大凶"
+
+    计分规则（标准排盘合化体系）：
+    - 基础：天干/地支五行 vs 用忌（_wuxing_judge）
+    - 冲用神: xiong+2（用神被冲破，大凶）；冲忌神: ji+1（去忌为吉）；中性冲: xiong+1（主变动）
+    - 三会化忌克身: xiong+3（力量最强）；三合化忌克身: xiong+2；带中神半合化忌: xiong+1
+    - 三会化用生身: ji+3；三合化用生身: ji+2；带中神半合化用: ji+1
+    - 天干合化忌神: xiong+1；天干合化用神: ji+1；合而不化不计
+    - 六合绊用神: xiong+1（羁绊用神减吉）；六合绊忌神: ji+1（羁绊忌神减凶）
+    - 自刑: 偏凶，影响判定阈值
     """
-    scores = []
-    scores.append(_wuxing_judge(tian_wx, yongshen, jishen))
-    scores.append(_wuxing_judge(di_wx, yongshen, jishen))
-
-    # 天干生用神/忌神的间接影响
-    if WUXING_SHENG.get(tian_wx) == yongshen and tian_wx != yongshen:
-        pass  # 已在 _wuxing_judge 中处理
-
+    scores = [_wuxing_judge(tian_wx, yongshen, jishen), _wuxing_judge(di_wx, yongshen, jishen)]
     ji_count = scores.count("吉")
     xiong_count = scores.count("凶")
-    ping_count = scores.count("平")
 
-    if has_chong:
-        xiong_count += 1
+    has_chong = False       # 有冲（中性冲或冲用神）
+    has_zi_xing = False     # 有自刑
+    has_he_ji = False       # 完整三合/三会化忌克身（强力凶，影响大吉判定）
 
-    if ji_count == 2 and not has_chong and not has_zi_xing:
+    for inter in interactions:
+        if "自刑" in inter:
+            has_zi_xing = True
+            continue
+        # 六冲方向（先判冲用神/冲忌神，再判中性冲）
+        if "冲用神" in inter:
+            has_chong = True
+            xiong_count += 2
+        elif "冲忌神" in inter:
+            ji_count += 1  # 去忌为吉，不计冲凶
+        elif "相冲，主变动" in inter:
+            has_chong = True
+            xiong_count += 1
+        # 三会局化神（力量最强）
+        elif "三会" in inter and "克身" in inter:
+            has_he_ji = True
+            xiong_count += 3
+        elif "三会" in inter and "生身" in inter:
+            ji_count += 3
+        # 完整三合局化神
+        elif "三合" in inter and "克身" in inter:
+            has_he_ji = True
+            xiong_count += 2
+        elif "三合" in inter and "生身" in inter:
+            ji_count += 2
+        # 带中神半合化神
+        elif "半合" in inter and "克身" in inter:
+            xiong_count += 1
+        elif "半合" in inter and "生身" in inter:
+            ji_count += 1
+        # 天干合化（区分合化忌神/用神/中性，合而不化不计）
+        elif "合化" in inter and "忌神" in inter:
+            xiong_count += 1
+        elif "合化" in inter and "用神" in inter:
+            ji_count += 1
+        # 六合绊（区分绊用神/绊忌神/中性合作）
+        elif "六合绊用神" in inter:
+            xiong_count += 1
+        elif "六合绊忌神" in inter:
+            ji_count += 1
+
+    # 判定阈值（保持原框架，has_chong/has_zi_xing/has_he_ji 抑制大吉）
+    if ji_count >= 2 and xiong_count == 0 and not has_chong and not has_zi_xing and not has_he_ji:
         return "大吉"
     if ji_count >= 1 and xiong_count == 0:
+        return "吉"
+    if ji_count > xiong_count and xiong_count > 0:
+        # 吉多凶少（如三合生身+地支生忌），偏吉
         return "吉"
     if ji_count == xiong_count or (ji_count == 1 and xiong_count == 1):
         if has_zi_xing:
@@ -453,12 +668,9 @@ def analyze_dayun(
         tian, di, pillars, day_tian, "大运", yongshen, jishen,
     )
 
-    # 检测是否有冲和自刑
-    has_chong = any("相冲" in i for i in interactions)
-    has_zi_xing = any("自刑" in i for i in interactions)
-
+    # 综合判定（冲合化刑要素由 _compute_overall_judge 从 interactions 解析）
     overall_judge = _compute_overall_judge(
-        tian_wx, di_wx, yongshen, jishen, interactions, has_chong, has_zi_xing,
+        tian_wx, di_wx, yongshen, jishen, interactions,
     )
 
     description = _build_description(
@@ -543,15 +755,23 @@ def analyze_liunian(
             f"大运天干{dy_tian}{dy_tian_wx}克流年天干{tian}{tian_wx}"
         )
 
-    # 流年地支与大运地支
+    # 流年地支与大运地支（方向标注，与原局一致）
+    dy_di_wx = DIZHI_WUXING[dy_di]
+    month_dz = pillars.get("月", {}).get("di", "")
     if _check_chong(di, dy_di):
-        interactions.append(
-            f"流年地支{di}与大运地支{dy_di}相冲，运中多变"
-        )
+        if dy_di_wx == yongshen:
+            interactions.append(f"流年地支{di}冲大运地支{dy_di}（冲用神，凶）")
+        elif dy_di_wx == jishen:
+            interactions.append(f"流年地支{di}冲大运地支{dy_di}（冲忌神，去忌为吉）")
+        else:
+            interactions.append(f"流年地支{di}与大运地支{dy_di}相冲，主变动")
     if _check_he(di, dy_di):
-        interactions.append(
-            f"流年地支{di}与大运地支{dy_di}六合，运中有合"
-        )
+        if dy_di_wx == yongshen or di_wx == yongshen:
+            interactions.append(f"流年地支{di}与大运地支{dy_di}六合绊用神")
+        elif dy_di_wx == jishen or di_wx == jishen:
+            interactions.append(f"流年地支{di}与大运地支{dy_di}六合绊忌神")
+        else:
+            interactions.append(f"流年地支{di}与大运地支{dy_di}六合，主合作")
 
     zx = _check_zi_xing(di, dy_di)
     if zx:
@@ -559,16 +779,21 @@ def analyze_liunian(
 
     san_he_wx = _check_san_he(di, dy_di)
     if san_he_wx:
-        interactions.append(
-            f"流年地支{di}与大运地支{dy_di}半合{san_he_wx}局"
-        )
+        has_zs = _san_he_ban_he_has_zhongshen(di, dy_di)
+        if has_zs and _check_hua_shen_deling(san_he_wx, month_dz, di):
+            rel = _he_hua_relation(san_he_wx, day_tian, yongshen, jishen)
+            tag = {"忌": "克身", "用": "生身"}.get(rel, "")
+            zs_tag = "（带中神）"
+            if tag:
+                interactions.append(f"流年地支{di}与大运地支{dy_di}半合{san_he_wx}局{zs_tag}{tag}")
+            else:
+                interactions.append(f"流年地支{di}与大运地支{dy_di}半合{san_he_wx}局{zs_tag}")
+        else:
+            interactions.append(f"流年地支{di}与大运地支{dy_di}半合{san_he_wx}局")
 
-    # 检测冲和自刑
-    has_chong = any("相冲" in i for i in interactions)
-    has_zi_xing = any("自刑" in i for i in interactions)
-
+    # 综合判定（冲合化刑要素由 _compute_overall_judge 从 interactions 解析）
     overall_judge = _compute_overall_judge(
-        tian_wx, di_wx, yongshen, jishen, interactions, has_chong, has_zi_xing,
+        tian_wx, di_wx, yongshen, jishen, interactions,
     )
 
     description = _build_description(
@@ -664,10 +889,25 @@ def get_key_years(
                 reasons.append("天干合，主变化")
                 break
 
+        # 完整三合局优先于六合/半合判定：合化忌神或克日主标"克身"，否则"主合作"
+        san_he_added = False
         for inter in analysis["interactions"]:
-            if "六合" in inter or "半合" in inter:
-                reasons.append("有合，主合作")
+            if "三合" in inter and "局" in inter:
+                for wx in ("木", "火", "土", "金", "水"):
+                    if f"三合{wx}局" in inter:
+                        day_wx = TIANGAN_WUXING[day_tian]
+                        if wx == jishen or WUXING_KE.get(wx) == day_wx:
+                            reasons.append(f"三合{wx}局克身，压力大")
+                        else:
+                            reasons.append("有合，主合作")
+                        san_he_added = True
+                        break
                 break
+        if not san_he_added:
+            for inter in analysis["interactions"]:
+                if "六合" in inter or "半合" in inter:
+                    reasons.append("有合，主合作")
+                    break
 
         if not reasons:
             reasons.append("平缓之年")
@@ -788,34 +1028,55 @@ def analyze_liuyue(
         is_yongshen = (tian_wx == yongshen or di_wx == yongshen)
         is_jishen = (tian_wx == jishen or di_wx == jishen)
 
-        # 月令地支与原局地支的冲合
+        # 月令地支与原局地支的冲合（方向标注，与大运/流年一致）
         interactions: List[str] = []
         for pillar_name, pillar in pillars.items():
             p_di = pillar["di"]
+            p_wx = DIZHI_WUXING[p_di]
             if _check_chong(month_di, p_di):
-                interactions.append(f"月令{month_di}与{pillar_name}支{p_di}相冲，主变动")
+                if p_wx == yongshen:
+                    interactions.append(f"月令{month_di}冲{pillar_name}支{p_di}（冲用神，凶）")
+                elif p_wx == jishen:
+                    interactions.append(f"月令{month_di}冲{pillar_name}支{p_di}（冲忌神，去忌为吉）")
+                else:
+                    interactions.append(f"月令{month_di}与{pillar_name}支{p_di}相冲，主变动")
             if _check_he(month_di, p_di):
-                interactions.append(f"月令{month_di}与{pillar_name}支{p_di}六合，主合作")
+                m_wx = DIZHI_WUXING[month_di]
+                if p_wx == yongshen or m_wx == yongshen:
+                    interactions.append(f"月令{month_di}与{pillar_name}支{p_di}六合绊用神")
+                elif p_wx == jishen or m_wx == jishen:
+                    interactions.append(f"月令{month_di}与{pillar_name}支{p_di}六合绊忌神")
+                else:
+                    interactions.append(f"月令{month_di}与{pillar_name}支{p_di}六合，主合作")
 
         # 月令地支与流年地支的冲合（如子月冲午年）
         liunian_di = liunian_ganzhi[1]
+        l_di_wx = DIZHI_WUXING[liunian_di]
         if _check_chong(month_di, liunian_di):
-            interactions.append(f"月令{month_di}与流年{liunian_di}相冲，流月冲流年主大变动")
+            if l_di_wx == yongshen:
+                interactions.append(f"月令{month_di}冲流年{liunian_di}（冲用神，凶）")
+            elif l_di_wx == jishen:
+                interactions.append(f"月令{month_di}冲流年{liunian_di}（冲忌神，去忌为吉）")
+            else:
+                interactions.append(f"月令{month_di}与流年{liunian_di}相冲，主变动")
         if _check_he(month_di, liunian_di):
-            interactions.append(f"月令{month_di}与流年{liunian_di}六合，流月合流年主顺遂")
+            m_wx = DIZHI_WUXING[month_di]
+            if l_di_wx == yongshen or m_wx == yongshen:
+                interactions.append(f"月令{month_di}与流年{liunian_di}六合绊用神")
+            elif l_di_wx == jishen or m_wx == jishen:
+                interactions.append(f"月令{month_di}与流年{liunian_di}六合绊忌神")
+            else:
+                interactions.append(f"月令{month_di}与流年{liunian_di}六合，主合作")
 
-        has_chong = any("相冲" in inter for inter in interactions)
-        has_zi_xing = False
         # 自刑（月令与原局相同地支）
         for pillar_name, pillar in pillars.items():
             zx = _check_zi_xing(month_di, pillar["di"])
             if zx:
                 interactions.append(f"月令{month_di}与{pillar_name}支{zx}")
-                has_zi_xing = True
 
-        # 综合吉凶判断
+        # 综合吉凶判断（冲合化刑由 _compute_overall_judge 从 interactions 解析）
         overall_judge = _compute_overall_judge(
-            tian_wx, di_wx, yongshen, jishen, interactions, has_chong, has_zi_xing,
+            tian_wx, di_wx, yongshen, jishen, interactions,
         )
 
         # 构建理由

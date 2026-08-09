@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import { authApi, type UserInfo } from '../api/auth'
+import { useChatStore } from './chatStore'
+import { usePersonStore } from './personStore'
+import { useTransactionStore } from './transactionStore'
 
 interface UserState {
   user: UserInfo | null
@@ -101,6 +104,10 @@ export const useUserStore = create<UserState>((set, get) => ({
   logout: () => {
     localStorage.removeItem('mingli_token')
     localStorage.removeItem('mingli_user')
+    // 退出登录时清空本地所有用户数据，防止公用设备残留上一个用户的隐私数据
+    useChatStore.getState().deleteAllChats()
+    usePersonStore.getState().clearPersons()
+    useTransactionStore.getState().clearTransactions()
     set({ user: null, token: null, isLoggedIn: false })
   },
 
@@ -152,6 +159,10 @@ export const useUserStore = create<UserState>((set, get) => ({
   clearUser: () => {
     localStorage.removeItem('mingli_token')
     localStorage.removeItem('mingli_user')
+    // 同步清空本地用户数据，保证退出/重置后无隐私残留
+    useChatStore.getState().deleteAllChats()
+    usePersonStore.getState().clearPersons()
+    useTransactionStore.getState().clearTransactions()
     set({ user: null, token: null, isLoggedIn: false, error: null })
   },
 }))

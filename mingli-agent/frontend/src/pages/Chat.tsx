@@ -89,11 +89,12 @@ export default function Chat() {
   const {
     messages,
     currentMessage,
-    isGenerating,
     fetchMessages,
     addMessage,
+    setCurrentPerson,
     setCurrentMessage,
-    setIsGenerating,
+    setPersonGenerating,
+    isPersonGenerating,
     hasFirstReading,
     setFirstReadingGenerated,
   } = useChatStore()
@@ -105,21 +106,19 @@ export default function Chat() {
   const [baziResult, setBaziResult] = useState<AnalyzeResult | null>(null)
   const [cardPhase, setCardPhase] = useState<'loading' | 'ready' | 'done' | 'error'>('loading')
   const [isRechargeOpen, setIsRechargeOpen] = useState(false)
-  // 生成进度相关状态
-  const [progressPercent, setProgressPercent] = useState(0)
-  const [estimatedTime, setEstimatedTime] = useState('')
+  // 生成进度相关状态（按人独立，支持并发生成）
+  const [progressMap, setProgressMap] = useState<Record<number, { percent: number; time: string }>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   // 滚动控制状态
   const [scrollButton, setScrollButton] = useState<'up' | 'down' | null>(null)
   // optimistic用户消息：发送追问时立即显示，fetchMessages后自动清除
   const [pendingUserMsg, setPendingUserMsg] = useState<string | null>(null)
+  // optimistic 消息所属的 personId，防止切换会话后泄漏到其他人的对话框
+  const [pendingUserMsgPid, setPendingUserMsgPid] = useState<number | null>(null)
   
-  // 同步锁，防止快速重复发送（解决 setState 异步导致的竞态问题）
-  const isSendingRef = useRef(false)
-
-  // 请求ID追踪，防止重复发送
-  const lastRequestIdRef = useRef<string>('')
+  // 同步锁（按人独立），防止同一人物快速重复发送；不同人物可并发
+  const isSendingMapRef = useRef<Map<number, boolean>>(new Map())
 
   // 最后发送内容与时间戳，用于拦截重复提交（点击/回车二次触发、移动端双击等）
   const lastSentContentRef = useRef<string>('')
@@ -128,19 +127,29 @@ export default function Chat() {
   // 🛡️ 第二层：requestAnimationFrame 级别防抖，防止同一帧内 click + touchend 双重触发
   const sendPendingRef = useRef(false)
 
-  // AbortController，用于取消之前的请求
-  const abortControllerRef = useRef<AbortController | null>(null)
-  
+  // AbortController（按人独立），用于取消该人物之前的请求
+  const abortControllersRef = useRef<Map<number, AbortController>>(new Map())
+  // 生成代际计数（按人），防止同人物重发时旧 finally 误清新生成状态
+  const genCounterRef = useRef<Map<number, number>>(new Map())
+
   // 防抖滚动引用
   const debounceScrollRef = useRef<number | null>(null)
   
-  // 进度条定时器引用
-  const progressTimerRef = useRef<number | null>(null)
+  // 进度条定时器引用（按人独立）
+  const progressTimersRef = useRef<Map<number, number>>(new Map())
+  // 生成状态轮询定时器（按人独立）：刷新后恢复进度条时，轮询后端任务状态直到完成
+  const generatingPollRef = useRef<Map<number, number>>(new Map())
   
   // 上一次滚动位置
   const lastScrollTopRef = useRef(0)
   // 滚动防抖定时器
   const scrollTimerRef = useRef<number | null>(null)
+
+  // debug 日志仅输出到 console（避免 async 函数中频繁 setState 触发不必要的重渲染）
+  const dlog = (msg: string) => {
+    const ts = new Date().toLocaleTimeString()
+    console.log(`[${ts}] ${msg}`)
+  }
 
   // 滚动监听，智能显示翻页按钮
   useEffect(() => {
@@ -257,18 +266,17 @@ export default function Chat() {
     })
   }
 
-  // 启动进度条和预计时间更新
-  const startProgress = () => {
+  // 启动进度条和预计时间更新（按人独立）
+  const startProgress = (personId: number) => {
     // 立即显示初始进度10%，避免用户等待
-    setProgressPercent(10)
-    setEstimatedTime('约3分钟')
+    setProgressMap(prev => ({ ...prev, [personId]: { percent: 10, time: '约3分钟' } }))
     let elapsed = 0
-    
-    if (progressTimerRef.current) {
-      clearInterval(progressTimerRef.current)
-    }
-    
-    progressTimerRef.current = window.setInterval(() => {
+
+    // 清掉该人旧定时器
+    const oldTimer = progressTimersRef.current.get(personId)
+    if (oldTimer) clearInterval(oldTimer)
+
+    const timer = window.setInterval(() => {
       elapsed += 1
       // 模拟进度：前60秒到30%，中间60秒到70%，最后60秒到95%
       let percent = 10 // 初始10%
@@ -279,27 +287,59 @@ export default function Chat() {
       } else {
         percent = 70 + Math.min(25, ((elapsed - 120) / 60) * 25)
       }
-      setProgressPercent(Math.round(percent))
-      
-      // 固定显示预计时间，不实时计算
-      if (elapsed < 60) {
-        setEstimatedTime('约3分钟')
-      } else if (elapsed < 120) {
-        setEstimatedTime('约2分钟')
-      } else {
-        setEstimatedTime('即将完成...')
-      }
+      const time = elapsed < 60 ? '约3分钟' : elapsed < 120 ? '约2分钟' : '即将完成...'
+      setProgressMap(prev => ({ ...prev, [personId]: { percent: Math.round(percent), time } }))
     }, 1000)
+    progressTimersRef.current.set(personId, timer)
   }
 
-  // 停止进度条
-  const stopProgress = () => {
-    if (progressTimerRef.current) {
-      clearInterval(progressTimerRef.current)
-      progressTimerRef.current = null
+  // 停止进度条（按人独立）
+  const stopProgress = (personId: number) => {
+    const timer = progressTimersRef.current.get(personId)
+    if (timer) {
+      clearInterval(timer)
+      progressTimersRef.current.delete(personId)
     }
-    setProgressPercent(0)
-    setEstimatedTime('')
+    setProgressMap(prev => {
+      if (!prev[personId]) return prev
+      const next = { ...prev }
+      delete next[personId]
+      return next
+    })
+  }
+
+  // 启动生成状态轮询（刷新后恢复用）：每 3 秒查后端任务是否完成，完成后拉取消息
+  const startGeneratingPoll = (personId: number, sid: number) => {
+    const oldTimer = generatingPollRef.current.get(personId)
+    if (oldTimer) clearInterval(oldTimer)
+    const timer = window.setInterval(async () => {
+      try {
+        const { generating, error } = await chatApi.getGeneratingStatus(sid)
+        if (error) {
+          // 任务异常：显示错误提示，停止进度条
+          logger.error(`[Resume] 后台生成异常`, { personId, error })
+          clearInterval(timer)
+          generatingPollRef.current.delete(personId)
+          setPersonGenerating(personId, false)
+          stopProgress(personId)
+          setPendingUserMsg(null)
+          setPendingUserMsgPid(null)
+          alert(`生成失败，请稍后重试`)
+          await fetchUserInfo()
+        } else if (!generating) {
+          logger.info(`[Resume] 后台生成完成，拉取消息并停止进度条`, { personId })
+          clearInterval(timer)
+          generatingPollRef.current.delete(personId)
+          setPersonGenerating(personId, false)
+          stopProgress(personId)
+          await fetchMessages(personId, sid)
+          await fetchUserInfo()
+        }
+      } catch (e) {
+        logger.warn(`[Resume] 轮询失败`, String(e))
+      }
+    }, 3000)
+    generatingPollRef.current.set(personId, timer)
   }
 
   // 消息或流式内容变化时：只在用户已经接近底部，或正在生成回复时自动滚动
@@ -308,9 +348,12 @@ export default function Chat() {
     scrollToBottom({ force: false })
   }, [messages, currentMessage, pendingUserMsg])
 
+  // optimistic 问题在生成完成（finally/catch 里 fetchMessages 后）清除，不在此 effect 提前清除
+  // 提前清除会导致重试场景（messages 已有历史相同问题）optimistic 被误清，问题不显示
+
   useEffect(() => {
     if (!personId) return
-    logger.info(`[Lifecycle] Chat组件挂载`, { personId })
+    logger.info(`[Lifecycle] Chat组件 personId变更`, { personId })
     const id = parseInt(personId)
     const p = getPerson(id)
     if (!p) {
@@ -319,24 +362,50 @@ export default function Chat() {
       return
     }
     setPerson(p)
-    // 获取 session_id 并从后端拉取消息
-    chatApi.getSessions().then(sessions => {
+    // 切换当前会话（加载本地缓存，不重置生成状态，让生成中切换后进度条保留）
+    setCurrentPerson(id)
+    // 获取 session_id 并从后端拉取消息（person-safe：仅当前会话才更新可视列表）
+    chatApi.getSessions().then(async sessions => {
       const s = sessions.find(s => s.person_id === id)
       if (s) {
         setSessionId(s.id)
-        fetchMessages(id, s.id)
+        await fetchMessages(id, s.id)
+        // 刷新后恢复：查询该会话是否在后台生成中（任务化，SSE 断开不影响生成）
+        try {
+          const { generating, error } = await chatApi.getGeneratingStatus(s.id)
+          if (error) {
+            // 上次任务异常：显示错误提示（不恢复进度条）
+            logger.error(`[Resume] 上次生成异常`, { personId: id, error })
+            alert(`生成失败，请稍后重试`)
+          } else if (generating && !isPersonGenerating(id)) {
+            logger.info(`[Resume] 后台生成中，恢复进度条并启动轮询`, { personId: id })
+            setPersonGenerating(id, true)
+            startProgress(id)
+            startGeneratingPoll(id, s.id)
+          }
+        } catch (e) {
+          logger.warn(`[Resume] generating-status 查询失败`, String(e))
+        }
       }
     }).catch(err => {
       logger.error(`获取sessions失败`, String(err))
     })
-
-    // 切换对话框时取消未完成的流式请求
-    return () => {
-      logger.info(`[Lifecycle] Chat组件卸载`, { personId })
-      abortControllerRef.current?.abort()
-      abortControllerRef.current = null
-    }
+    // 不在 personId 切换时 abort，让生成在后台继续；abort 移到下方卸载 effect
   }, [personId])
+
+  // 仅在组件真正卸载（离开 /chat 路由）时中断所有人物的流式请求并清理进度/轮询定时器；
+  // personId 切换不触发此 cleanup，保证后台生成继续、切回时进度条仍在
+  useEffect(() => {
+    return () => {
+      logger.info(`[Lifecycle] Chat组件真正卸载，abort所有人物的流式请求`)
+      abortControllersRef.current.forEach((c) => c.abort())
+      abortControllersRef.current.clear()
+      progressTimersRef.current.forEach((t) => clearInterval(t))
+      progressTimersRef.current.clear()
+      generatingPollRef.current.forEach((t) => clearInterval(t))
+      generatingPollRef.current.clear()
+    }
+  }, [])
 
   // person 删除后的跳转由 HistoryPanel 的 navigate 负责，避免双重 navigate 冲突
   // SSE 流未中断的部分由 catch 里的 personExists 检查静默处理
@@ -372,103 +441,91 @@ export default function Chat() {
 
   const handleGenerateFirstReading = async () => {
     const callId = traceId()
+    const pid = person?.id
     logger.info(`[${callId}] handleGenerateFirstReading 入口`, {
-      isSending: isSendingRef.current,
+      isSending: pid != null ? isSendingMapRef.current.get(pid) : undefined,
       hasPerson: !!person,
-      isGenerating,
+      isGenerating: pid != null ? isPersonGenerating(pid) : undefined,
       hasBaziResult: !!baziResult,
       userPoints: user?.points ?? 'unknown',
     })
-    if (isSendingRef.current) {
+    if (!person || pid == null) return
+    if (isSendingMapRef.current.get(pid)) {
       logger.warn(`[${callId}] 被ref锁拦截`)
       return
     }
-    isSendingRef.current = true
+    isSendingMapRef.current.set(pid, true)
 
-    if (!person || isGenerating) {
-      logger.warn(`[${callId}] 前置条件不满足`, { hasPerson: !!person, isGenerating })
-      isSendingRef.current = false
+    if (isPersonGenerating(pid)) {
+      logger.warn(`[${callId}] 前置条件不满足`, { isGenerating: true })
+      isSendingMapRef.current.set(pid, false)
       return
     }
     if (!baziResult) {
       logger.warn(`[${callId}] baziResult为null`)
       alert('命理分析数据未就绪，请稍后重试')
-      isSendingRef.current = false
+      isSendingMapRef.current.set(pid, false)
       return
     }
     if (!sessionId) {
       logger.warn(`[${callId}] sessionId未就绪`)
       alert('会话未就绪，请稍后重试')
-      isSendingRef.current = false
+      isSendingMapRef.current.set(pid, false)
       return
     }
     // 注意：首次解读费用在创建 person 时已扣除（后端 person.py 扣 POINTS_FIRST_READING），
     // first-reading 接口不再扣分，此处无需积分检查与本地扣分
 
-    // 生成唯一请求ID，防止重复发送
-    const requestId = `first-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    
-    // 如果当前正在发送相同内容的请求，直接返回
-    if (lastRequestIdRef.current === requestId) {
-      isSendingRef.current = false
-      return
-    }
-    
-    // 取消之前的请求
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-    abortControllerRef.current = new AbortController()
+    // 取消该人物之前的请求
+    abortControllersRef.current.get(pid)?.abort()
+    const controller = new AbortController()
+    abortControllersRef.current.set(pid, controller)
 
-    lastRequestIdRef.current = requestId
-    setIsGenerating(true, Number(person.id))
+    // 生成代际：防止同人物重发时旧 finally 误清新状态
+    const myGen = (genCounterRef.current.get(pid) ?? 0) + 1
+    genCounterRef.current.set(pid, myGen)
+
+    setPersonGenerating(pid, true)
     setCurrentMessage('')
-    // 启动进度条和预计时间
-    startProgress()
+    startProgress(pid)
 
     try {
       scrollToBottom({ force: true })
       logger.info(`[${callId}] 调用 getFirstReadingStream`, { sessionId })
 
-      // 使用 getFirstReadingStream：后端生成 + 存 AI 回复（不扣积分，积分在创建 person 时已扣）
-      const response = await chatApi.getFirstReadingStream(sessionId)
+      const response = await chatApi.getFirstReadingStream(sessionId, controller.signal)
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
       const contentType = response.headers.get('content-type') || ''
-      // 后端可能返回 JSON（已有首次解读）或 SSE 流（新生成）
       if (contentType.includes('application/json')) {
-        // 已有首次解读，直接拉取消息
         logger.info(`[${callId}] 首次解读已存在（JSON响应），拉取消息`)
-        await fetchMessages(person.id, sessionId)
-        setFirstReadingGenerated(person.id)
+        await fetchMessages(pid, sessionId)
+        setFirstReadingGenerated(pid)
       } else {
-        // 流式响应
         let acc = ''
         let saved = false
         logger.info(`[${callId}] SSE连接建立，开始接收首次解读chunks`)
         await parseSSEStream(response, (chunk) => {
           acc += chunk
-          // 过滤 __SAVED__ 标记
           const savedIdx = acc.indexOf('__SAVED__')
           if (savedIdx >= 0) {
             saved = true
             const display = acc.slice(0, savedIdx).replace(/\n+$/, '')
-            setCurrentMessage(display, person.id)
+            setCurrentMessage(display, pid)
           } else {
-            setCurrentMessage(acc, person.id)
+            setCurrentMessage(acc, pid)
           }
         })
         logger.success(`[${callId}] SSE流完成`, { accLen: acc.length, saved })
 
         if (saved) {
           setCurrentMessage('')
-          await fetchMessages(person.id, sessionId)
-          setFirstReadingGenerated(person.id)
-          await fetchUserInfo() // 同步积分显示
+          await fetchMessages(pid, sessionId)
+          setFirstReadingGenerated(pid)
+          await fetchUserInfo()
         }
       }
     } catch (err: any) {
-      // abort 中断（如删除人物、切换页面）不算失败，静默处理
       const personExists = usePersonStore.getState().persons.some(p => p.id === parseInt(personId || '0'))
       if (err?.name === 'AbortError' || !personExists) {
         logger.info(`[${callId}] 请求被中断或person已删除`)
@@ -476,84 +533,99 @@ export default function Chat() {
         logger.error(`[${callId}] 生成失败`, { error: String(err) })
         alert(`生成失败: ${String(err).replace('Error: ', '')}`)
       }
-      await fetchUserInfo() // 失败时同步积分（恢复本地误扣）
+      await fetchUserInfo()
     } finally {
-      setIsGenerating(false)
-      isSendingRef.current = false
-      lastRequestIdRef.current = ''
-      abortControllerRef.current = null
-      stopProgress()
-      logger.info(`[${callId}] 完成，锁已释放`)
+      // 仅当代际匹配（即没有被更新的发送覆盖）才清状态
+      if (genCounterRef.current.get(pid) === myGen) {
+        setPersonGenerating(pid, false)
+        isSendingMapRef.current.set(pid, false)
+        abortControllersRef.current.delete(pid)
+        stopProgress(pid)
+        logger.info(`[${callId}] 完成，锁已释放`, { pid })
+      } else {
+        logger.info(`[${callId}] 旧代际完成，跳过清状态`, { pid, myGen, current: genCounterRef.current.get(pid) })
+      }
     }
   }
 
-  const handleSend = async () => {
+  const handleSend = async (overrideQuestion?: string) => {
     const callId = traceId()
+    const pid = person?.id
+    const isResume = !!overrideQuestion
+    dlog(`handleSend入口 callId=${callId} pid=${pid} isResume=${isResume} inputLen=${(overrideQuestion ?? inputValue).length}`)
     logger.info(`[${callId}] handleSend 入口`, {
-      isSending: isSendingRef.current,
+      isSending: pid != null ? isSendingMapRef.current.get(pid) : undefined,
       sendPending: sendPendingRef.current,
-      inputLen: inputValue.length,
-      isGenerating,
+      inputLen: (overrideQuestion ?? inputValue).length,
+      isResume,
+      isGenerating: pid != null ? isPersonGenerating(pid) : undefined,
       hasPerson: !!person,
       hasBaziResult: !!baziResult,
       userPoints: user?.points ?? 'unknown',
     })
 
-    // 🛡️ 第一层：ref 锁，同 tick 内防重
-    if (isSendingRef.current) {
-      logger.warn(`[${callId}] 被ref锁拦截`, { isSending: true })
-      return
-    }
-    // 🛡️ 第二层：rAF 帧级防抖，解决移动端 click + touchend 双重触发
-    if (sendPendingRef.current) {
+    // 🛡️ 第二层：rAF 帧级防抖，解决移动端 click + touchend 双重触发（恢复场景跳过）
+    if (!isResume && sendPendingRef.current) {
       logger.warn(`[${callId}] 被rAF帧防抖拦截`, { sendPending: true })
       return
     }
     sendPendingRef.current = true
     requestAnimationFrame(() => { sendPendingRef.current = false })
 
-    isSendingRef.current = true
-    logger.info(`[${callId}] 锁已获取，进入主流程`)
+    if (!person || pid == null) return
+    // 同人物发送锁：防止同一人物快速重复发送；不同人物可并发
+    if (isSendingMapRef.current.get(pid)) {
+      dlog(`被ref锁拦截，退出`)
+      logger.warn(`[${callId}] 被该人物ref锁拦截`, { pid })
+      return
+    }
+    isSendingMapRef.current.set(pid, true)
+    dlog(`锁已获取，进入主流程`)
+    logger.info(`[${callId}] 锁已获取，进入主流程`, { pid })
 
     // 预处理输入：移除换行符和多余空白字符，防止文字被截断
-    const normalizedInput = inputValue.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
-    
-    // 检查基本条件
+    const normalizedInput = (overrideQuestion ?? inputValue).replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
+
     if (!normalizedInput) {
+      dlog(`输入为空，退出`)
       logger.warn(`[${callId}] 输入为空，退出`)
-      isSendingRef.current = false
-      return
-    }
-    if (!person) {
-      logger.warn(`[${callId}] person为null，退出`)
-      isSendingRef.current = false
-      return
-    }
-    if (isGenerating) {
-      logger.warn(`[${callId}] 正在生成中，退出`)
-      isSendingRef.current = false
+      isSendingMapRef.current.set(pid, false)
       return
     }
     if (!baziResult) {
+      dlog(`baziResult未就绪，退出`)
       logger.warn(`[${callId}] baziResult未就绪，退出`)
       alert('命理数据未就绪，请稍等或刷新页面重试')
-      isSendingRef.current = false
+      isSendingMapRef.current.set(pid, false)
       return
     }
     if (!sessionId) {
+      dlog(`sessionId未就绪，退出`)
       logger.warn(`[${callId}] sessionId未就绪，退出`)
       alert('会话未就绪，请稍后重试')
-      isSendingRef.current = false
+      isSendingMapRef.current.set(pid, false)
       return
     }
-    if ((user?.points ?? 0) < 40) {
+    dlog(`前置检查通过 sid=${sessionId} question=${normalizedInput.slice(0, 30)}`)
+
+    const question = normalizedInput
+
+    // 重试判定：上一条消息是相同内容的 user 消息（中断后重问），重试时跳过积分门槛
+    const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null
+    const isRetryOfUnanswered = !!(
+      lastMsg
+      && lastMsg.role === 'user'
+      && lastMsg.content.replace(/\s+/g, ' ').trim() === question
+      && question.length > 0
+    )
+
+    if (!isRetryOfUnanswered && (user?.points ?? 0) < 40) {
       logger.warn(`[${callId}] 积分不足`, { points: user?.points })
       setIsRechargeOpen(true)
-      isSendingRef.current = false
+      isSendingMapRef.current.set(pid, false)
       return
     }
 
-    const question = normalizedInput
     setInputValue('')
 
     // 拦截重复发送：仅拦截短时间内（3秒内）的重复提交
@@ -565,93 +637,153 @@ export default function Chat() {
         lastContent: lastSentContentRef.current.slice(0, 30),
         diffMs: now - lastSentTimeRef.current,
       })
-      isSendingRef.current = false
+      isSendingMapRef.current.set(pid, false)
       return
     }
     lastSentContentRef.current = question
     lastSentTimeRef.current = now
 
-    // ========== 关键：先验证问题有效性，不通过则不扣积分 ==========
+    // 该人物正在生成时拒绝新请求（后端任务化，旧任务需完成或超时后才能发新问题）
+    if (isPersonGenerating(pid)) {
+      dlog(`被isPersonGenerating拦截（前端状态卡在生成中），退出`)
+      logger.warn(`[${callId}] 该人物正在生成，拒绝新请求`, { pid })
+      alert('正在生成中，请稍候完成后再发送新问题')
+      isSendingMapRef.current.set(pid, false)
+      return
+    }
+    dlog(`生成状态检查通过，准备发请求`)
+
+    // 生成代际：防止同人物重发时旧 finally 误清新状态
+    const myGen = (genCounterRef.current.get(pid) ?? 0) + 1
+    genCounterRef.current.set(pid, myGen)
+
+    const controller = new AbortController()
+    abortControllersRef.current.set(pid, controller)
+
+    // 立即显示进度条 + optimistic 问题（重试也显示，让用户看到刚发的问题）
+    setPersonGenerating(pid, true)
+    setCurrentMessage('')
+    startProgress(pid)
+    setPendingUserMsg(question)
+    setPendingUserMsgPid(pid)
+    scrollToBottom({ force: true })
+
+    // ========== 验证问题有效性，不通过则回滚 ==========
     try {
+      dlog(`调用validateQuestion...`)
       const validation = await chatApi.validateQuestion(question)
+      dlog(`validateQuestion返回 valid=${validation.valid} msg=${validation.message}`)
       if (!validation.valid) {
-        addMessage(person.id, 'assistant', validation.message)
+        addMessage(pid, 'assistant', validation.message)
         setCurrentMessage('')
-        isSendingRef.current = false
-        logger.info(`[${callId}] 问题验证未通过`, { msg: validation.message })
+        setPersonGenerating(pid, false)
+        stopProgress(pid)
+        setPendingUserMsg(null)
+        setPendingUserMsgPid(null)
+        isSendingMapRef.current.set(pid, false)
+        abortControllersRef.current.delete(pid)
+        logger.info(`[${callId}] 问题验证未通过，已回滚`, { msg: validation.message })
         return
       }
     } catch (err) {
+      dlog(`validateQuestion异常: ${String(err)}`)
       logger.warn(`[${callId}] 验证接口调用失败，降级处理`, String(err))
       if (!question.trim() || question.length < 2) {
-        addMessage(person.id, 'assistant', '请输入您想咨询的问题，本次不扣除积分～')
-        isSendingRef.current = false
+        addMessage(pid, 'assistant', '请输入您想咨询的问题，本次不扣除积分～')
+        setPersonGenerating(pid, false)
+        stopProgress(pid)
+        setPendingUserMsg(null)
+        setPendingUserMsgPid(null)
+        isSendingMapRef.current.set(pid, false)
+        abortControllersRef.current.delete(pid)
         return
       }
     }
 
-    // 立即设置生成状态并启动进度条
-    setIsGenerating(true, person.id)
-    setCurrentMessage('')
-    startProgress()
-
     try {
-      // 取消之前的请求
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
-        logger.info(`[${callId}] 取消之前的请求`)
-      }
-      abortControllerRef.current = new AbortController()
-
-      logger.info(`[${callId}] 请求初始化完成，调用 sendMessageStream`, { sessionId, questionLen: question.length })
-      // optimistic UI：立即显示用户问题，fetchMessages后自动清除
-      setPendingUserMsg(question)
-      scrollToBottom({ force: true })
+      dlog(`调用sendMessageStream sid=${sessionId} isRetry=${isRetryOfUnanswered}`)
+      logger.info(`[${callId}] 请求初始化完成，调用 sendMessageStream`, { sessionId, questionLen: question.length, isRetry: isRetryOfUnanswered })
 
       // 使用 sendMessageStream：后端扣积分 + 存用户消息 + 流式返回 + 存 AI 回复
       let acc = ''
       let saved = false
-      const response = await chatApi.sendMessageStream(sessionId, question)
+      const response = await chatApi.sendMessageStream(sessionId, question, controller.signal)
+      dlog(`sendMessageStream响应 status=${response.status} ok=${response.ok}`)
+      // 后端任务化：若该 session 正在生成（前端状态未同步时后端兜底），回滚并提示
+      if (response.status === 409) {
+        logger.warn(`[${callId}] 后端返回409：正在生成中`, { pid })
+        setPersonGenerating(pid, false)
+        stopProgress(pid)
+        setPendingUserMsg(null)
+        setPendingUserMsgPid(null)
+        isSendingMapRef.current.set(pid, false)
+        abortControllersRef.current.delete(pid)
+        alert('正在生成中，请稍候完成后再发送新问题')
+        return
+      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       logger.info(`[${callId}] SSE连接建立，开始接收chunks`)
+      let sseError: string | null = null
       await parseSSEStream(response, (chunk) => {
         acc += chunk
-        // 过滤 __SAVED__ 标记，不显示给用户
+        const errorIdx = acc.indexOf('__ERROR__:')
+        if (errorIdx >= 0) {
+          // 后端任务异常：提取错误信息，显示提示
+          sseError = acc.slice(errorIdx + '__ERROR__:'.length).split('\n')[0].trim()
+          logger.error(`[${callId}] SSE 收到任务异常标记`, { sseError })
+          return
+        }
         const savedIdx = acc.indexOf('__SAVED__')
         if (savedIdx >= 0) {
           saved = true
           const display = acc.slice(0, savedIdx).replace(/\n+$/, '')
-          setCurrentMessage(display, person.id)
+          setCurrentMessage(display, pid)
         } else {
-          setCurrentMessage(acc, person.id)
+          setCurrentMessage(acc, pid)
         }
       })
-      logger.success(`[${callId}] SSE流完成`, { totalLen: acc.length, saved })
+      logger.success(`[${callId}] SSE流完成`, { totalLen: acc.length, saved, sseError })
+      dlog(`SSE流完成 totalLen=${acc.length} saved=${saved} sseError=${sseError}`)
 
-      // 收到 __SAVED__：后端已存库，从后端拉取最新消息（以 DB 为准）
-      if (saved) {
+      if (sseError) {
+        // 任务异常：显示错误提示（积分已在重试场景免扣，正常场景不退）
+        setPendingUserMsg(null)
+        setPendingUserMsgPid(null)
+        dlog(`任务异常，显示alert: ${sseError}`)
+        alert(`生成失败(${sseError})，请稍后重试`)
+      } else if (saved) {
+        dlog(`存库完成，拉取消息`)
         setCurrentMessage('')
-        await fetchMessages(person.id, sessionId)
-        setPendingUserMsg(null) // fetchMessages已拉取到用户消息，清除optimistic
-        await fetchUserInfo() // 刷新积分显示（后端已扣 40 积分）
+        await fetchMessages(pid, sessionId)
+        setPendingUserMsg(null)
+        setPendingUserMsgPid(null)
+        await fetchUserInfo() // 刷新积分显示
       }
     } catch (err: any) {
-      // abort 中断（如删除人物、切换页面）不算失败，静默处理
+      dlog(`catch异常: name=${err?.name} message=${err?.message} stack=${err?.stack?.slice(0, 200)}`)
       const personExists = usePersonStore.getState().persons.some(p => p.id === parseInt(personId || '0'))
       if (err?.name === 'AbortError' || !personExists) {
+        dlog(`请求被中断或person已删除`)
         logger.info(`[${callId}] 请求被中断或person已删除`)
       } else {
+        dlog(`发送失败: ${String(err)}`)
         logger.error(`[${callId}] 发送失败`, { error: String(err) })
+        alert(`发送失败: ${err?.name || 'Error'} - ${err?.message || String(err)}`)
       }
-      // 后端可能已扣积分但流中断，刷新积分获取真实值
       await fetchUserInfo()
     } finally {
-      setIsGenerating(false)
-      setPendingUserMsg(null)
-      isSendingRef.current = false
-      abortControllerRef.current = null
-      stopProgress()
-      logger.info(`[${callId}] 完成，锁已释放`)
+      // 仅当代际匹配才清状态，避免旧 finally 误清新生成
+      if (genCounterRef.current.get(pid) === myGen) {
+        setPersonGenerating(pid, false)
+        setPendingUserMsg(null)
+        setPendingUserMsgPid(null)
+        isSendingMapRef.current.set(pid, false)
+        abortControllersRef.current.delete(pid)
+        stopProgress(pid)
+        logger.info(`[${callId}] 完成，锁已释放`, { pid })
+      } else {
+        logger.info(`[${callId}] 旧代际完成，跳过清状态`, { pid, myGen, current: genCounterRef.current.get(pid) })
+      }
     }
   }
 
@@ -664,6 +796,16 @@ export default function Chat() {
   }
 
   const hasGenerated = hasFirstReading(person.id)
+
+  // 重试判定：上一条消息是相同内容的 user 消息（中断后重问），用于按钮分支、文案、跳过积分门槛
+  const lastMsgForRetry = messages.length > 0 ? messages[messages.length - 1] : null
+  const isRetryOfUnanswered = !!(
+    lastMsgForRetry
+    && lastMsgForRetry.role === 'user'
+    && lastMsgForRetry.content.replace(/\s+/g, ' ').trim()
+      === inputValue.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
+    && inputValue.trim().length > 0
+  )
 
   return (
     <div style={{ maxWidth: '768px', margin: '0 auto', minHeight: '100vh' }}>
@@ -818,8 +960,8 @@ export default function Chat() {
               </div>
             ))}
 
-            {/* optimistic用户消息：发送追问时立即显示，fetchMessages后清除 */}
-            {pendingUserMsg && (
+            {/* optimistic用户消息：发送追问时立即显示，fetchMessages后清除；仅当前生成人物显示 */}
+            {pendingUserMsg && pendingUserMsgPid === person.id && (
               <div className="flex justify-end items-start gap-2">
                 <div className="max-w-[80%] px-4 py-3 rounded-2xl bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-br-sm">
                   <div className="whitespace-pre-wrap">{pendingUserMsg}</div>
@@ -827,8 +969,12 @@ export default function Chat() {
               </div>
             )}
 
-            {/* 正在生成提示 - 始终显示进度条 */}
-            {isGenerating && (
+            {/* 正在生成提示 - 仅当前人物在生成时显示进度条，切换会话不中断 */}
+            {isPersonGenerating(person.id) && (() => {
+              const p = progressMap[person.id]
+              const percent = p?.percent ?? 0
+              const time = p?.time ?? '约3分钟'
+              return (
               <div className="flex justify-start items-start gap-2">
                 <div className="flex-shrink-0 mt-1">
                   <Logo size={32} dark />
@@ -839,22 +985,23 @@ export default function Chat() {
                     <div className="bazi-loading-mystic text-indigo-400" style={{ fontSize: '1.5rem' }}>☯</div>
                     <span className="text-indigo-400 text-sm animate-pulse">正在生成命理报告，请稍候...</span>
                   </div>
-                  
+
                   {/* 动态进度条 */}
                   <div className="w-full h-2 bg-indigo-100 rounded-full overflow-hidden mb-2">
-                    <div 
+                    <div
                       className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 ease-out"
-                      style={{ width: `${progressPercent}%` }}
+                      style={{ width: `${percent}%` }}
                     />
                   </div>
                   {/* 进度百分比和预计时间 */}
                   <div className="flex justify-between items-center">
-                    <p className="text-indigo-400 text-xs">{progressPercent}%</p>
-                    <p className="text-indigo-300 text-xs">{estimatedTime}</p>
+                    <p className="text-indigo-400 text-xs">{percent}%</p>
+                    <p className="text-indigo-300 text-xs">{time}</p>
                   </div>
                 </div>
               </div>
-            )}
+              )
+            })()}
             <div ref={messagesEndRef} />
           </div>
         )}
@@ -878,7 +1025,10 @@ export default function Chat() {
           <div>
           {/* 积分提示 */}
           <div className="text-center text-gray-400 text-xs pt-2">
-            本次分析消耗 <span className="text-primary-600 font-medium">40</span> 积分，当前余额 <span className="text-primary-600 font-medium">{user?.points ?? 0}</span> 积分
+            {isRetryOfUnanswered
+              ? <>本次为<span className="text-primary-600 font-medium">重新生成</span>，不扣积分（当前余额 <span className="text-primary-600 font-medium">{user?.points ?? 0}</span> 积分）</>
+              : <>本次分析消耗 <span className="text-primary-600 font-medium">40</span> 积分，当前余额 <span className="text-primary-600 font-medium">{user?.points ?? 0}</span> 积分</>
+            }
           </div>
 
           {/* 输入行 */}
@@ -886,6 +1036,7 @@ export default function Chat() {
             <input
               type="text"
               value={inputValue}
+              disabled={!!person && isPersonGenerating(person.id)}
               onChange={(e) => {
                 // 实时移除换行符，防止长文本中间的换行导致内容被截断
                 const cleanVal = e.target.value.replace(/[\r\n]+/g, ' ')
@@ -905,10 +1056,9 @@ export default function Chat() {
                 }
               }}
               placeholder="追问，如：算一下今日运势/工作/财运/子女等"
-              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-full focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all bg-gray-50 text-sm"
-              disabled={isGenerating}
+              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-full focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all bg-gray-50 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
-            {(user?.points ?? 0) < 40 ? (
+            {(user?.points ?? 0) < 40 && !isRetryOfUnanswered ? (
               <button
                 type="button"
                 onClick={() => setIsRechargeOpen(true)}
@@ -919,8 +1069,9 @@ export default function Chat() {
             ) : (
               <button
                 type="button"
+                disabled={!!person && isPersonGenerating(person.id)}
                 onClick={(e) => {
-                  logger.info('[Button] 追问按钮点击', { timeStamp: e.timeStamp, inputLen: inputValue.trim().length, isGenerating, disabled: !inputValue.trim() || isGenerating })
+                  logger.info('[Button] 追问按钮点击', { timeStamp: e.timeStamp, inputLen: inputValue.trim().length })
                   handleSend()
                 }}
                 className="bg-gradient-to-r from-primary-600 to-primary-700 text-white px-5 h-10 rounded-full text-sm font-medium hover:from-primary-700 hover:to-primary-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"

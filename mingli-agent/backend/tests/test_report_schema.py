@@ -93,7 +93,7 @@ class TestFollowupReportValidation:
             "opening": {},
             "subtopics": [{"title": "t", "blocks": [
                 {"type": "keyword", "keyword": "kw", "narrative": "desc",
-                 "term_explain": "解释", "sub_items": ["点1", "点2"]}
+                 "sub_items": ["点1", "点2"]}
             ]}],
             "summary": {"title": "s"},
         }
@@ -101,7 +101,6 @@ class TestFollowupReportValidation:
         block = report.subtopics[0].blocks[0]
         assert block.type == "keyword"
         assert block.keyword == "kw"
-        assert block.term_explain == "解释"
         assert len(block.sub_items) == 2
 
     def test_narrative_block(self):

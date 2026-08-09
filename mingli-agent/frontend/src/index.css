@@ -6,6 +6,13 @@
   box-sizing: border-box;
 }
 
+:root {
+  --font-body: Inter, "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --font-display: Inter, "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --text: #496570;
+  --text-strong: #1f3239;
+}
+
 /* 垂直文字 */
 .writing-vertical {
   writing-mode: vertical-rl;
@@ -15,7 +22,7 @@
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-body);
   background-color: #fdf8f6;
   -webkit-tap-highlight-color: transparent;
 }
@@ -305,17 +312,17 @@ body {
 .report-content {
   font-size: 1rem;
   line-height: 1.9;
-  color: #333333;
+  color: var(--text);
   max-width: none;
   letter-spacing: 0.02em;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-body);
 }
 
 /* 主标题：<h2>一、命盘解码：五行能量格局</h2> */
 .report-content h2 {
   font-size: 1.1rem !important;
   font-weight: 700 !important;
-  color: #2d2d2d !important;
+  color: var(--text-strong) !important;
   margin-top: 2rem;
   margin-bottom: 1.2rem;
   line-height: 1.5;
@@ -327,7 +334,7 @@ body {
 .report-content h3 {
   font-size: 1rem !important;
   font-weight: 700 !important;
-  color: #2d2d2d !important;
+  color: var(--text-strong) !important;
   margin-top: 1.25rem;
   margin-bottom: 0.4rem;
   line-height: 1.55;
@@ -342,7 +349,7 @@ body {
 .report-content h4 {
   font-size: 1rem !important;
   font-weight: 700 !important;
-  color: #2d2d2d !important;
+  color: var(--text-strong) !important;
   margin-top: 1rem;
   margin-bottom: 0.6rem;
   line-height: 1.55;
@@ -352,20 +359,19 @@ body {
 .report-content p strong:first-child {
   font-size: 1em !important;
   font-weight: 700 !important;
-  color: #2d2d2d !important;
+  color: var(--text-strong) !important;
 }
 
 .report-content p {
-  margin-top: 1rem;
-  margin-bottom: 1rem;
+  margin: 10px 0;
   line-height: 2.0;
-  color: #333333;
+  color: var(--text);
   text-align: justify;
 }
 
 /* 加粗样式 */
 .report-content strong {
-  color: #1a1a1a !important;
+  color: var(--text-strong) !important;
   font-weight: 700 !important;
   font-size: 1em !important;
 }
@@ -373,7 +379,7 @@ body {
 /* 【关键词】格式的加粗效果 */
 .report-content strong:contains("【") {
   font-weight: 800;
-  color: #2d2d2d;
+  color: var(--text-strong);
 }
 
 /* 段落总结关键词样式 */
@@ -495,6 +501,56 @@ body {
   border-radius: 0.25rem;
   font-size: 0.88em;
   font-weight: 500;
+}
+
+/* ============================================================
+   追问报告专属样式（结构化 JSON 渲染，紧凑统一间距）
+   覆盖 report-content 默认松散间距，解决"或紧或松"问题
+   ============================================================ */
+.followup-report {
+  font-family: var(--font-body);
+  font-weight: 400;
+  color: var(--text);
+}
+.followup-report p {
+  margin: 10px 0;
+  line-height: 1.85;
+}
+.followup-report h2 {
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.followup-report ul {
+  margin-top: 0.3rem;
+  margin-bottom: 0.3rem;
+}
+.followup-report li {
+  margin-top: 0.3rem;
+  margin-bottom: 0.3rem;
+  line-height: 1.85;
+}
+/* 子问题内部：多 keyword block 适度间距，避免太挤 */
+.followup-report .subtopic-blocks p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.85;
+}
+/* blocks 前的实心圆点序号，暖色系与背景一致 */
+.followup-report .block-bullet {
+  color: #bfa094;
+  margin-right: 0.25rem;
+}
+/* summary 列表项默认圆点，同色系 */
+.followup-report ul li::marker {
+  color: #bfa094;
+}
+.followup-report .subtopic-blocks p:first-child {
+  margin-top: 0;
+}
+.followup-report .subtopic-blocks p:last-child {
+  margin-bottom: 0;
 }
 
 /* ===== 进度条动画 ===== */

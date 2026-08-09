@@ -25,7 +25,6 @@ interface KeywordBlock {
   type: 'keyword'
   keyword: string
   narrative: string
-  term_explain?: string
   sub_items?: string[]
 }
 
@@ -44,7 +43,9 @@ type Block = KeywordBlock | NarrativeBlock | GroupBlock
 
 interface Subtopic {
   title: string
+  lead?: string
   blocks: Block[]
+  closing?: string
 }
 
 interface SummaryItem {
@@ -146,14 +147,13 @@ function OpeningView({ data }: { data: Opening }) {
 /** 单个 block 渲染：根据 type 分发 */
 function BlockView({ data }: { data: Block }) {
   if (data.type === 'keyword') {
+    // 清洗 keyword 字段的 ** 号（LLM 偶尔输出，前端 <strong> 已加粗，不需要 **）
+    const cleanKeyword = (data.keyword || '').replace(/\*\*/g, '').trim()
     return (
       <>
         <p>
-          <strong>{data.keyword}</strong>：{renderBold(data.narrative)}
+          <span className="block-bullet">•</span> <strong>{cleanKeyword}</strong>{data.narrative && <>：{renderBold(data.narrative)}</>}
         </p>
-        {data.term_explain && (
-          <p className="text-gray-500 text-sm">{renderBold(data.term_explain)}</p>
-        )}
         {data.sub_items && (
           <ul>
             {data.sub_items.map((item, i) => (
@@ -178,15 +178,19 @@ function BlockView({ data }: { data: Block }) {
   )
 }
 
-/** 子问题：标题 + blocks */
+/** 子问题：标题 + 可选引导段 + blocks + 可选总结句。标题保留中文序号 */
 function SubtopicView({ data, index }: { data: Subtopic; index: number }) {
   const seq = CN_NUMS[index] || String(index + 1)
   return (
     <>
       <h2>{seq}、{data.title}</h2>
-      {data.blocks.map((block, i) => (
-        <BlockView key={i} data={block} />
-      ))}
+      {data.lead && renderInline(data.lead)}
+      <div className="subtopic-blocks">
+        {data.blocks.map((block, i) => (
+          <BlockView key={i} data={block} />
+        ))}
+      </div>
+      {data.closing && renderInline(data.closing)}
     </>
   )
 }
@@ -254,7 +258,7 @@ export const FollowupReportView = React.memo(({ content }: { content: string }) 
   })
 
   return (
-    <div className="report-content">
+    <div className="report-content followup-report">
       <OpeningView data={data.opening} />
       {data.subtopics.map((sub, i) => (
         <SubtopicView key={i} data={sub} index={i} />

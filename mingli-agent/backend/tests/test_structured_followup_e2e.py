@@ -38,7 +38,7 @@ async def main():
     print(f"✓ 命盘数据生成成功, 日主: {analysis_data.get('rizhu', '?')}")
 
     # 2. 调用正式服务
-    user_question = "那是不是未来十年我尽量不买房，26、27年肯定不会买；未来我更能没有压力的购入房产的时间点是什么时候"
+    user_question = "26年9月返岗后，在当年是否会换组，27年当前公司是否会给我裁员大礼包，大概什么时间，我最好在什么时间离开当前公司"
     print(f"\n用户问题: {user_question}")
     print("-" * 60)
 
@@ -94,6 +94,42 @@ async def main():
         print("⚠ 警告: 开头仍为'直接回答你'")
     else:
         print("✓ 开头多样化")
+
+    # 6. 内容验证（针对本次 prompt 调整）
+    print("\n" + "=" * 60)
+    print("【内容验证】本次 prompt 调整效果检查")
+    print("=" * 60)
+
+    # 6.1 term_explain 残留检查
+    has_term_explain = False
+    for sub in data.get('subtopics', []):
+        for block in sub.get('blocks', []):
+            if block.get('type') == 'keyword' and 'term_explain' in block:
+                has_term_explain = True
+                print(f"  ✗ 残留 term_explain: {block['term_explain'][:40]}")
+    if not has_term_explain:
+        print("  ✓ 无 term_explain 残留（术语已融入 narrative）")
+
+    # 6.2 子问题拆解数量检查
+    sub_count = len(data.get('subtopics', []))
+    print(f"  子问题拆解数量: {sub_count}（期望 2-4 个，禁止只输出1个）")
+    if sub_count >= 2:
+        print("  ✓ 已拆解为多个子问题")
+    elif sub_count == 1:
+        print("  ✗ 仍只输出1个子问题，未执行拆解")
+    else:
+        print("  ✗ 无子问题")
+
+    # 6.3 子问题标题展示
+    print("\n  子问题标题清单：")
+    for i, sub in enumerate(data.get('subtopics', [])):
+        print(f"    {i+1}. {sub.get('title', '?')}")
+
+    # 6.4 完整 JSON 美化输出（用于人工审阅术语融合、内容质量）
+    print("\n" + "=" * 60)
+    print("【完整 JSON 输出】")
+    print("=" * 60)
+    print(json.dumps(data, ensure_ascii=False, indent=2))
 
     print("\n" + "=" * 60)
     print("验证完成")
