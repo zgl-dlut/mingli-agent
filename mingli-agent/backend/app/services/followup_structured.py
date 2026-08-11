@@ -14,6 +14,7 @@ from typing import AsyncGenerator, Dict, List
 from pydantic import ValidationError
 
 from app.schemas.report_schema import FollowupReport
+from app.services.report_styles import pick_styles
 from app.services.skill_prompts import _build_context_vars, _extract_liuyue_data
 from app.services.ai_service import model_pool, get_client, build_llm_extra_body
 
@@ -82,10 +83,11 @@ def _build_history_summary(history: list, max_rounds: int = 5) -> str:
     只保留最近 max_rounds 轮历史，避免 prompt 过长。
 
     每份历史报告提取：
-    - opening.lead 前12字（开头句式，供本次避开雷同）
     - opening.verdict（核心结论）
     - subtopics[].title（各子问题结论标题）
-    - summary 风格标签 + summary.items 或 summary.narrative（行动清单/总结）
+    - summary.items 或 summary.narrative（行动清单/总结）
+
+    开头/总结风格轮换已由后端 pick_styles 代码保证，不再在摘要中提示。
 
     返回摘要文本，约200-400字/份。提取失败的历史消息跳过。
     """
@@ -104,10 +106,7 @@ def _build_history_summary(history: list, max_rounds: int = 5) -> str:
         parts = []
         # 提取核心结论
         opening = data.get("opening") or {}
-        lead = (opening.get("lead") or "").strip()
         verdict = opening.get("verdict")
-        if lead:
-            parts.append(f"上次开头句式：{lead[:12]}（本次开头必须换句式）")
         if verdict:
             parts.append(f"核心结论：{verdict}")
 
@@ -117,21 +116,14 @@ def _build_history_summary(history: list, max_rounds: int = 5) -> str:
         if titles:
             parts.append("已回答：" + "；".join(titles))
 
-        # 提取行动清单 + 总结风格标签
+        # 提取行动清单
         summary = data.get("summary") or {}
-        style_hint = (summary.get("style_hint") or "").strip()
         items = summary.get("items") or []
         if items:
             item_texts = [f"{it.get('keyword', '')}({it.get('text', '')[:40]})" for it in items[:5]]
             parts.append("行动建议：" + "；".join(item_texts))
-            if not style_hint:
-                style_hint = "清单式"
         elif summary.get("narrative"):
             parts.append(f"总结：{summary['narrative'][:80]}")
-            if not style_hint:
-                style_hint = "段落叙事式"
-        if style_hint:
-            parts.append(f"上次总结风格：{style_hint}（本次总结必须换风格）")
 
         if parts:
             summaries.append(f"第{len(summaries) + 1}轮回答：" + " | ".join(parts))
@@ -145,13 +137,25 @@ def _build_history_summary(history: list, max_rounds: int = 5) -> str:
 # 精简 prompt（只含命理逻辑 + JSON 结构示例，不含任何格式规则）
 # ============================================================
 
-def build_structured_prompt(context: dict, history_summary: str = "") -> str:
-    """构建结构化追问 prompt：生活化叙事解读 + 固定JSON结构示例"""
+def build_structured_prompt(
+    context: dict,
+    history_summary: str = "",
+    opening_style: tuple = None,
+    summary_style: tuple = None,
+) -> str:
+    """构建结构化追问 prompt：生活化叙事解读 + 固定JSON结构示例
+
+    opening_style/summary_style 为 (风格名, 描述) 二元组，由后端 pick_styles
+    选定后注入；未传时从风格库随机兜底（仅测试/直接调用场景）。
+    """
+    if opening_style is None or summary_style is None:
+        _o, _s = pick_styles([])
+        opening_style = opening_style or _o
+        summary_style = summary_style or _s
     # 历史摘要区块：有摘要时插入，仅供话题承接，结论以命盘为准
     if history_summary:
         history_section = f"""
-
-# 历史对话摘要（话题承接参考，结论以命盘为准）
+## 历史对话摘要（话题承接参考，结论以命盘为准）
 {history_summary}
 - 历史摘要仅供话题承接，不得作为结论依据；历史结论与命盘冲突时，以命盘为准，可在开篇说明"结合命盘重新看"
 """
@@ -160,26 +164,10 @@ def build_structured_prompt(context: dict, history_summary: str = "") -> str:
     return f"""# 角色
 职场人生顾问，以命盘当作参考依据，全程像真人给朋友出主意，优先讲故事、讲现实走向、给到落地行动方案。全程面向零基础小白，语言口语通俗、故事感充足；大白话叙事是主干（占90%以上），必要命理术语只作"命理出处标签"以括号形式点缀（如"外部压力较大（七杀）"），括号里只放术语名不解释意思，永远先抛出结论、预判现实遭遇、给到可执行做法，保留精准流年流月时间推演。
 
-# 命盘数据
-咨询时间：{context['current_time']}，{context['liunian_ganzhi']}流年{context['liunian_season']}
-日主：{context['rizhu']}（{context['gender']}）
-四柱：{context['sizu']}
-旺衰：{context['wangshuai']}
-格局：{context['geju_description']}
-用神：{context['yongshen']}，忌神：{context['jishen']}
-十神特征：{context['shishen_fenbu']}
-五行分布：{context['wuxing_fenbu']}
-地支作用：{context['dizhi_zuoyong']}
-调候：{context['tiaohou_desc']}
-当前大运：{context['current_dayun']}
-大运解读：{context['dayun_jiedu']}
-重点流年：{context['key_liunian']}
-年龄：{context['age']}岁，{context['age_stage']}
-
 # 命盘权威与方向锁定（最高优先级，无论有无历史摘要都生效）
 - 命盘数据是最高推演依据，所有结论必须以命盘为准，不得臆造命盘未提供的大运、流月、十神
 - 不盲从前轮判断：命盘与历史结论冲突时以命盘为准，可在开篇说明"结合命盘重新看"
-- 严禁编造命理依据：narrative/reason 只能引用上文命盘数据栏已给出的信息
+- 严禁编造命理依据：narrative/reason 只能引用本提示词末尾"命盘数据"栏已给出的信息
 - 禁止自相矛盾（硬约束，最大硬伤，高频违规点，务必执行）：
   - **opening.verdict 必须从 subtopic 的实际细节中提炼**。生成顺序：先把每个子问题的细节走向想清楚写进 subtopic，再据此提炼 opening.verdict。禁止开篇另起炉灶给一个与正文细节打架的定论
   - **典型违规（出现即不合格）**：开篇说"不换组"，正文却讲"分到新组、换新领导"；开篇说"拿不到裁员大礼包"，正文却说"苟住能拿赔偿金"。开篇定论与正文细节字面冲突，会让用户彻底失去信任
@@ -226,16 +214,13 @@ def build_structured_prompt(context: dict, history_summary: str = "") -> str:
   - 忌神五行当令的凶年=耗身，才能说耗损/消耗
   - 用神/忌神以命盘数据栏"用神""忌神"为准，禁止自行判定五行喜忌
 - 吉年正向引导（当用户问启动类问题时）：命盘有吉年（吉/大吉）且用户问题含启动类意图（搞副业/跳槽/投资/创业/开业/找工作），吉年应给出"适合启动/可推进/有启动窗口"方向判断，禁止把吉年说成"不适合/不宜/不建议启动"
-{history_section}
-# 用户问题
-{context['user_question']}
 
 # 输出格式
 请输出纯JSON（不要用```json代码块包裹，直接输出JSON文本），结构如下：
 
 {{
   "opening": {{
-    "lead": "开篇叙事(可选)。1-2句，可内联**加粗**重要词。开头必须先承接用户问题里的现实处境/情绪/核心关切（如'想跳又怕错过赔偿''副业能不能持续''9月返岗会不会换组'），再顺势引出结论，让用户感觉被接住。每次随机选一种开头风格，**严禁**以'直接说结论：''直接回答你：''直接给你结论：''结论是：'等模板化固定句式开头",
+    "lead": "开篇叙事(可选)。1-2句，可内联**加粗**重要词。开头必须先承接用户问题里的现实处境/情绪/核心关切（如'想跳又怕错过赔偿''副业能不能持续''9月返岗会不会换组'），再顺势引出结论，让用户感觉被接住。**严禁**以'直接说结论：''直接回答你：''直接给你结论：''结论是：'等模板化固定句式开头",
     "verdict": "核心结论(可选)。可包含多重总结要点（多个分句），不固定一句话，不强制以'核心结论'开头；若用'核心结论'开头，'核心结论'四字必须用**加粗**（如**核心结论**：...）；后面内容只加粗关键时间节点/结论词，禁止整段全加粗"
   }},
   "subtopics": [
@@ -309,15 +294,9 @@ def build_structured_prompt(context: dict, history_summary: str = "") -> str:
 2. **结论前置**
 opening.lead / verdict第一时间给出大白话最终答案，用户三秒之内获取核心判断；verdict里面关键时间、决定、风险点必须**加粗**
 
-3. **开篇话术多样化（强制，违反即不合格）**
+3. **开篇话术（强制，违反即不合格）**
 - **必须承接用户问题里的内容/情感/现状**：开头先一句话接住用户当下处境或纠结（如'想跳又怕错过赔偿''副业能不能持续''9月返岗后会不会换组'），再顺势引出结论。这是把'干巴巴结论'变成'有温度回应'的关键，禁止脱离用户语境直接抛结论
-- **同人物多轮追问必须换开头**：若上方"历史对话摘要"里列出了"上次开头句式"，本次开头**必须换一种完全不同的句式**，禁止与历史开头句式雷同或近似（即使换了话题，句式骨架也不能照搬）。同一人物连续两次用同一种开头风格即不合格
-- **每次随机选一种开头风格**，禁止连续两次报告用同一种：
-  - 现状承接式（优先选用）：先一句话点出用户当前处境或纠结，再给结论。如'你在产假尾声纠结要不要趁今年布局副业——结论是**今年就该悄悄动手**，但能不能持续要看2028往后那三年。'
-  - 痛点直击式：一句话点破核心矛盾。如'你真正纠结的不是今年能不能搞副业，而是这副业能不能撑过2028那波大凶年。结论是**今年可以动，但必须设计成可折叠模式**。'
-  - 反常识提醒式：先反转认知再给结论。如'别被2026大吉带偏节奏——吉的是火气和合作运，不是让你辞职all in。**今年该悄悄埋线，5月就能动手试水**。'
-  - 情绪共情式：先共情再给结论。如'你这段时间一边带娃一边想副业，确实累。但命盘给的答案是**今年值得动**，关键是别压上全部筹码。'
-  - 结论直击式（仅当其他风格都不贴合时使用）：直接抛结论，但**禁止**用'直接说结论：''直接回答你：'等模板，句式必须自然。如'**2026年可以搞副业，5月、6月是黄金启动窗口**，但能不能持续要看2028-2030怎么熬。'
+- **开头风格以后方"本次会话信息 > 本轮风格要求"为准**，必须严格按指定风格开篇，禁止套用其他开头风格
 - **绝对禁止的固定开头模板**（出现即不合格）：'直接说结论：''直接回答你：''直接给你结论：''直接给你一个不加任何粉饰的结论：''结论是：''答案很明确：'以及任何以'直接+动词'开头的模板化句式
 - **仍禁止时间节点/节气/大运交替式开头**：如'站在X月的节点''距离立秋只有几个小时''命运齿轮咬合'等
 
@@ -355,9 +334,8 @@ narrative内的年月节点、关键行动、重要收益进行**加粗**；每�
 9. **篇幅控制**
 单个keyword对应的narrative保持2-3句话、≤120字，语言紧凑，减少多余命理推演。
 
-10. **总结部分风格轮换（强制，违反即不合格）**
-summary分别采用行动清单、时间轴、阶段提醒、避坑清单、剧情演进多种风格，每次必须不同；items关键词全部采用生活化阶段名称。
-- **同人物多轮追问必须换总结风格**：若上方"历史对话摘要"里列出了"上次总结风格"（如清单式/段落叙事式/时间轴/避坑清单等），本次总结**必须换一种完全不同的风格**，禁止与历史总结风格雷同。同一人物连续两次用同一种总结风格即不合格
+10. **总结部分风格（强制，违反即不合格）**
+- **总结风格以后方"本次会话信息 > 本轮风格要求"为准**，summary 必须严格按指定风格组织，禁止套用其他总结风格；items关键词全部采用生活化阶段名称
 - **items关键词必须是对该条text内容的叙事化总结**：概括这阶段在干什么/发生什么，禁止用"蹲守期""守业期""蛰伏期"这类脱离具体内容的泛泛阶段标签。正确做法是从 text 里提炼出"时间+具体事件/动作"（如 text 讲9月返岗坑位变动，keyword 写"9月返岗适应期"；text 讲27年谈赔偿金，keyword 写"27年赔偿金谈判期"），让用户看 keyword 就知道这阶段在干什么
 - **禁止总结重复 subtopic 已讲过的内容（高频违规点）**：如果某个 subtopic 已经用 blocks 详细展开了行动路线/时间节点/步骤清单，summary 就**不得**再用 items 把同样的步骤重复一遍。summary 应该是更高层次的提炼（如"三个关键提醒""两个风险点""一句定心话"），或者换一个 subtopic 没讲过的角度（如心态建议、避坑提醒），而不是把 subtopic 的内容换个格式再列一遍。**判断标准**：summary.items 的 keyword 是否与某个 subtopic 的 blocks keyword 大量重叠（≥3个相同），若重叠则必须重写 summary
 
@@ -444,6 +422,30 @@ subtopic blocks已讲清楚"9月返岗会被动换组、稳住别主动提离职
 closing="稳住节奏，换组不换心。谁先急谁就输，你稳住就是赢。"
 >问题：①"稳住节奏"是复述上面blocks已说过的"稳住别主动提离职"结论；②"谁先急谁就输""稳住就是赢"是空洞金句口号，无具体信息无真实情感。
 >正确做法：这种情况下 closing 留空（不输出）。只有当能补一句上面没说过的、真正有情绪价值的话（如"你这几年憋屈够了，这次被动换组反而把你从最压抑的业务线里捞出来，往后的日子会松快不少"）才输出。
+
+# 本次会话信息
+
+## 命盘数据
+咨询时间：{context['current_time']}，{context['liunian_ganzhi']}流年{context['liunian_season']}
+日主：{context['rizhu']}（{context['gender']}）
+四柱：{context['sizu']}
+旺衰：{context['wangshuai']}
+格局：{context['geju_description']}
+用神：{context['yongshen']}，忌神：{context['jishen']}
+十神特征：{context['shishen_fenbu']}
+五行分布：{context['wuxing_fenbu']}
+地支作用：{context['dizhi_zuoyong']}
+调候：{context['tiaohou_desc']}
+当前大运：{context['current_dayun']}
+大运解读：{context['dayun_jiedu']}
+重点流年：{context['key_liunian']}
+年龄：{context['age']}岁，{context['age_stage']}
+{history_section}
+## 本轮风格要求
+开头风格：**{opening_style[0]}**（{opening_style[1]}）；总结风格：**{summary_style[0]}**（{summary_style[1]}）。必须分别严格按指定风格执行开篇与总结。
+
+## 用户问题
+{context['user_question']}
 """
 
 
@@ -1723,8 +1725,19 @@ async def generate_followup_structured(
     # 2. 历史消息压缩：从历史 assistant 消息（JSON）提取关键结论作为摘要
     history_summary = _build_history_summary(history)
 
-    # 3. 构建精简 prompt（含历史摘要区块 + 命盘权威与方向锁定）
-    system_prompt = build_structured_prompt(context, history_summary=history_summary)
+    # 2.5 后端风格轮换选择：排除最近 RECENT_WINDOW 轮已用风格，代码保证短期不重复
+    opening_style, summary_style = pick_styles(history)
+    logger.info(
+        f"[StructuredFollowup][风格轮换] 本轮风格 opening={opening_style[0]} summary={summary_style[0]}"
+    )
+
+    # 3. 构建精简 prompt（含历史摘要区块 + 命盘权威与方向锁定 + 本轮选中风格）
+    system_prompt = build_structured_prompt(
+        context,
+        history_summary=history_summary,
+        opening_style=opening_style,
+        summary_style=summary_style,
+    )
 
     # 4. 构建 messages：history 已压缩为摘要注入 system_prompt，messages 只传当前问题
     # 不再传完整 history 到 messages 数组，避免上下文超限 + 输出雷同
@@ -1865,10 +1878,18 @@ async def generate_followup_structured(
         prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
         completion_tokens = getattr(usage, "completion_tokens", 0) or 0
         total_tokens = getattr(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens)
+        # 上下文缓存命中观测（兼容 OpenAI 格式 prompt_tokens_details.cached_tokens 与 DashScope 原生 cached_tokens）
+        cached_tokens = 0
+        details = getattr(usage, "prompt_tokens_details", None)
+        if details is not None:
+            cached_tokens = getattr(details, "cached_tokens", 0) or 0
+        if not cached_tokens:
+            cached_tokens = getattr(usage, "cached_tokens", 0) or 0
         logger.info(
             f"[StructuredFollowup] LLM响应: 模型={model_config.name}, 状态=成功, "
             f"finish_reason={finish_reason}, 长度={len(raw_content)}, 耗时={elapsed:.1f}s, "
-            f"工具调用={tool_call_count}次, token用量: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}"
+            f"工具调用={tool_call_count}次, token用量: prompt={prompt_tokens}, cached={cached_tokens}, "
+            f"completion={completion_tokens}, total={total_tokens}"
         )
     else:
         logger.info(
@@ -2198,6 +2219,12 @@ async def generate_followup_structured(
         f"[StructuredFollowup] 命盘指纹审计: {get_chart_fingerprint(analysis_data)}, "
         f"LLM输出摘要: {raw_content[:200]}"
     )
+
+    # 7.5 风格盖章：把本轮后端选定的开头/总结风格写入 JSON 落库，供下一轮 pick_styles 排除
+    if isinstance(data.get("opening"), dict):
+        data["opening"]["style_key"] = opening_style[0]
+    if isinstance(data.get("summary"), dict):
+        data["summary"]["style_key"] = summary_style[0]
 
     # 8. yield JSON 字符串（存库用）
     yield json.dumps(data, ensure_ascii=False)

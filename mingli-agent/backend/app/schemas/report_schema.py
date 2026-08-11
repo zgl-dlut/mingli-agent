@@ -29,6 +29,9 @@ class Opening(BaseModel):
         None,
         description="整体定调/核心结论一句话，可内联**加粗**关键词。"
     )
+    style_key: Optional[str] = Field(
+        None, description="后端盖章的开头风格名（非LLM输出），用于下一轮轮换排除"
+    )
 
 
 # ============================================================
@@ -105,6 +108,9 @@ class Summary(BaseModel):
     title: str = Field(description='总结标题，格式：💡 总结：动态副标题')
     style_hint: Optional[str] = Field(
         None, description="可选，总结风格描述（如三阶段节奏/行动清单/时间轴），LLM自选不强制枚举"
+    )
+    style_key: Optional[str] = Field(
+        None, description="后端盖章的总结风格名（非LLM输出），用于下一轮轮换排除"
     )
     lead: Optional[str] = Field(
         None, description="引导语，在items前输出。可内联**加粗**（加粗或不加粗均可）"

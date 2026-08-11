@@ -22,6 +22,9 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from app.services.followup_structured import build_structured_prompt, _build_history_summary, _extract_and_fix_json
+from app.services.report_styles import (
+    OPENING_STYLES, SUMMARY_STYLES, RECENT_WINDOW, pick_styles, _collect_used_styles,
+)
 
 # 尝试加载 .env（集成测试需要 API key）
 try:
@@ -191,6 +194,177 @@ class TestHistorySummaryExtraction:
         """无效 JSON 的 assistant 消息被跳过（不抛异常）"""
         history = [{"role": "assistant", "content": "这不是JSON"}]
         assert _build_history_summary(history) == ""
+
+
+# ============================================================
+# 单元测试 3：后端风格轮换（不调LLM）
+# ============================================================
+
+def _make_report(opening_style_key=None, summary_style_key=None) -> dict:
+    """构造一份带 style_key 盖章的历史报告消息"""
+    report = {
+        "opening": {"lead": "开头文案", "verdict": "核心结论"},
+        "subtopics": [{"title": "子问题", "blocks": [{"type": "keyword", "keyword": "k", "narrative": "n"}]}],
+        "summary": {"title": "总结"},
+    }
+    if opening_style_key:
+        report["opening"]["style_key"] = opening_style_key
+    if summary_style_key:
+        report["summary"]["style_key"] = summary_style_key
+    return {"role": "assistant", "content": json.dumps(report, ensure_ascii=False)}
+
+
+class TestStyleRotation:
+    """验证后端风格轮换：pick_styles 排除最近已用风格 + prompt 只注入选中风格"""
+
+    def test_empty_history_returns_valid_styles(self):
+        """空历史：返回库内合法风格"""
+        opening, summary = pick_styles([])
+        assert opening[0] in OPENING_STYLES
+        assert opening[1] == OPENING_STYLES[opening[0]]
+        assert summary[0] in SUMMARY_STYLES
+        assert summary[1] == SUMMARY_STYLES[summary[0]]
+
+    def test_excludes_recent_used_styles(self):
+        """最近 3 轮已用风格被排除"""
+        used_opening = list(OPENING_STYLES)[:3]
+        used_summary = list(SUMMARY_STYLES)[:3]
+        history = [
+            _make_report(o, s) for o, s in zip(used_opening, used_summary)
+        ]
+        for _ in range(20):  # 多次随机采样，均不得命中已用风格
+            opening, summary = pick_styles(history)
+            assert opening[0] not in used_opening, f"开头风格重复: {opening[0]}"
+            assert summary[0] not in used_summary, f"总结风格重复: {summary[0]}"
+
+    def test_window_capped_at_recent_window(self):
+        """排除窗口上限为 RECENT_WINDOW：更早的已用风格可再次选用"""
+        opening_names = list(OPENING_STYLES)
+        # 造 RECENT_WINDOW+2 轮历史，最老 2 轮的风格超出窗口
+        history = [
+            _make_report(opening_names[i % len(opening_names)], None)
+            for i in range(RECENT_WINDOW + 2)
+        ]
+        used_opening, _ = _collect_used_styles(history, RECENT_WINDOW)
+        # 窗口内最多收集 RECENT_WINDOW 个（倒序截断），最老的不在排除集
+        assert opening_names[0] not in used_opening
+        assert opening_names[1] not in used_opening
+
+    def test_legacy_history_without_style_key(self):
+        """旧消息无 style_key：不报错、不纳入排除"""
+        history = [_make_report(None, None), {"role": "assistant", "content": "纯Markdown旧报告"}]
+        used_opening, used_summary = _collect_used_styles(history, RECENT_WINDOW)
+        assert used_opening == set()
+        assert used_summary == set()
+        opening, summary = pick_styles(history)  # 不抛异常
+        assert opening[0] in OPENING_STYLES
+        assert summary[0] in SUMMARY_STYLES
+
+    def test_prompt_injects_only_selected_styles(self):
+        """prompt 只注入选中的那一条风格（尾部'本轮风格要求'），未选中风格名不出现"""
+        opening = ("痛点直击式", OPENING_STYLES["痛点直击式"])
+        summary = ("时间轴", SUMMARY_STYLES["时间轴"])
+        prompt = build_structured_prompt(FIXED_CONTEXT, "", opening_style=opening, summary_style=summary)
+        assert "## 本轮风格要求" in prompt
+        assert f"开头风格：**痛点直击式**（{OPENING_STYLES['痛点直击式']}）" in prompt
+        assert f"总结风格：**时间轴**（{SUMMARY_STYLES['时间轴']}）" in prompt
+        # 未选中的风格名不出现在 prompt（省 token 的核心验证）
+        for name in OPENING_STYLES:
+            if name != "痛点直击式":
+                assert name not in prompt, f"未选中开头风格'{name}'泄漏进prompt"
+        for name in SUMMARY_STYLES:
+            if name != "时间轴":
+                assert name not in prompt, f"未选中总结风格'{name}'泄漏进prompt"
+
+    def test_history_summary_no_style_hints(self):
+        """历史摘要不再注入'上次开头句式/上次总结风格'提示（轮换由后端保证）"""
+        history = [_make_report("现状承接式", "行动清单")]
+        summary = _build_history_summary(history)
+        assert "上次开头句式" not in summary
+        assert "上次总结风格" not in summary
+        assert "核心结论" in summary  # verdict 提取仍保留
+
+
+# ============================================================
+# 单元测试 4：prompt 缓存友好布局（不调LLM）
+# ============================================================
+
+class TestPromptCachingLayout:
+    """验证重排后的缓存友好布局：静态规则前置、动态内容统一收尾
+
+    DashScope 隐式缓存按最长公共前缀匹配（门槛约256 token），
+    公共前缀越长命中收益越大；本测试固化"静态前缀稳定、动态内容集中在尾部"。
+    """
+
+    @staticmethod
+    def _common_prefix_len(a: str, b: str) -> int:
+        n = min(len(a), len(b))
+        i = 0
+        while i < n and a[i] == b[i]:
+            i += 1
+        return i
+
+    def test_static_prefix_stable(self):
+        """不同命盘/历史/风格构建的 prompt，静态公共前缀 ≥ 5000 字"""
+        ctx2 = dict(FIXED_CONTEXT, user_question="完全不同的问题：感情运势如何？")
+        opening_a = ("痛点直击式", OPENING_STYLES["痛点直击式"])
+        opening_b = ("现状承接式", OPENING_STYLES["现状承接式"])
+        summary_a = ("时间轴", SUMMARY_STYLES["时间轴"])
+        summary_b = ("行动清单", SUMMARY_STYLES["行动清单"])
+        p1 = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY, opening_a, summary_a)
+        p2 = build_structured_prompt(ctx2, "", opening_b, summary_b)
+        prefix_len = self._common_prefix_len(p1, p2)
+        assert prefix_len >= 5000, f"静态公共前缀仅{prefix_len}字，缓存收益受限"
+
+    def test_dynamic_section_order(self):
+        """动态内容统一收尾：对照示例 → 本次会话信息（命盘→历史→风格→问题）"""
+        opening = ("痛点直击式", OPENING_STYLES["痛点直击式"])
+        summary = ("时间轴", SUMMARY_STYLES["时间轴"])
+        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY, opening, summary)
+        # 静态区在前，动态区在后
+        assert prompt.rindex("## 对照示例") < prompt.index("# 本次会话信息")
+        session_pos = prompt.index("# 本次会话信息")
+        # 动态区内顺序：命盘 → 历史 → 风格 → 问题
+        assert prompt.index("## 命盘数据", session_pos) < prompt.index("## 历史对话摘要", session_pos)
+        assert prompt.index("## 历史对话摘要", session_pos) < prompt.index("## 本轮风格要求", session_pos)
+        assert prompt.index("## 本轮风格要求", session_pos) < prompt.index("## 用户问题", session_pos)
+        # 本轮风格区块包含选中风格名
+        style_section = prompt[prompt.index("## 本轮风格要求"):]
+        assert "痛点直击式" in style_section
+        assert "时间轴" in style_section
+
+    def test_anchor_phrases_intact(self):
+        """重排后探针字典与既有测试依赖的锚点短语全部保留"""
+        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
+        # 来源：_rule_checks / _consistency_checks / _verdict_consistency_checks 探针
+        # 及 TestPromptConsistencyRules 既有断言
+        anchors = [
+            "命盘数据是最高推演依据",
+            "以命盘为准",
+            "不盲从前轮判断",
+            "严禁编造命理依据",
+            "未来剧本",
+            "closing 硬约束",
+            "逐点对应",
+            "守得住基本盘",
+            "禁止closing复述",
+            "错误写法5",
+            "历史对话摘要",
+            "opening.verdict 必须从 subtopic 的实际细节中提炼",
+            "写完全部 subtopic 后强制回查",
+            "模糊预判术语必须定义边界",
+            "通用高频模糊词二分定义",
+            "三段闭环",
+            "禁止用节气当行动节点",
+            "单个 narrative 内部必须逻辑自洽",
+            "关键词/标题必须正面回答用户问题",
+            "结论与建议必须因果衔接",
+            "输出前自检",
+            "全报告统一适用",
+            "历史摘要仅供话题承接",
+        ]
+        for phrase in anchors:
+            assert phrase in prompt, f"锚点短语丢失：{phrase}"
 
 
 # ============================================================
