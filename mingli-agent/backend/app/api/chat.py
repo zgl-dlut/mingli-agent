@@ -16,7 +16,7 @@ from app.db.session import get_db, async_session
 from app.models.message import ChatMessage
 from app.models.session import ChatSession
 from app.models.user import User
-from app.services.ai_service import generate_first_reading
+from app.services.ai_service import generate_first_reading_structured
 from app.services.followup_structured import generate_followup_structured
 from app.services.payment_service import deduct_points
 from app.services.skill_prompts import validate_user_question
@@ -121,10 +121,43 @@ async def send_message(
     if not person or person.user_id != current_user.id:
         raise PermissionDenied("无权访问")
     
-    # 验证用户问题是否有效
+    # 验证用户问题是否有效；拦截时也落库（user + assistant 拦截文案），方便后续排查，不扣费
     is_valid, error_msg = validate_user_question(request.content)
     if not is_valid:
-        raise HTTPException(status_code=400, detail=error_msg)
+        print(f"[chat][拦截] 开始落库 session_id={session_id} question={request.content!r}", flush=True)
+        print(f"[chat][拦截] 拦截回复文案={error_msg[:80]!r}", flush=True)
+        # 去重：10秒内相同 user 消息不重复存（与正常发送一致）
+        dedup_cutoff = datetime.utcnow() - timedelta(seconds=10)
+        recent_user_msg = await db.execute(
+            select(ChatMessage).where(
+                ChatMessage.session_id == session_id,
+                ChatMessage.role == "user",
+                ChatMessage.content == request.content,
+                ChatMessage.created_at > dedup_cutoff,
+            ).order_by(ChatMessage.created_at.desc()).limit(1)
+        )
+        existing_user = recent_user_msg.scalar_one_or_none()
+        if not existing_user:
+            user_message = ChatMessage(session_id=session_id, role="user", content=request.content)
+            db.add(user_message)
+            await db.commit()
+            await db.refresh(user_message)
+            print(f"[chat][拦截] user消息已写入 id={user_message.id} session_id={session_id} role=user content_len={len(request.content)}", flush=True)
+        else:
+            print(f"[chat][拦截] user消息去重跳过（10秒内已存在）existing_id={existing_user.id}", flush=True)
+        # 存 assistant 拦截文案，作为对应回复记录
+        reject_message = ChatMessage(session_id=session_id, role="assistant", content=error_msg)
+        db.add(reject_message)
+        await db.commit()
+        await db.refresh(reject_message)
+        print(f"[chat][拦截] assistant拦截文案已写入 id={reject_message.id} session_id={session_id} role=assistant content_len={len(error_msg)}", flush=True)
+        print(f"[chat][拦截] 落库完成 session_id={session_id} 已记录 user提问+assistant拒绝回复", flush=True)
+
+        async def reject_stream() -> AsyncGenerator[str, None]:
+            yield error_msg
+            yield "\n\n__SAVED__"
+
+        return StreamingResponse(reject_stream(), media_type="text/event-stream")
 
     # 重试判定：上一条消息是相同内容的 user 消息（中断后重问），免重复扣费、不存重复 user 消息
     last_msg_result = await db.execute(
@@ -298,7 +331,23 @@ async def get_generating_status(
         raise PermissionDenied("无权访问")
     # 任务异常时返回 error（一次性 pop，前端轮询发现后显示提示）
     error = _generating_errors.pop(session_id, None)
-    return {"generating": session_id in _generating_tasks, "error": error}
+    generating = session_id in _generating_tasks
+    # 超时兜底：任务卡住超过阈值时，标记为失败，不再显示进度条
+    if generating:
+        start = _generating_start.get(session_id, 0)
+        task = _generating_tasks.get(session_id)
+        if task and (task.done() or time.time() - start > _GENERATING_TIMEOUT):
+            # 任务已完成但未清理，或超时卡住 → 清理并标记失败
+            if not task.done():
+                task.cancel()
+            _generating_tasks.pop(session_id, None)
+            _generating_start.pop(session_id, None)
+            generating = False
+            if not error:
+                error = "生成超时，请重新发送问题"
+    # 返回已耗时秒数：前端刷新后按真实耗时恢复进度条，避免从10%重置
+    elapsed_seconds = int(time.time() - _generating_start.get(session_id, time.time())) if generating else 0
+    return {"generating": generating, "error": error, "elapsed_seconds": elapsed_seconds}
 
 
 @router.get("/sessions/{session_id}/first-reading")
@@ -348,42 +397,106 @@ async def get_first_reading(
     
     if assistant_messages:
         return {"content": assistant_messages[0].content}
-    
-    async def stream_response() -> AsyncGenerator[str, None]:
-        # 二次检查：防止并发请求绕过首次检查（第227行）导致重复生成
-        recheck = await db.execute(
-            select(ChatMessage).where(
-                ChatMessage.session_id == session_id,
-                ChatMessage.role == "assistant"
-            ).limit(1)
-        )
-        if recheck.scalar_one_or_none():
-            return  # 已有 assistant 消息，不再生成
 
-        full_content = ""
-        async for chunk in generate_first_reading(
-            session.bazi_data_json,
-            session.astro_data_json,
-            person.gender,
-            f"{person.birth_date} {person.birth_time}",
-            person.birth_location,
-            person.birth_lng,
-            person.birth_lat,
-        ):
-            full_content += chunk
-            # SSE流中实时移除【】（字符串替换，非正则，确保流期间也不显示【】）
-            yield chunk.replace('【', '').replace('】', '')
+    # 任务化：后台任务独立运行，SSE 断开（刷新）不影响生成，完成后存库并从任务表移除
+    # 如果该 session 正在生成，拒绝重复请求（防止刷新后重复点击触发第二次生成）
+    if session_id in _generating_tasks:
+        old_task = _generating_tasks[session_id]
+        start = _generating_start.get(session_id, 0)
+        if old_task.done() or (time.time() - start > _GENERATING_TIMEOUT):
+            # 任务已完成但未清理（异常）或超时卡住，强制清理，允许新请求
+            if not old_task.done():
+                old_task.cancel()
+            _generating_tasks.pop(session_id, None)
+            _generating_start.pop(session_id, None)
+            _generating_errors.pop(session_id, None)
+        else:
+            # 正在生成且未超时，拒绝重复请求
+            raise HTTPException(status_code=409, detail="首次报告正在生成中，请稍候")
 
-        # 格式归一化：在保存前确保格式合规（首次报告保留 ### 标题，不转换为加粗）
-        normalized_content = normalize_output(full_content, preserve_h3=True)
-        
-        assistant_message = ChatMessage(
+    # 提取 ORM 属性到普通变量，避免后台任务访问已关闭的请求级 session
+    queue: asyncio.Queue = asyncio.Queue()
+    task = asyncio.create_task(
+        _generate_and_save_first_reading(
             session_id=session_id,
-            role="assistant",
-            content=normalized_content,
+            gender=person.gender,
+            birth_date=person.birth_date,
+            birth_time=person.birth_time,
+            location=person.birth_location,
+            longitude=person.birth_lng,
+            latitude=person.birth_lat,
+            queue=queue,
         )
-        db.add(assistant_message)
-        await db.commit()
-        yield "\n\n__SAVED__"  # 存库完成标记，前端收到后拉取消息
-    
+    )
+    _generating_tasks[session_id] = task
+    _generating_start[session_id] = time.time()
+
+    async def stream_response() -> AsyncGenerator[str, None]:
+        # 从队列读 chunk 推送给前端；客户端断开后任务继续，队列堆积直到任务完成
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield chunk
+
     return StreamingResponse(stream_response(), media_type="text/event-stream")
+
+
+async def _generate_and_save_first_reading(
+    session_id: int,
+    gender: str,
+    birth_date: str,
+    birth_time: str,
+    location: str,
+    longitude: float,
+    latitude: float,
+    queue: asyncio.Queue,
+) -> None:
+    """后台生成首次报告并存库，独立于 SSE 连接。客户端断开（刷新）后任务继续运行。"""
+    import traceback
+    print(f"[_generate_and_save_first_reading] 开始 session_id={session_id}", flush=True)
+    try:
+        # 独立 db session，不依赖请求级 session（请求结束后请求级 session 会关闭）
+        async with async_session() as db:
+            # 二次检查：防止并发生成导致重复存库
+            recheck = await db.execute(
+                select(ChatMessage).where(
+                    ChatMessage.session_id == session_id,
+                    ChatMessage.role == "assistant"
+                ).limit(1)
+            )
+            if recheck.scalar_one_or_none():
+                print(f"[_generate_and_save_first_reading] 已有 assistant 消息，跳过 session_id={session_id}", flush=True)
+                return
+
+            full_content = ""
+            async for chunk in generate_first_reading_structured(
+                gender=gender,
+                birth_date=birth_date,
+                birth_time=birth_time,
+                location=location,
+                longitude=longitude,
+                latitude=latitude,
+            ):
+                full_content += chunk
+                await queue.put(chunk)
+
+            # 存库：content 存 JSON 字符串（前端 isStructuredReport 自动识别 JSON 走结构化渲染）
+            assistant_message = ChatMessage(
+                session_id=session_id,
+                role="assistant",
+                content=full_content,
+            )
+            db.add(assistant_message)
+            await db.commit()
+            await queue.put("\n\n__SAVED__")  # 存库完成标记，前端收到后拉取消息
+            print(f"[_generate_and_save_first_reading] 完成 session_id={session_id} json_len={len(full_content)}", flush=True)
+    except Exception as e:
+        print(f"[_generate_and_save_first_reading] 异常 session_id={session_id} {type(e).__name__}: {e}\n{traceback.format_exc()}", flush=True)
+        _generating_errors[session_id] = f"{type(e).__name__}: {e}"
+        await queue.put(f"\n\n__ERROR__:{type(e).__name__}: {e}")
+    finally:
+        await queue.put(None)  # 结束标记，stream_response 收到后停止
+        _generating_tasks.pop(session_id, None)
+        _generating_start.pop(session_id, None)
+        print(f"[_generate_and_save_first_reading] 结束 session_id={session_id}", flush=True)

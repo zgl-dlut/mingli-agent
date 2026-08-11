@@ -250,6 +250,73 @@ async def update_person(
     }
 
 
+@router.post("/{person_id}/ensure-session")
+async def ensure_session(
+    person_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    """确保 person 对应的 session 存在。
+
+    session 被误删但 person 还在时，按 person 信息重建 session（含 bazi/astro 数据）。
+    幂等：session 存在则直接返回，不重复创建、不扣费。
+    """
+    result = await db.execute(select(Person).where(Person.id == person_id))
+    person = result.scalar_one_or_none()
+
+    if not person:
+        raise ResourceNotFound("人物不存在")
+    if person.user_id != current_user.id:
+        raise PermissionDenied("无权访问")
+
+    from app.models.session import ChatSession
+    from app.models.message import ChatMessage
+
+    # 查现有 session：存在则直接返回
+    session_result = await db.execute(
+        select(ChatSession).where(ChatSession.person_id == person.id)
+    )
+    session = session_result.scalar_one_or_none()
+    if session:
+        return {"session_id": session.id, "created": False}
+
+    # session 不存在，按 person 信息重建
+    bazi_chart = calculate_bazi(
+        birth_date=person.birth_date,
+        birth_time=person.birth_time,
+        longitude=person.birth_lng,
+        gender=person.gender,
+    )
+    astro_chart = calculate_astrology(
+        birth_date=person.birth_date,
+        birth_time=person.birth_time,
+        latitude=person.birth_lat,
+        longitude=person.birth_lng,
+    )
+
+    session = ChatSession(
+        person_id=person.id,
+        bazi_data_json=bazi_chart.model_dump(),
+        astro_data_json=astro_chart.model_dump(),
+        title=f"{person.name}的命盘",
+    )
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+
+    # 重建初始 user 消息（与 create_person 一致，保证首次报告生成的"发送内容"存在）
+    calendar_label = "公历" if person.calendar_type == "solar" else "农历"
+    user_message = ChatMessage(
+        session_id=session.id,
+        role="user",
+        content=f"出生时间：{person.birth_date} {person.birth_time}({calendar_label})\n出生地点：{person.birth_location}\n性别：{'男' if person.gender == 'male' else '女'}",
+    )
+    db.add(user_message)
+    await db.commit()
+
+    return {"session_id": session.id, "created": True}
+
+
 @router.delete("/{person_id}")
 async def delete_person(
     person_id: int,

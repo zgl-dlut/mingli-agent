@@ -5,6 +5,8 @@
 from typing import Dict, Optional, List
 from datetime import datetime
 
+from app.services.chart_validator import MISSING_MARKER
+
 
 # ============================================================
 # 排版格式指令（所有 prompt 共用）
@@ -1033,8 +1035,13 @@ def _format_wuxing_fenbu(wuxing_fenbu) -> str:
     return str(wuxing_fenbu)
 
 
-def _format_key_liunian(key_liunian) -> str:
-    """格式化重点流年，包含流月吉凶数据"""
+def _format_key_liunian(key_liunian, include_liuyue: bool = False) -> str:
+    """格式化重点流年。
+
+    Args:
+        key_liunian: 重点流年列表
+        include_liuyue: 是否包含流月数据（默认False，流月通过function calling获取）
+    """
     if isinstance(key_liunian, list):
         lines = []
         for ly in key_liunian[:5]:
@@ -1046,22 +1053,40 @@ def _format_key_liunian(key_liunian) -> str:
                 lines.append(
                     f"  - {year}年 {ganzhi}：{judge}（{reason}）"
                 )
-                # 当年流年附加流月吉凶，让 LLM 基于排盘数据给出准确月份建议
-                liuyue_list = ly.get('liuyue', [])
-                if liuyue_list and isinstance(liuyue_list, list):
-                    month_parts = []
-                    for lm in liuyue_list:
-                        if isinstance(lm, dict):
-                            m = lm.get('solar_month', '')
-                            mg = lm.get('month_ganzhi', '')
-                            mj = lm.get('judge', '')
-                            month_parts.append(f"{m}月({mg}){mj}")
-                    if month_parts:
-                        lines.append(
-                            f"    流月吉凶：{' '.join(month_parts)}"
-                        )
+                # 流月数据通过 function calling 获取，不再写入 prompt
+                if include_liuyue:
+                    liuyue_list = ly.get('liuyue', [])
+                    if liuyue_list and isinstance(liuyue_list, list):
+                        month_parts = []
+                        for lm in liuyue_list:
+                            if isinstance(lm, dict):
+                                m = lm.get('solar_month', '')
+                                mg = lm.get('month_ganzhi', '')
+                                mj = lm.get('judge', '')
+                                month_parts.append(f"{m}月({mg}){mj}")
+                        if month_parts:
+                            lines.append(
+                                f"    流月吉凶：{' '.join(month_parts)}"
+                            )
         return "\n".join(lines) if lines else "暂无"
     return str(key_liunian)
+
+
+def _extract_liuyue_data(key_liunian) -> dict:
+    """从重点流年提取流月数据，供 function calling 工具使用。
+
+    Returns:
+        {year: [liuyue_list]} 字典
+    """
+    liuyue_data = {}
+    if isinstance(key_liunian, list):
+        for ly in key_liunian[:5]:
+            if isinstance(ly, dict):
+                year = ly.get('year')
+                liuyue = ly.get('liuyue', [])
+                if year and liuyue:
+                    liuyue_data[year] = liuyue
+    return liuyue_data
 
 
 def _extract_dayun_ganzhi(current_dayun: str) -> str:
@@ -1117,7 +1142,7 @@ _CORE_RELEVANT_KEYWORDS = [
     "流年", "大运", "流月", "生肖", "星座",
     "事业", "工作", "财运", "赚钱", "投资", "婚姻", "感情", "恋爱",
     "健康", "身体", "子女", "家庭", "父母", "贵人", "小人",
-    "跳槽", "升职", "加薪", "创业", "姻缘", "桃花",
+    "跳槽", "升职", "加薪", "创业", "副业", "姻缘", "桃花",
     # 生意/经营类（含修饰语的合理财运问题）
     "生意", "经营", "开店", "老板", "客户", "订单",
 ]
@@ -1267,21 +1292,21 @@ def _build_context_vars(
         "current_time": time_info["current_time"],
         "liunian_ganzhi": time_info["liunian_ganzhi"],
         "liunian_season": time_info["liunian_season"],
-        "sizu": sizu,
-        "rizhu": analysis_data.get("日主", ""),
+        "sizu": sizu or MISSING_MARKER,
+        "rizhu": analysis_data.get("日主") or MISSING_MARKER,
         "gender": gender,
-        "wangshuai": analysis_data.get("旺衰结论", ""),
-        "geju_description": analysis_data.get("格局", ""),
-        "yongshen": analysis_data.get("用神", ""),
+        "wangshuai": analysis_data.get("旺衰结论") or MISSING_MARKER,
+        "geju_description": analysis_data.get("格局") or MISSING_MARKER,
+        "yongshen": analysis_data.get("用神") or MISSING_MARKER,
         "xishen": analysis_data.get("喜神", ""),
-        "jishen": analysis_data.get("忌神", ""),
+        "jishen": analysis_data.get("忌神") or MISSING_MARKER,
         "shishen_fenbu": analysis_data.get("十神分布", ""),
         "wuxing_fenbu": wuxing_str,
         "dizhi_zuoyong": analysis_data.get("地支作用", ""),
         "tiaohou_desc": analysis_data.get("调候描述", ""),
-        "current_dayun": current_dayun_ganzhi,
+        "current_dayun": current_dayun_ganzhi or MISSING_MARKER,
         "dayun_jiedu": analysis_data.get("大运解读", ""),
-        "key_liunian": key_liunian_str,
+        "key_liunian": key_liunian_str or MISSING_MARKER,
         "user_question": user_question,
         "age": age,
         "age_stage": age_stage,

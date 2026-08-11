@@ -252,8 +252,8 @@ class TestLLMNotContaminated:
         data = self._call_llm(WRONG_HISTORY)
         verdict = data.get("opening", {}).get("verdict", "")
 
-        # 反向信号：明确盲从错误历史，禁止出现
-        blind_signals = ["适合创业", "创业扩张", "创业最稳", "创业好", "创业吉", "创业旺", "创业爆", "事业爆发期"]
+        # 反向信号：明确盲从错误历史，禁止出现（用正向推荐短语，避免"不适合创业"否定句误匹配）
+        blind_signals = ["建议创业", "该创业", "可以创业", "创业扩张", "创业最稳", "创业好时机", "创业吉", "创业旺", "创业爆", "事业爆发期"]
         for w in blind_signals:
             assert w not in verdict, f"被错误历史带偏(含'{w}'): verdict={verdict}"
 

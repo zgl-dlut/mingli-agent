@@ -77,9 +77,9 @@ export const chatApi = {
     })
   },
 
-  /** 查询会话是否正在后台生成追问报告（刷新后恢复进度条用） */
-  getGeneratingStatus: async (sessionId: number): Promise<{ generating: boolean; error?: string | null }> => {
-    const res = await apiClient.get<{ generating: boolean; error?: string | null }>(`/chat/sessions/${sessionId}/generating-status`)
+  /** 查询会话是否正在后台生成报告（刷新后恢复进度条用），elapsed_seconds 为已耗时秒数 */
+  getGeneratingStatus: async (sessionId: number): Promise<{ generating: boolean; error?: string | null; elapsed_seconds?: number }> => {
+    const res = await apiClient.get<{ generating: boolean; error?: string | null; elapsed_seconds?: number }>(`/chat/sessions/${sessionId}/generating-status`)
     return res.data
   },
 

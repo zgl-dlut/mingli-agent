@@ -4,6 +4,7 @@ import { useChatStore } from '../store/chatStore'
 import { usePersonStore } from '../store/personStore'
 import { useUserStore } from '../store/userStore'
 import { chatApi } from '../api/chat'
+import { personApi } from '../api/person'
 import RechargeModal from '../components/RechargeModal'
 import type { Person } from '../types'
 import { analyzeBazi, AnalyzeResult } from '../api/bazi'
@@ -90,7 +91,6 @@ export default function Chat() {
     messages,
     currentMessage,
     fetchMessages,
-    addMessage,
     setCurrentPerson,
     setCurrentMessage,
     setPersonGenerating,
@@ -267,17 +267,10 @@ export default function Chat() {
   }
 
   // 启动进度条和预计时间更新（按人独立）
-  const startProgress = (personId: number) => {
-    // 立即显示初始进度10%，避免用户等待
-    setProgressMap(prev => ({ ...prev, [personId]: { percent: 10, time: '约3分钟' } }))
-    let elapsed = 0
-
-    // 清掉该人旧定时器
-    const oldTimer = progressTimersRef.current.get(personId)
-    if (oldTimer) clearInterval(oldTimer)
-
-    const timer = window.setInterval(() => {
-      elapsed += 1
+  // elapsedOffset：刷新恢复时传入后端返回的真实已耗时秒数，避免进度条从10%重置
+  const startProgress = (personId: number, elapsedOffset = 0) => {
+    // 进度/预计时间计算（初始化和定时器共用）
+    const compute = (elapsed: number) => {
       // 模拟进度：前60秒到30%，中间60秒到70%，最后60秒到95%
       let percent = 10 // 初始10%
       if (elapsed <= 60) {
@@ -287,8 +280,21 @@ export default function Chat() {
       } else {
         percent = 70 + Math.min(25, ((elapsed - 120) / 60) * 25)
       }
-      const time = elapsed < 60 ? '约3分钟' : elapsed < 120 ? '约2分钟' : '即将完成...'
-      setProgressMap(prev => ({ ...prev, [personId]: { percent: Math.round(percent), time } }))
+      const time = elapsed < 180 ? '预计5-8分钟' : elapsed < 300 ? '预计3-5分钟' : '即将完成...'
+      return { percent: Math.round(percent), time }
+    }
+
+    // 立即按已耗时显示进度（新发送时 offset=0 显示10%，刷新恢复时按真实耗时显示）
+    let elapsed = Math.max(0, elapsedOffset)
+    setProgressMap(prev => ({ ...prev, [personId]: compute(elapsed) }))
+
+    // 清掉该人旧定时器
+    const oldTimer = progressTimersRef.current.get(personId)
+    if (oldTimer) clearInterval(oldTimer)
+
+    const timer = window.setInterval(() => {
+      elapsed += 1
+      setProgressMap(prev => ({ ...prev, [personId]: compute(elapsed) }))
     }, 1000)
     progressTimersRef.current.set(personId, timer)
   }
@@ -372,19 +378,38 @@ export default function Chat() {
         await fetchMessages(id, s.id)
         // 刷新后恢复：查询该会话是否在后台生成中（任务化，SSE 断开不影响生成）
         try {
-          const { generating, error } = await chatApi.getGeneratingStatus(s.id)
+          const { generating, error, elapsed_seconds } = await chatApi.getGeneratingStatus(s.id)
           if (error) {
             // 上次任务异常：显示错误提示（不恢复进度条）
             logger.error(`[Resume] 上次生成异常`, { personId: id, error })
             alert(`生成失败，请稍后重试`)
           } else if (generating && !isPersonGenerating(id)) {
-            logger.info(`[Resume] 后台生成中，恢复进度条并启动轮询`, { personId: id })
+            logger.info(`[Resume] 后台生成中，恢复进度条并启动轮询`, { personId: id, elapsed_seconds })
             setPersonGenerating(id, true)
-            startProgress(id)
+            // 按后端返回的真实已耗时恢复进度，避免从10%重置
+            startProgress(id, elapsed_seconds || 0)
+            // 首次报告生成中刷新：隐藏"查看完整解读"按钮，避免用户重复点击触发生成
+            setCardPhase('done')
             startGeneratingPoll(id, s.id)
           }
         } catch (e) {
           logger.warn(`[Resume] generating-status 查询失败`, String(e))
+        }
+      } else {
+        // 该 person 没有对应的 session（session 被清空/删除等异常情况）
+        // 调用 ensure-session 重建 session，避免沿用上一个人物的 sessionId 导致生成/拉取到错误人物的内容
+        logger.warn(`[Lifecycle] 未找到 person 对应的 session，调用 ensure-session 重建`, {
+          personId: id,
+          sessionPersonIds: sessions.map(s => s.person_id),
+        })
+        try {
+          const { data } = await personApi.ensureSession(id)
+          setSessionId(data.session_id)
+          await fetchMessages(id, data.session_id)
+          logger.info(`[Lifecycle] ensure-session 重建完成`, { personId: id, sessionId: data.session_id, created: data.created })
+        } catch (e) {
+          logger.error(`[Lifecycle] ensure-session 重建失败，重置 sessionId 为 null`, { personId: id, error: String(e) })
+          setSessionId(null)
         }
       }
     }).catch(err => {
@@ -529,6 +554,20 @@ export default function Chat() {
       const personExists = usePersonStore.getState().persons.some(p => p.id === parseInt(personId || '0'))
       if (err?.name === 'AbortError' || !personExists) {
         logger.info(`[${callId}] 请求被中断或person已删除`)
+      } else if (String(err?.message || err).includes('409')) {
+        // 首次报告已在后台生成中（刷新后重复点击）：不视为失败，
+        // 移交轮询机制等待完成，进度条按真实已耗时恢复
+        logger.info(`[${callId}] 首次报告已在生成中(409)，转轮询等待完成`)
+        genCounterRef.current.set(pid, myGen + 1)  // 使 finally 不清状态，保留进度条
+        isSendingMapRef.current.set(pid, false)
+        abortControllersRef.current.delete(pid)
+        try {
+          const { elapsed_seconds } = await chatApi.getGeneratingStatus(sessionId)
+          startProgress(pid, elapsed_seconds || 0)
+        } catch {
+          // 查询失败则保持当前进度条
+        }
+        startGeneratingPoll(pid, sessionId)
       } else {
         logger.error(`[${callId}] 生成失败`, { error: String(err) })
         alert(`生成失败: ${String(err).replace('Error: ', '')}`)
@@ -668,37 +707,8 @@ export default function Chat() {
     setPendingUserMsgPid(pid)
     scrollToBottom({ force: true })
 
-    // ========== 验证问题有效性，不通过则回滚 ==========
-    try {
-      dlog(`调用validateQuestion...`)
-      const validation = await chatApi.validateQuestion(question)
-      dlog(`validateQuestion返回 valid=${validation.valid} msg=${validation.message}`)
-      if (!validation.valid) {
-        addMessage(pid, 'assistant', validation.message)
-        setCurrentMessage('')
-        setPersonGenerating(pid, false)
-        stopProgress(pid)
-        setPendingUserMsg(null)
-        setPendingUserMsgPid(null)
-        isSendingMapRef.current.set(pid, false)
-        abortControllersRef.current.delete(pid)
-        logger.info(`[${callId}] 问题验证未通过，已回滚`, { msg: validation.message })
-        return
-      }
-    } catch (err) {
-      dlog(`validateQuestion异常: ${String(err)}`)
-      logger.warn(`[${callId}] 验证接口调用失败，降级处理`, String(err))
-      if (!question.trim() || question.length < 2) {
-        addMessage(pid, 'assistant', '请输入您想咨询的问题，本次不扣除积分～')
-        setPersonGenerating(pid, false)
-        stopProgress(pid)
-        setPendingUserMsg(null)
-        setPendingUserMsgPid(null)
-        isSendingMapRef.current.set(pid, false)
-        abortControllersRef.current.delete(pid)
-        return
-      }
-    }
+    // 问题验证已移至后端 sendMessageStream 统一处理：拦截时后端落库 user+assistant(拦截文案)，
+    // 通过 SSE 返回拦截文案 + __SAVED__，前端走和正常完成一样的 fetchMessages 流程，无需预检
 
     try {
       dlog(`调用sendMessageStream sid=${sessionId} isRetry=${isRetryOfUnanswered}`)
@@ -973,21 +983,20 @@ export default function Chat() {
             {isPersonGenerating(person.id) && (() => {
               const p = progressMap[person.id]
               const percent = p?.percent ?? 0
-              const time = p?.time ?? '约3分钟'
+              const time = p?.time ?? '预计5-8分钟'
               return (
               <div className="flex justify-start items-start gap-2">
                 <div className="flex-shrink-0 mt-1">
                   <Logo size={32} dark />
                 </div>
-                <div className="max-w-[80%] px-5 py-4 rounded-2xl bg-white/80 backdrop-blur-sm rounded-bl-sm shadow-sm border border-indigo-100/50">
+                <div className="min-w-[320px] max-w-[80%] px-6 py-5 rounded-2xl bg-white/80 backdrop-blur-sm rounded-bl-sm shadow-sm border border-indigo-100/50">
                   {/* 加载动画 */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="bazi-loading-mystic text-indigo-400" style={{ fontSize: '1.5rem' }}>☯</div>
-                    <span className="text-indigo-400 text-sm animate-pulse">正在生成命理报告，请稍候...</span>
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-indigo-400 text-sm animate-pulse">正在分析中，请稍后…</span>
                   </div>
 
                   {/* 动态进度条 */}
-                  <div className="w-full h-2 bg-indigo-100 rounded-full overflow-hidden mb-2">
+                  <div className="w-full h-3 bg-indigo-100 rounded-full overflow-hidden mb-3">
                     <div
                       className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 ease-out"
                       style={{ width: `${percent}%` }}
@@ -995,8 +1004,8 @@ export default function Chat() {
                   </div>
                   {/* 进度百分比和预计时间 */}
                   <div className="flex justify-between items-center">
-                    <p className="text-indigo-400 text-xs">{percent}%</p>
-                    <p className="text-indigo-300 text-xs">{time}</p>
+                    <p className="text-indigo-400 text-sm">{percent}%</p>
+                    <p className="text-indigo-300 text-sm">{time}</p>
                   </div>
                 </div>
               </div>

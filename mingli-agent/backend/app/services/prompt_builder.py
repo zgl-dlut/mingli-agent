@@ -8,6 +8,8 @@ import os
 from datetime import datetime
 from typing import Dict, Optional
 
+from app.services.chart_validator import MISSING_MARKER
+
 
 def build_commercial_prompt(
     analysis_data: Dict,
@@ -136,15 +138,15 @@ def build_commercial_prompt(
 3. 最后给出2-3条具体可操作的建议
 """
     
-    # 四柱拆分
-    sizu_parts = sizu.split() if sizu else ["", "", "", ""]
+    # 四柱拆分（MISSING_MARKER 时不 split，保持标注原样传到 prompt）
+    sizu_parts = sizu.split() if sizu and sizu != MISSING_MARKER else ["", "", "", ""]
     year_gz = sizu_parts[0] if len(sizu_parts) > 0 else ""
     month_gz = sizu_parts[1] if len(sizu_parts) > 1 else ""
     day_gz = sizu_parts[2] if len(sizu_parts) > 2 else ""
     hour_gz = sizu_parts[3] if len(sizu_parts) > 3 else ""
 
     # 大运拆分
-    dayun_parts = current_dayun.split() if current_dayun else ["", ""]
+    dayun_parts = current_dayun.split() if current_dayun and current_dayun != MISSING_MARKER else ["", ""]
     dayun_gz = dayun_parts[0] if len(dayun_parts) > 0 else ""
     dayun_years = dayun_parts[1] if len(dayun_parts) > 1 else ""
 
@@ -366,6 +368,282 @@ def build_commercial_prompt(
 {question_section}
 
 {examples_str}
+"""
+    return prompt
+
+
+def build_first_reading_structured_prompt(
+    analysis_data: Dict,
+    gender: str,
+    birth_date: str,
+    birth_time: str,
+    location: str,
+) -> str:
+    """
+    构建首次命理报告的结构化JSON prompt（输出FollowupReport JSON）。
+
+    复用 build_commercial_prompt 的命盘数据注入逻辑与叙事化规则，
+    输出要求改为 FollowupReport JSON 结构（6大固定模块作为subtopics）。
+    """
+    # ===== 命盘数据注入（复用 build_commercial_prompt 的提取逻辑）=====
+    # 必需字段缺失时标注 MISSING_MARKER，让 LLM 知道该字段无数据、不要编造
+    sizu = analysis_data.get("四柱") or MISSING_MARKER
+    rizhu = analysis_data.get("日主") or MISSING_MARKER
+    yueling = analysis_data.get("月令", "")
+    wangshuai = analysis_data.get("旺衰结论") or MISSING_MARKER
+    geju = analysis_data.get("格局") or MISSING_MARKER
+    yongshen = analysis_data.get("用神") or MISSING_MARKER
+    jishen = analysis_data.get("忌神") or MISSING_MARKER
+    tiaohou_desc = analysis_data.get("调候描述", "")
+    dizhi_zuoyong = analysis_data.get("地支作用", "")
+    wuxing_fenbu = analysis_data.get("五行分布", {})
+    nayin = analysis_data.get("纳音", {})
+    current_dayun = analysis_data.get("当前大运") or MISSING_MARKER
+    dayun_jiedu = analysis_data.get("大运解读", "")
+    key_liunian = analysis_data.get("重点流年", [])
+    wuxing_app = analysis_data.get("五行应用", {})
+    astro = analysis_data.get("占星数据", {})
+    shishen_fenbu = analysis_data.get("十神分布", "")
+
+    # 旺衰详情
+    ws_detail = analysis_data.get("旺衰详情", {})
+    ws_deling = ws_detail.get("得令", {}).get("detail", "")
+    ws_dedi = ws_detail.get("得地", {}).get("detail", "")
+    ws_deshi = ws_detail.get("得势", {}).get("detail", "")
+
+    # 重点流年格式化
+    liunian_str = ""
+    for ly in key_liunian[:5]:
+        liunian_str += f"  - {ly['year']}年 {ly['ganzhi']}：{ly['judge']}（{ly['reason']}）\n"
+    if not liunian_str:
+        liunian_str = MISSING_MARKER
+
+    # 五行应用格式化
+    wuxing_app_detail = ""
+    for key, val in wuxing_app.items():
+        wuxing_app_detail += f"  【{key}】行业：{val.get('行业', '')} | 色彩：{val.get('色彩', '')} | 方位：{val.get('方向', '')} | 健康：{val.get('健康', '')}\n"
+
+    # 占星数据格式化
+    astro_str = ""
+    if astro:
+        astro_str = f"\n【西方占星参考】\n太阳星座：{astro.get('太阳', '')}\n月亮星座：{astro.get('月亮', '')}\n上升星座：{astro.get('上升', '')}\n元素分布：{json.dumps(astro.get('元素分布', {}), ensure_ascii=False)}\n模式分布：{json.dumps(astro.get('模式分布', {}), ensure_ascii=False)}\n"
+
+    # 四柱拆分（MISSING_MARKER 时不 split，保持标注原样传到 prompt）
+    sizu_parts = sizu.split() if sizu and sizu != MISSING_MARKER else ["", "", "", ""]
+    year_gz = sizu_parts[0] if len(sizu_parts) > 0 else ""
+    month_gz = sizu_parts[1] if len(sizu_parts) > 1 else ""
+    day_gz = sizu_parts[2] if len(sizu_parts) > 2 else ""
+    hour_gz = sizu_parts[3] if len(sizu_parts) > 3 else ""
+
+    # 大运拆分
+    dayun_parts = current_dayun.split() if current_dayun and current_dayun != MISSING_MARKER else ["", ""]
+    dayun_gz = dayun_parts[0] if len(dayun_parts) > 0 else ""
+    dayun_years = dayun_parts[1] if len(dayun_parts) > 1 else ""
+
+    # 计算年龄和年龄阶段
+    birth_year = int(birth_date.split('-')[0]) if birth_date else 2000
+    current_year = datetime.now().year
+    age = current_year - birth_year
+
+    if age <= 12:
+        age_stage = "儿童期（0-12岁）"
+    elif age <= 17:
+        age_stage = "青春期（13-17岁）"
+    elif age <= 30:
+        age_stage = "青年期（18-30岁）"
+    elif age <= 50:
+        age_stage = "中年期（31-50岁）"
+    else:
+        age_stage = "中老年期（51岁+）"
+
+    # 根据年龄阶段决定 subtopic[2]/[3] 标题与内容要点、summary 标题
+    if age <= 12:
+        # 儿童期：事业/姻缘以未来视角展开，summary 聚焦教育培养
+        career_title = "事业指南：财富与方向"
+        career_blocks_hint = (
+            '        {"type": "keyword", "keyword": "最适合的行业方向", "narrative": "未来首选和次选行业方向，说明理由，关键行业名称**加粗**"},\n'
+            '        {"type": "keyword", "keyword": "求财与事业核心借力", "narrative": "未来财运逻辑，怎样赚钱最顺最稳，重要策略**加粗**"},\n'
+            '        {"type": "keyword", "keyword": "绝对禁止的行为", "narrative": "未来需要避开的风险行为和方向，警示语句**加粗**"}'
+        )
+        marriage_title = "姻缘洞察：感情与婚姻"
+        marriage_blocks_hint = (
+            '        {"type": "keyword", "keyword": "感情缘分与桃花特征", "narrative": "未来异性缘情况，桃花特点"},\n'
+            '        {"type": "keyword", "keyword": "婚恋隐患与挑战", "narrative": "未来感情中需注意的问题和潜在风险，重点问题**加粗**"},\n'
+            '        {"type": "keyword", "keyword": "破局之道与择偶建议", "narrative": "未来如何改善感情状况，择偶关键要点，重要建议**加粗**"}'
+        )
+        summary_title = "教育培养与成长展望"
+        summary_narrative_hint = "面向家长解读，聚焦教育方向、天赋培养、父母助力、未来人生规划展望"
+    elif age <= 17:
+        # 青春期：事业改学业职业规划，姻缘改心理社交引导
+        career_title = "学业发展与职业规划"
+        career_blocks_hint = (
+            '        {"type": "keyword", "keyword": "学业优势与方向", "narrative": "适合的学科和学习方法"},\n'
+            '        {"type": "keyword", "keyword": "兴趣培养与潜能", "narrative": "值得深入培养的兴趣爱好和潜在优势"},\n'
+            '        {"type": "keyword", "keyword": "未来职业方向", "narrative": "适合的职业领域和发展路径"},\n'
+            '        {"type": "keyword", "keyword": "学业关键期", "narrative": "需特别关注的学业阶段和考试时间点"}'
+        )
+        marriage_title = "青春期心理与社交引导"
+        marriage_blocks_hint = (
+            '        {"type": "keyword", "keyword": "亲子关系建议", "narrative": "与父母沟通的建议和注意事项"},\n'
+            '        {"type": "keyword", "keyword": "早恋风险与应对", "narrative": "如何正确处理感情萌芽，避免影响学业"},\n'
+            '        {"type": "keyword", "keyword": "社交能力培养", "narrative": "如何建立健康的人际关系"},\n'
+            '        {"type": "keyword", "keyword": "心理调适方法", "narrative": "面对压力和迷茫时的自我调节方法"}'
+        )
+        summary_title = "总结"
+        summary_narrative_hint = "温暖真诚的全局收尾，正向鼓励和人生核心策略"
+    else:
+        # 青年期及以上：正常事业财富和婚姻感情
+        career_title = "事业指南：财富与方向"
+        career_blocks_hint = (
+            '        {"type": "keyword", "keyword": "最适合的行业方向", "narrative": "首选和次选行业，说明理由，关键行业名称**加粗**"},\n'
+            '        {"type": "keyword", "keyword": "求财与事业核心借力", "narrative": "财运逻辑，怎样赚钱最顺最稳，重要策略**加粗**"},\n'
+            '        {"type": "keyword", "keyword": "绝对禁止的行为", "narrative": "需要避开的风险行为和方向，警示语句**加粗**"}'
+        )
+        marriage_title = "姻缘洞察：感情与婚姻"
+        marriage_blocks_hint = (
+            '        {"type": "keyword", "keyword": "感情缘分与桃花特征", "narrative": "异性缘情况，桃花特点"},\n'
+            '        {"type": "keyword", "keyword": "婚恋隐患与挑战", "narrative": "感情中需注意的问题和潜在风险，重点问题**加粗**"},\n'
+            '        {"type": "keyword", "keyword": "破局之道与择偶建议", "narrative": "如何改善感情状况，择偶关键要点，重要建议**加粗**"}'
+        )
+        summary_title = "总结"
+        summary_narrative_hint = "温暖真诚的全局收尾，正向鼓励和人生核心策略"
+
+    prompt = f"""# 角色设定
+你是深耕传统子平命理20年的资深命理战略顾问，擅长把专业八字命理逻辑，转化为小白能看懂、能落地的人生决策指南。融合现代心理、职场、生活视角，不搞玄学堆砌、不晦涩说教。全程以用户视角输出：先给结论、再讲原因、最后给方案，文风温柔治愈、真实接地气，兼顾专业度与阅读体验，适配付费小白用户。
+
+# 核心任务
+根据用户完整八字排盘数据，撰写一份零基础友好、痛点精准、落地性强、氛围感足的全套命理人生画像报告。不空谈格局、不堆砌术语、不写模板套话，所有命理推演100%对应用户现实性格、职场、财运、感情、健康、运势，做到看得懂、有共鸣、用得上。
+
+# 用户输入数据
+【四柱八字】：{year_gz} {month_gz} {day_gz} {hour_gz}
+【日主五行】：{rizhu}
+【当前大运】：{dayun_gz} {dayun_years}
+【其他信息】：性别{gender}，出生地{location}
+【当前年龄】：{age}岁（出生于{birth_year}年）
+【年龄阶段】：{age_stage}
+
+【排盘原始数据（供你推演参考）】
+月令：{yueling}
+旺衰结论：{wangshuai}（{ws_deling}、{ws_dedi}、{ws_deshi}）
+格局：{geju}
+调候：{tiaohou_desc}
+十神分布：{shishen_fenbu}
+五行分布：金{wuxing_fenbu.get('金', 0)} 木{wuxing_fenbu.get('木', 0)} 水{wuxing_fenbu.get('水', 0)} 火{wuxing_fenbu.get('火', 0)} 土{wuxing_fenbu.get('土', 0)}
+地支作用：{dizhi_zuoyong}
+纳音：年柱{nayin.get('年', '')}、月柱{nayin.get('月', '')}、日柱{nayin.get('日', '')}、时柱{nayin.get('时', '')}
+大运解读：{dayun_jiedu}
+重点流年：
+{liunian_str}
+五行开运参考：
+{wuxing_app_detail}{astro_str}
+
+# 输出格式（必须输出纯JSON，不要用```json代码块包裹，直接输出JSON文本）
+
+输出 FollowupReport JSON 结构，包含 opening + 6个固定 subtopics + summary。结构如下（人类可读模板，按此结构填充真实内容，不要输出本模板原文）：
+
+{{
+  "opening": {{
+    "lead": "温暖共情的开场白，1-2句叙事化切入，无标题。严禁以任何角色身份开头（如我是...顾问/师/专家），严禁自我介绍，直接用命理洞察或共情叙事切入。可内联**加粗**重要词"
+  }},
+  "subtopics": [
+    {{
+      "title": "命盘解码：五行能量格局",
+      "blocks": [
+        {{"type": "keyword", "keyword": "你的天性画像", "narrative": "用日常生活画面比喻你的日主（如田园之土、参天大树），描述这种特质在性格中的具体表现，2-3句，可内联**加粗**"}},
+        {{"type": "keyword", "keyword": "五行能量分布", "narrative": "用季节+自然画面描述五行强弱，关键术语加粗并紧跟括号解释，2-3句"}},
+        {{"type": "keyword", "keyword": "格局类型", "narrative": "用通俗比方解释格局意味着什么，链接人生处境，2-3句"}},
+        {{"type": "keyword", "keyword": "用神与忌神", "narrative": "明确标注用神（{yongshen}）和忌神（{jishen}），用方向感描述人生方向，指引性短语**加粗**，2-3句"}},
+        {{"type": "keyword", "keyword": "根据下方比喻提炼的叙事化概括，如'小陶灯式命局''柔光恒久的底色'，禁止用'收尾点睛/总结/收尾'这类描述功能的元标签", "narrative": "用一个生动的人生比喻总结命局核心逻辑，链接情感，2-3句"}}
+      ]
+    }},
+    {{
+      "title": "性格密码：天赋与潜能",
+      "blocks": [
+        {{"type": "keyword", "keyword": "性格优势与高光点", "narrative": "独特天赋和闪光点，适合的发展方向，2-3句"}},
+        {{"type": "keyword", "keyword": "性格盲区与内耗点", "narrative": "容易内耗的地方、容易陷入的误区，**重点警示语句加粗**，2-3句"}},
+        {{"type": "keyword", "keyword": "内在潜能画像", "narrative": "结合格局分析深层潜能和最佳发挥方式，2-3句"}}
+      ]
+    }},
+    {{
+      "title": "{career_title}",
+      "blocks": [
+{career_blocks_hint}
+      ]
+    }},
+    {{
+      "title": "{marriage_title}",
+      "blocks": [
+{marriage_blocks_hint}
+      ]
+    }},
+    {{
+      "title": "运势推演：大运与流年",
+      "blocks": [
+        {{"type": "keyword", "keyword": "当下大运底色", "narrative": "这十年的整体走势和核心策略，**大运名称加粗**，2-3句"}},
+        {{"type": "keyword", "keyword": "近期流年高光拐点", "narrative": "重点年份的机遇和挑战，**关键年份加粗**如**2026年**，2-3句"}},
+        {{"type": "keyword", "keyword": "未来展望", "narrative": "后续大运的趋势和应对策略，2-3句"}}
+      ]
+    }},
+    {{
+      "title": "养生开运：健康与能量",
+      "blocks": [
+        {{"type": "keyword", "keyword": "穿衣与色彩搭配", "narrative": "推荐的大吉色彩和需要避讳的色彩，**色彩名称加粗**，2-3句"}},
+        {{"type": "keyword", "keyword": "方位与居住选择", "narrative": "有利的方位和需要避开的方位，**方位名称加粗**，2-3句"}},
+        {{"type": "keyword", "keyword": "健康与养生建议", "narrative": "需特别注意的身体部位和养生方法，**健康关注点加粗**，2-3句"}},
+        {{"type": "keyword", "keyword": "办公与环境开运", "narrative": "简单易行的办公环境调整建议，2-3句"}}
+      ]
+    }}
+  ],
+  "summary": {{
+    "title": "{summary_title}",
+    "narrative": "{summary_narrative_hint}。禁止使用固定模板句式如总结如下、综合来看等刻板开头。以昵称你指代用户，禁止直接复述用户出生日期作为主语。可内联**加粗**"
+  }}
+}}
+
+## 硬性JSON渲染约束（一条都不可改动，保障前端稳定渲染）
+- 所有 block 统一用 type="keyword"，含 keyword（叙事化关键词短语）+ narrative（2-3句描述）
+- 每个 narrative 2-3句、不超过150字，可内联**加粗**重要词
+- keyword 字段绝对禁止添加**号或任何Markdown符号（前端组件自动加粗）；keyword 必须是叙事化概括短语，禁止用"收尾点睛/总结/收尾/点睛"这类描述功能的元标签，必须概括本块 narrative 的实际内容
+- 所有字符串值必须是单行，需要分段用 \\n\\n 转义
+- summary 用 narrative 字段放温暖真诚的全局收尾内容（不用 items）
+- 禁止使用 sub_items 字段；并列要点直接写进 narrative 并用**加粗**
+- 禁止使用 term_explain 字段；命理名词解释揉进 narrative 句子中
+- subtopic 的 closing 字段默认不输出（留空），除非有真正想补的情绪安抚
+- subtopics 数量固定为6个，严格按上述顺序和标题输出
+
+# 小白友好·强制核心新规（重中之重）
+1. **全程结论前置**：每个 block 的 narrative 先抛大白话核心结论，再简单补充命理逻辑，杜绝先讲原理后给答案的晦涩写法。
+2. **所有术语100%人话翻译**：出现食神、七杀、印星、身弱、自刑、食伤生财等专业词汇，必须同步搭配现实通俗解释，禁止纯术语堆砌，零阅读门槛。例：食伤生财=靠个人能力、业绩、技能赚钱；自刑=内心纠结、流程波折、事情反复内耗。**每个命理术语首次出现时，必须紧跟括号解释**。**每个 subtopic 至少包含1个生活化比喻**，用日常场景类比命理概念，如把"身弱财旺"比作"面前有座金山但只有小推车"。
+3. **去冗余、去科普、去模板化**：不讲解五行基础理论、不教用户学八字，只讲这个格局对你人生的具体影响，全部内容贴合用户个人情况，无通用套话。
+4. **痛点+优势双向兼顾**：保留温柔治愈文风，同时精准点出内耗、短板、误区、隐藏压力，不只夸不贬，真实有共鸣。
+5. **所有推演落地现实化**：五行、十神、刑冲合害、大运流年，全部对应性格、职场、赚钱、感情、健康、人际现实问题，不空谈玄学理论。
+6. **排版轻量化**：narrative 短句输出、段落清爽，适配手机碎片化阅读。
+7. **结合现实年龄（强制执行，违反即不合格）**：必须根据命主当前年龄和人生阶段调整报告内容重点，**严格禁止**提及任何不符合该年龄段的内容：
+   - **0-12岁（儿童期）**：重点关注健康发育、性格培养、教育方向、父母助力、家庭环境。事业指南和姻缘洞察以未来潜力展望为主（未来适合的职业方向、未来感情展望），不讨论当前的职业状况和当前的感情/婚姻状况。教育培养与成长展望作为总结部分呈现。回答时需面向家长解读，语气要考虑家长的关切点。
+   - **13-17岁（青春期）**：重点关注学业发展、兴趣培养、亲子关系、早恋风险、身心健康。可适度提及未来职业方向和兴趣探索，但**禁止**讨论购房、婚姻、投资等成人话题。
+   - **18-30岁（青年期）**：重点关注学业/事业起步、恋爱婚姻、财富积累、职业规划。可讨论购房、投资等话题。
+   - **31-50岁（中年期）**：重点关注事业发展、财富管理、婚姻家庭、子女教育。
+   - **51岁+（中老年期）**：重点关注健康养生、退休规划、家庭关系、财富传承。
+
+# 叙事化风格参考（强制执行，违反即不合格）
+每个 narrative 必须达到以下叙事化标准（学习风格，不照搬内容）：
+1. **生动比喻贯穿**：每个 subtopic 至少1个生活化比喻，把抽象命理概念变成日常画面。如把"身弱财旺"比作"面前有座金山但只有小推车"，把"七杀压力"比作"被上司打压的职场内耗"。
+2. **术语即翻译**：命理术语首次出现时紧跟通俗解释。如"我克者为财（土克水，所以水是你的财富星）"、"杀印相生（压力转化为权力背书）"。
+3. **场景代入**：用"你"的视角描述处境，如"你可能常常感到..."、"面对众多机会，你常常陷入..."，让用户有"这就是在说我"的共鸣。
+4. **结论前置+故事展开**：每段先抛大白话结论，再用1-2个生活场景或比喻展开，禁止干瘪要点。如"你的核心潜能不在于单打独斗，而在于资源整合——你就像聪明的军师，配齐主将和城池，谋略就能变现。"
+5. **段落充分展开**：每个 narrative 至少2-3句完整叙事，先结论再展开原因和场景，禁止一句话带过。
+
+# 文风、字数、格式硬性规范
+1. **逻辑**：全程因果闭环，格局→性格→行为→运势→解决方案，层层递进
+2. **文风**：温柔治愈、专业克制、真实接地气，有氛围感但不空洞，有干货但不生硬。每个 narrative 叙事化展开，像给朋友讲故事一样自然流畅，先说结论再代入用户处境，禁止干瘪要点罗列。
+3. **字数**：整份报告 1400–1800 字，精简干货篇幅，不注水、不冗余
+4. **加粗规则**：关键命理术语（如格局名称**财旺身弱**、用神忌神、十神名称**七杀**、**食神**）、重要结论、核心观点、警示语句、关键数字等必须用**加粗**语法强调；禁止整段全加粗
+5. **禁止输出序号**：**严禁**输出任何有序或无序列号（如：一、二、三、1.、2.、●、○、①、a.等），序号统一由前端格式系统处理
+
+# 注意事项
+- 若用户未提供完整信息，请基于子平法合理补全推演，不得虚构极端格局
+- 严格遵守科学理性原则，不涉及封建迷信、恐吓营销或违背公序良俗的内容
+- 保持中立客观，尊重多元价值观，所有建议均以"提升个体能动性"为核心
 """
     return prompt
 

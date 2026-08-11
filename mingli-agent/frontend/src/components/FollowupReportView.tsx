@@ -204,7 +204,7 @@ function SummaryView({ data }: { data: Summary }) {
       {data.lead && renderInline(data.lead)}
       {data.items && itemFormat === 'list' && (
         <ul>
-          {data.items.map((item, i) => (
+          {data.items.filter(item => item.text && item.text.trim()).map((item, i) => (
             <li key={i}>
               <strong>{item.keyword}</strong>：{renderBold(item.text)}
             </li>
@@ -213,7 +213,7 @@ function SummaryView({ data }: { data: Summary }) {
       )}
       {data.items && itemFormat === 'paragraph' && (
         <>
-          {data.items.map((item, i) => (
+          {data.items.filter(item => item.text && item.text.trim()).map((item, i) => (
             <p key={i}>
               <strong>{item.keyword}</strong>：{renderBold(item.text)}
             </p>

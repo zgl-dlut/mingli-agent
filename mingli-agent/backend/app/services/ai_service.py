@@ -8,6 +8,33 @@ import time
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+# 确保 logger.info 能输出到 stdout（uvicorn 默认不配置 app 子 logger 的 handler，
+# 不挂 handler 时 INFO 日志会被丢弃，无法判断 LLM 是在生成还是卡住）
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setLevel(logging.INFO)
+    _h.setFormatter(logging.Formatter("[%(asctime)s] %(message)s"))
+    logger.addHandler(_h)
+    # 日志持久化到文件，便于排查生成状态
+    import os
+    os.makedirs("logs", exist_ok=True)
+    _fh = logging.FileHandler("logs/ai_service.log", encoding="utf-8")
+    _fh.setLevel(logging.INFO)
+    _fh.setFormatter(logging.Formatter("[%(asctime)s] %(message)s"))
+    logger.addHandler(_fh)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False  # 避免重复输出
+
+
+def build_llm_extra_body(model_name: str) -> dict:
+    """构建 extra_body：Qwen 系模型关闭思考模式。
+
+    思考模式消耗大量 tokens 和时间，且曾导致输出内容为空（tokens 被思考耗尽）；
+    非 Qwen 模型（如 GPT）不传 enable_thinking，避免参数校验错误。
+    """
+    if "qwen" in (model_name or "").lower():
+        return {"enable_thinking": False}
+    return {}
 
 
 class ModelConfig(BaseModel):
@@ -56,7 +83,8 @@ model_health: Dict[str, bool] = {m.name: True for m in model_pool}
 
 
 async def get_client(model_config: ModelConfig) -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=model_config.api_key, base_url=model_config.base_url)
+    # max_retries=0：禁止SDK静默重试（默认重试2次会把超时放大3倍，用户空等且无日志）
+    return AsyncOpenAI(api_key=model_config.api_key, base_url=model_config.base_url, max_retries=0)
 
 
 async def generate_ai_response(
@@ -100,7 +128,8 @@ async def generate_ai_response(
                     # 抑制长段落末尾的重复采样循环（避免"职场权力稳固期"等整段重复2-3次）
                     frequency_penalty=0.5,
                     presence_penalty=0.3,
-                    timeout=120
+                    timeout=120,
+                    extra_body=build_llm_extra_body(model_config.name)
                 )
                 first_chunk_ts = None
                 chunk_count = 0
@@ -146,10 +175,16 @@ async def generate_ai_response(
                     max_tokens=6000,
                     frequency_penalty=0.5,
                     presence_penalty=0.3,
-                    timeout=120
+                    timeout=120,
+                    extra_body=build_llm_extra_body(model_config.name)
                 )
                 elapsed = time.time() - start_ts
-                content_len = len(response.choices[0].message.content or "") if response.choices else 0
+                # 兼容不同 endpoint 的响应格式：标准格式用 choices，部分自定义 endpoint 用 text 字段
+                if response.choices:
+                    _content = response.choices[0].message.content or ""
+                else:
+                    _content = getattr(response, "text", None) or ""
+                content_len = len(_content)
                 usage = getattr(response, "usage", None)
                 if usage is not None:
                     p_tok = getattr(usage, "prompt_tokens", 0) or 0
@@ -167,7 +202,8 @@ async def generate_ai_response(
                 if response.choices:
                     yield response.choices[0].message.content or ""
                 else:
-                    yield ""
+                    # 兼容自定义 endpoint：内容可能在 text 字段而非 choices
+                    yield getattr(response, "text", None) or ""
 
             # 成功：更新健康状态，模型保持在首位
             model_health[model_config.name] = True
@@ -236,6 +272,204 @@ async def generate_first_reading(
     messages = [{"role": "user", "content": f"请为我进行整体命理解读\n出生时间：{birth_time}\n出生地点：{location}"}]
     async for content in generate_ai_response(system_prompt, messages):
         yield content
+
+
+async def generate_first_reading_structured(
+    gender: str,
+    birth_date: str,
+    birth_time: str,
+    location: str,
+    longitude: float,
+    latitude: float,
+) -> AsyncGenerator[str, None]:
+    """首次命理报告结构化生成：输出FollowupReport JSON字符串（非流式）。
+
+    复用追问报告的 FollowupReport schema + 容错提取 + 规范化链路，
+    与 generate_followup_structured 的 LLM 调用模式一致。
+    """
+    import json
+    from app.services.prompt_builder import build_first_reading_structured_prompt
+    from app.services.followup_structured import _normalize_report_data, _extract_and_fix_json
+    from app.services.chart_validator import validate_chart_data, get_chart_fingerprint
+    from app.schemas.report_schema import FollowupReport
+    from app.skills.orchestrator import generate_full_analysis
+    from pydantic import ValidationError
+
+    # gender 统一为中文
+    gender_cn = "男" if gender in ("male", "男") else "女"
+
+    # 1. 现场重算命盘（加异常兜底，排盘失败不崩溃）
+    try:
+        analysis_data = generate_full_analysis(
+            birth_date=birth_date,
+            birth_time=birth_time,
+            longitude=longitude,
+            latitude=latitude,
+            gender=gender_cn,
+            location=location,
+        )
+    except Exception as e:
+        logger.error(
+            f"[StructuredFirstReading] generate_full_analysis 异常: {type(e).__name__}: {e}"
+        )
+        analysis_data = {}  # 降级为空，后续校验会记录所有字段缺失
+
+    # 2. 命盘数据完整性校验（代码层 check，不依赖 prompt）
+    chart_ok, missing = validate_chart_data(analysis_data)
+    if not chart_ok:
+        # 关键字段（日主/四柱/用神/当前大运）缺失升 error，便于重点排查；其余 warning
+        _CRITICAL_FIELDS = {"日主", "四柱", "用神", "当前大运"}
+        _log_fn = logger.error if any(m in _CRITICAL_FIELDS for m in missing) else logger.warning
+        _log_fn(
+            f"[StructuredFirstReading] 命盘数据缺失: {missing}，降级生成（缺失字段在prompt标注），"
+            f"指纹: {get_chart_fingerprint(analysis_data)}"
+        )
+    else:
+        logger.info(
+            f"[StructuredFirstReading] 命盘校验通过, 指纹: {get_chart_fingerprint(analysis_data)}"
+        )
+    logger.info(
+        f"[StructuredFirstReading][排查] 命盘上下文构建: 日主={analysis_data.get('日主')}, "
+        f"用神={analysis_data.get('用神')}, 忌神={analysis_data.get('忌神')}, "
+        f"当前大运={analysis_data.get('当前大运')}, "
+        f"重点流年={str(analysis_data.get('重点流年', ''))[:120]}"
+    )
+
+    # 3. 构建 prompt
+    system_prompt = build_first_reading_structured_prompt(
+        analysis_data, gender_cn, birth_date, birth_time, location
+    )
+    messages = [{"role": "user", "content": f"请为我进行整体命理解读\n出生时间：{birth_date} {birth_time}\n出生地点：{location}"}]
+    logger.info(
+        f"[StructuredFirstReading] 开始生成, 模型={model_pool[0].name if model_pool else '无'}, "
+        f"prompt长度: {len(system_prompt)}"
+    )
+
+    # 3. 调用 LLM（response_format=json_object，非流式）
+    if not model_pool:
+        logger.error("[StructuredFirstReading] model_pool为空: AI模型未配置，返回错误JSON")
+        yield json.dumps(
+            {"opening": {"lead": "AI模型未配置"}, "subtopics": [], "summary": {"title": "错误"}},
+            ensure_ascii=False,
+        )
+        return
+
+    model_config = model_pool[0]
+    client = await get_client(model_config)
+
+    # 应用层可见重试（最多2次）：禁止SDK静默重试（max_retries=0），
+    # 避免 timeout×3次静默重试导致用户空等6分钟且无任何日志
+    _MAX_ATTEMPTS = 2
+    start = time.time()
+    response = None
+    last_error = None
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        attempt_start = time.time()
+        logger.info(
+            f"[StructuredFirstReading] LLM尝试 {attempt}/{_MAX_ATTEMPTS} 开始, "
+            f"模型={model_config.name}, timeout=300s"
+        )
+        try:
+            response = await client.chat.completions.create(
+                model=model_config.name,
+                messages=[{"role": "system", "content": system_prompt}] + messages,
+                temperature=0.3,
+                max_tokens=8000,
+                response_format={"type": "json_object"},
+                timeout=300,
+                extra_body=build_llm_extra_body(model_config.name),
+            )
+            break  # 成功
+        except Exception as e:
+            last_error = e
+            attempt_elapsed = time.time() - attempt_start
+            logger.error(
+                f"[StructuredFirstReading] LLM尝试 {attempt}/{_MAX_ATTEMPTS} 失败: "
+                f"模型={model_config.name}, 耗时={attempt_elapsed:.1f}s, "
+                f"错误={type(e).__name__}: {str(e)[:200]}"
+            )
+    if response is None:
+        elapsed = time.time() - start
+        logger.error(
+            f"[StructuredFirstReading] LLM请求失败: 模型={model_config.name}, 状态=异常, "
+            f"总耗时={elapsed:.1f}s, 尝试次数={_MAX_ATTEMPTS}, 最后错误={type(last_error).__name__}: {str(last_error)[:200]}"
+        )
+        raise last_error
+
+    # 兼容不同 endpoint 的响应格式：标准格式用 choices，部分自定义 endpoint 用 text 字段
+    if response.choices:
+        raw_content = response.choices[0].message.content or ""
+        finish_reason = response.choices[0].finish_reason
+    else:
+        raw_content = getattr(response, "text", None) or ""
+        finish_reason = getattr(response, "finish_reason", "stop")
+        if not raw_content:
+            _model = getattr(response, "model", "unknown")
+            _id = getattr(response, "id", "unknown")
+            logger.error(
+                f"[StructuredFirstReading] LLM返回空响应: model={_model}, id={_id}, "
+                f"config_model={model_config.name}, choices={response.choices}"
+            )
+            raise RuntimeError(
+                f"LLM 返回空响应（choices 为空），可能原因：模型 {model_config.name} 不支持 JSON 模式或 API 配额异常"
+            )
+    elapsed = time.time() - start
+    logger.info(
+        f"[StructuredFirstReading] LLM响应: 模型={model_config.name}, 状态=成功, "
+        f"finish_reason={finish_reason}, 长度={len(raw_content)}, 耗时={elapsed:.1f}s"
+    )
+
+    # 4. 解析 + 容错提取
+    try:
+        data = json.loads(raw_content)
+        logger.info("[StructuredFirstReading] JSON直接解析成功")
+    except json.JSONDecodeError:
+        logger.info("[StructuredFirstReading] JSON直接解析失败，启动容错修复...")
+        fixed = _extract_and_fix_json(raw_content)
+        try:
+            data = json.loads(fixed)
+            logger.info("[StructuredFirstReading] 容错修复后解析成功")
+        except json.JSONDecodeError as e:
+            logger.error(f"[StructuredFirstReading] JSON解析彻底失败: {e}")
+            error_report = {
+                "opening": {"lead": "报告生成异常，请稍后重试。"},
+                "subtopics": [],
+                "summary": {"title": "生成失败"},
+            }
+            yield json.dumps(error_report, ensure_ascii=False)
+            return
+
+    # 5. 字段规范化（复用追问报告的规范化逻辑）
+    _normalize_report_data(data)
+    logger.info("[StructuredFirstReading] 字段规范化完成")
+
+    # 6. Pydantic 校验
+    try:
+        report = FollowupReport.model_validate(data)
+        logger.info(
+            f"[StructuredFirstReading] Pydantic校验通过, subtopics={len(report.subtopics)}"
+        )
+    except ValidationError as e:
+        logger.error(f"[StructuredFirstReading] Pydantic校验失败: {e}")
+        logger.error(
+            f"[StructuredFirstReading] 规范化后data片段: {json.dumps(data, ensure_ascii=False)[:800]}"
+        )
+        error_report = {
+            "opening": {"lead": "报告格式异常，请稍后重试。"},
+            "subtopics": [],
+            "summary": {"title": "校验失败"},
+        }
+        yield json.dumps(error_report, ensure_ascii=False)
+        return
+
+    # 7. 命盘指纹审计（事后核对 LLM 输出是否与命盘一致，不强制拦截）
+    logger.info(
+        f"[StructuredFirstReading] 命盘指纹审计: {get_chart_fingerprint(analysis_data)}, "
+        f"LLM输出摘要: {raw_content[:200]}"
+    )
+
+    # 8. yield JSON 字符串（存库用，前端 isStructuredReport 自动识别 JSON 走结构化渲染）
+    yield json.dumps(data, ensure_ascii=False)
 
 
 def get_model_status() -> Dict[str, Any]:

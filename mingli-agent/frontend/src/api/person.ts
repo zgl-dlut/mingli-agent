@@ -54,4 +54,8 @@ export const personApi = {
 
   delete: (id: number) =>
     apiClient.delete(`/persons/${id}`),
+
+  /** 确保 person 对应的 session 存在（session 被误删时按 person 信息重建，幂等不扣费） */
+  ensureSession: (id: number) =>
+    apiClient.post<{ session_id: number; created: boolean }>(`/persons/${id}/ensure-session`),
 }

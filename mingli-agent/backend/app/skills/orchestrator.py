@@ -244,9 +244,19 @@ def generate_full_analysis(
     from app.skills.divination.motto_skill import generate_motto
 
     # ================================================================
-    # 1. 基础八字排盘
+    # 1. 基础八字排盘（根，失败则向上抛出带上下文的异常，由调用方降级）
     # ================================================================
-    bazi = calculate_bazi(birth_date, birth_time, longitude, gender)
+    try:
+        bazi = calculate_bazi(birth_date, birth_time, longitude, gender)
+    except Exception as e:
+        logger.error(
+            f"[排盘] 基础八字计算失败 birth_date={birth_date} birth_time={birth_time} "
+            f"lng={longitude} gender={gender}: {type(e).__name__}: {e}",
+            exc_info=True,
+        )
+        raise RuntimeError(
+            f"基础排盘失败 birth_date={birth_date} birth_time={birth_time}: {type(e).__name__}: {e}"
+        ) from e
     pillars_cn = bazi.pillars          # {"年": {"tian": "庚", "di": "午"}, ...}
     canggan_cn = bazi.canggan          # {"年": ["癸"], "月": ["己", "辛", "癸"], ...}
     wuxing = bazi.wuxing               # {"金": 2, "木": 1, ...}
@@ -263,10 +273,14 @@ def generate_full_analysis(
     zodiac = get_zodiac(birth_year)
 
     # ================================================================
-    # 2. 地支关系
+    # 2. 地支关系（局部容错，失败置空不影响其他 skill）
     # ================================================================
     dizhi_list = [pillars_cn[k]["di"] for k in ["年", "月", "日", "时"]]
-    dizhi_result = analyze_dizhi_relations(dizhi_list)
+    try:
+        dizhi_result = analyze_dizhi_relations(dizhi_list)
+    except Exception as e:
+        logger.warning(f"[排盘] 地支关系计算失败，置空: {type(e).__name__}: {e}", exc_info=True)
+        dizhi_result = {"summary": ""}
 
     # ================================================================
     # 3. 日主旺衰（需要英文 key）
@@ -279,32 +293,50 @@ def generate_full_analysis(
     # 构建完整的十神映射（天干 -> 十神），供 wangshuai_skill 使用
     shishen_map = _build_shishen_map(day_tian, pillars_cn, canggan_cn)
 
-    wangshuai_result = calculate_wangshuai(
-        day_tian=day_tian,
-        month_di=month_di,
-        day_di=day_di,
-        pillars=pillars_en,
-        canggan=canggan_dizhi,
-        shishen=shishen_map,
-    )
+    try:
+        wangshuai_result = calculate_wangshuai(
+            day_tian=day_tian,
+            month_di=month_di,
+            day_di=day_di,
+            pillars=pillars_en,
+            canggan=canggan_dizhi,
+            shishen=shishen_map,
+        )
+    except Exception as e:
+        logger.warning(f"[排盘] 旺衰计算失败，置空: {type(e).__name__}: {e}", exc_info=True)
+        wangshuai_result = {
+            "conclusion": "", "de_ling": {}, "de_di": {}, "de_shi": {}, "total_score": 0,
+        }
 
     # ================================================================
     # 4. 调候用神
     # ================================================================
-    tiaohou_result = calculate_tiaohou(day_tian, month_di)
+    try:
+        tiaohou_result = calculate_tiaohou(day_tian, month_di)
+    except Exception as e:
+        logger.warning(f"[排盘] 调候用神计算失败，置空: {type(e).__name__}: {e}", exc_info=True)
+        tiaohou_result = {
+            "yongshen": "", "xishen": "", "jishen": "", "tiaohou_description": "",
+        }
 
     # ================================================================
     # 5. 格局判定（使用中文 key 的 pillars 和 shishen）
     # ================================================================
     # geju_skill 接受的 shishen 格式: {"年": {"tian": "正财", "di": "偏印"}, ...}
     # 与 bazi_service 返回的 shishen 格式一致
-    geju_result = calculate_geju(
-        day_tian=day_tian,
-        month_di=month_di,
-        pillars=pillars_cn,
-        shishen=bazi.shishen,
-        wangshuai_conclusion=wangshuai_result["conclusion"],
-    )
+    try:
+        geju_result = calculate_geju(
+            day_tian=day_tian,
+            month_di=month_di,
+            pillars=pillars_cn,
+            shishen=bazi.shishen,
+            wangshuai_conclusion=wangshuai_result.get("conclusion", ""),
+        )
+    except Exception as e:
+        logger.warning(f"[排盘] 格局判定失败，置空: {type(e).__name__}: {e}", exc_info=True)
+        geju_result = {
+            "geju_type": "", "geju_source_ganzhi": "", "xi_ji": {}, "geju_shishen": "",
+        }
 
     # ================================================================
     # 6. 大运流年解读（可选，导入失败则跳过）
@@ -357,13 +389,17 @@ def generate_full_analysis(
         logger.warning(f"大运流年解读计算失败，跳过: {e}")
 
     # ================================================================
-    # 7. 五行应用
+    # 7. 五行应用（局部容错，失败置空）
     # ================================================================
-    wuxing_app = _build_wuxing_application_section(
-        yongshen=tiaohou_result["yongshen"],
-        xishen=tiaohou_result["xishen"],
-        jishen=tiaohou_result["jishen"],
-    )
+    try:
+        wuxing_app = _build_wuxing_application_section(
+            yongshen=tiaohou_result.get("yongshen", ""),
+            xishen=tiaohou_result.get("xishen", ""),
+            jishen=tiaohou_result.get("jishen", ""),
+        )
+    except Exception as e:
+        logger.warning(f"[排盘] 五行应用计算失败，置空: {type(e).__name__}: {e}", exc_info=True)
+        wuxing_app = {}
 
     # ================================================================
     # 8. 占星数据
@@ -382,16 +418,32 @@ def generate_full_analysis(
     # ================================================================
 
     # 日主描述
-    day_master_desc = get_day_master_description(day_tian)
+    try:
+        day_master_desc = get_day_master_description(day_tian)
+    except Exception as e:
+        logger.warning(f"[排盘] 日主描述生成失败，置空: {type(e).__name__}: {e}", exc_info=True)
+        day_master_desc = ""
 
     # 四柱字符串
-    sizhu_str = _build_sizhu_string(pillars_cn)
+    try:
+        sizhu_str = _build_sizhu_string(pillars_cn)
+    except Exception as e:
+        logger.warning(f"[排盘] 四柱字符串构建失败，置空: {type(e).__name__}: {e}", exc_info=True)
+        sizhu_str = ""
 
     # 月令描述
-    yueling_desc = _build_yueling_description(month_di)
+    try:
+        yueling_desc = _build_yueling_description(month_di)
+    except Exception as e:
+        logger.warning(f"[排盘] 月令描述生成失败，置空: {type(e).__name__}: {e}", exc_info=True)
+        yueling_desc = ""
 
     # 十神分布描述
-    shishen_dist = _build_shishen_distribution(pillars_cn, shishen_map)
+    try:
+        shishen_dist = _build_shishen_distribution(pillars_cn, shishen_map)
+    except Exception as e:
+        logger.warning(f"[排盘] 十神分布描述生成失败，置空: {type(e).__name__}: {e}", exc_info=True)
+        shishen_dist = ""
 
     # 当前大运描述
     current_dayun_str = ""
@@ -409,47 +461,51 @@ def generate_full_analysis(
 
     # 旺衰详情
     wangshuai_detail = {
-        "得令": wangshuai_result["de_ling"],
-        "得地": wangshuai_result["de_di"],
-        "得势": wangshuai_result["de_shi"],
-        "总分": wangshuai_result["total_score"],
+        "得令": wangshuai_result.get("de_ling", {}),
+        "得地": wangshuai_result.get("de_di", {}),
+        "得势": wangshuai_result.get("de_shi", {}),
+        "总分": wangshuai_result.get("total_score", 0),
     }
 
     # 格局详情
     geju_detail = {
-        "类型": geju_result["geju_type"],
-        "来源": geju_result["geju_source_ganzhi"],
+        "类型": geju_result.get("geju_type", ""),
+        "来源": geju_result.get("geju_source_ganzhi", ""),
         "喜忌": geju_result.get("xi_ji", {}),
     }
 
     # ================================================================
-    # 8.5 命格箴言
+    # 8.5 命格箴言（局部容错，失败置空）
     # ================================================================
-    motto_result = generate_motto(
-        month_di=month_di,
-        tiaohou_yongshen=tiaohou_result["yongshen"],
-        tiaohou_description=tiaohou_result["tiaohou_description"],
-        shishen_distribution=shishen_dist,
-        geju_type=geju_result["geju_type"],
-        geju_shishen=geju_result.get("geju_shishen", ""),
-        wangshuai_conclusion=wangshuai_result["conclusion"],
-        shishen_map=shishen_map,
-        pillars=pillars_cn,
-    )
+    try:
+        motto_result = generate_motto(
+            month_di=month_di,
+            tiaohou_yongshen=tiaohou_result.get("yongshen", ""),
+            tiaohou_description=tiaohou_result.get("tiaohou_description", ""),
+            shishen_distribution=shishen_dist,
+            geju_type=geju_result.get("geju_type", ""),
+            geju_shishen=geju_result.get("geju_shishen", ""),
+            wangshuai_conclusion=wangshuai_result.get("conclusion", ""),
+            shishen_map=shishen_map,
+            pillars=pillars_cn,
+        )
+    except Exception as e:
+        logger.warning(f"[排盘] 命格箴言生成失败，置空: {type(e).__name__}: {e}", exc_info=True)
+        motto_result = {"命格箴言": "", "调候标签": "", "十神做功标签": ""}
 
     result: Dict[str, Any] = {
         "四柱": sizhu_str,
         "日主": day_master_desc,
         "月令": yueling_desc,
-        "旺衰结论": wangshuai_result["conclusion"],
+        "旺衰结论": wangshuai_result.get("conclusion", ""),
         "旺衰详情": wangshuai_detail,
-        "格局": geju_result["geju_type"],
+        "格局": geju_result.get("geju_type", ""),
         "格局详情": geju_detail,
-        "用神": tiaohou_result["yongshen"],
-        "喜神": tiaohou_result["xishen"],
-        "忌神": tiaohou_result["jishen"],
-        "调候描述": tiaohou_result["tiaohou_description"],
-        "地支作用": dizhi_result["summary"],
+        "用神": tiaohou_result.get("yongshen", ""),
+        "喜神": tiaohou_result.get("xishen", ""),
+        "忌神": tiaohou_result.get("jishen", ""),
+        "调候描述": tiaohou_result.get("tiaohou_description", ""),
+        "地支作用": dizhi_result.get("summary", ""),
         "十神分布": shishen_dist,
         "五行分布": wuxing,
         "纳音": nayin_output,
@@ -459,10 +515,10 @@ def generate_full_analysis(
         "五行应用": wuxing_app,
         "占星数据": astrology_data,
         "生肖": zodiac,
-        "命格箴言": motto_result["命格箴言"],
+        "命格箴言": motto_result.get("命格箴言", ""),
         "命格箴言标签": {
-            "调候标签": motto_result["调候标签"],
-            "十神做功标签": motto_result["十神做功标签"],
+            "调候标签": motto_result.get("调候标签", ""),
+            "十神做功标签": motto_result.get("十神做功标签", ""),
         },
     }
 
