@@ -20,7 +20,6 @@ interface UserState {
   addPoints: (points: number) => void
   deductPoints: (points: number) => boolean
   clearError: () => void
-  clearUser: () => void
 }
 
 // Mock 模式开关：后端未启动时自动降级为本地 mock
@@ -155,14 +154,4 @@ export const useUserStore = create<UserState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
-
-  clearUser: () => {
-    localStorage.removeItem('mingli_token')
-    localStorage.removeItem('mingli_user')
-    // 同步清空本地用户数据，保证退出/重置后无隐私残留
-    useChatStore.getState().deleteAllChats()
-    usePersonStore.getState().clearPersons()
-    useTransactionStore.getState().clearTransactions()
-    set({ user: null, token: null, isLoggedIn: false, error: null })
-  },
 }))

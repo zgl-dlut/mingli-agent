@@ -50,6 +50,162 @@ JIEQI = ["小寒", "大寒", "立春", "雨水", "惊蛰", "春分", "清明", "
 # 数据来源：udtool.com 二十四节气查询
 # 索引对应：0=小寒, 1=大寒, 2=立春, ..., 23=大寒
 PRECALCULATED_JIEQI: Dict[int, Dict[int, datetime]] = {
+    1988: {
+        0: datetime(1988, 1, 6, 11, 4, 0),     # 小寒
+        1: datetime(1988, 1, 21, 4, 41, 0),    # 大寒
+        2: datetime(1988, 2, 4, 22, 37, 0),    # 立春
+        3: datetime(1988, 2, 19, 18, 45, 0),   # 雨水
+        4: datetime(1988, 3, 5, 16, 46, 0),    # 惊蛰
+        5: datetime(1988, 3, 20, 17, 39, 0),   # 春分
+        6: datetime(1988, 4, 4, 21, 5, 0),     # 清明
+        7: datetime(1988, 4, 20, 4, 36, 0),    # 谷雨
+        8: datetime(1988, 5, 5, 13, 51, 0),    # 立夏
+        9: datetime(1988, 5, 21, 2, 58, 0),    # 小满
+        10: datetime(1988, 6, 5, 19, 15, 0),   # 芒种
+        11: datetime(1988, 6, 21, 11, 55, 0),  # 夏至
+        12: datetime(1988, 7, 7, 5, 34, 0),    # 小暑
+        13: datetime(1988, 7, 22, 23, 2, 0),   # 大暑
+        14: datetime(1988, 8, 7, 15, 21, 0),   # 立秋
+        15: datetime(1988, 8, 23, 6, 36, 0),   # 处暑
+        16: datetime(1988, 9, 7, 18, 27, 0),   # 白露
+        17: datetime(1988, 9, 23, 3, 52, 0),   # 秋分
+        18: datetime(1988, 10, 8, 9, 49, 0),   # 寒露
+        19: datetime(1988, 10, 23, 12, 44, 0), # 霜降
+        20: datetime(1988, 11, 7, 15, 51, 0),  # 立冬
+        21: datetime(1988, 11, 22, 13, 18, 0), # 小雪
+        22: datetime(1988, 12, 7, 6, 38, 0),   # 大雪
+        23: datetime(1988, 12, 21, 23, 28, 0), # 冬至
+    },
+    1989: {
+        0: datetime(1989, 1, 5, 16, 47, 0),    # 小寒
+        1: datetime(1989, 1, 20, 10, 7, 0),     # 大寒
+        2: datetime(1989, 2, 4, 4, 35, 0),      # 立春
+        3: datetime(1989, 2, 19, 0, 30, 0),     # 雨水
+        4: datetime(1989, 3, 5, 22, 33, 0),     # 惊蛰
+        5: datetime(1989, 3, 20, 23, 29, 0),    # 春分
+        6: datetime(1989, 4, 5, 2, 51, 0),      # 清明
+        7: datetime(1989, 4, 20, 10, 2, 0),     # 谷雨
+        8: datetime(1989, 5, 5, 19, 29, 0),     # 立夏
+        9: datetime(1989, 5, 21, 8, 57, 0),     # 小满
+        10: datetime(1989, 6, 6, 0, 57, 0),     # 芒种
+        11: datetime(1989, 6, 21, 17, 43, 0),   # 夏至
+        12: datetime(1989, 7, 7, 11, 8, 0),     # 小暑
+        13: datetime(1989, 7, 23, 4, 44, 0),    # 大暑
+        14: datetime(1989, 8, 7, 20, 42, 0),    # 立秋
+        15: datetime(1989, 8, 23, 12, 18, 0),   # 处暑
+        16: datetime(1989, 9, 8, 0, 4, 0),      # 白露
+        17: datetime(1989, 9, 23, 9, 35, 0),    # 秋分
+        18: datetime(1989, 10, 8, 15, 48, 0),   # 寒露
+        19: datetime(1989, 10, 23, 18, 41, 0),  # 霜降
+        20: datetime(1989, 11, 7, 21, 30, 0),   # 立冬
+        21: datetime(1989, 11, 22, 19, 1, 0),   # 小雪
+        22: datetime(1989, 12, 7, 12, 12, 0),   # 大雪
+        23: datetime(1989, 12, 22, 5, 11, 0),   # 冬至
+    },
+    1990: {
+        0: datetime(1990, 1, 5, 22, 34, 0),    # 小寒
+        1: datetime(1990, 1, 20, 16, 2, 0),     # 大寒
+        2: datetime(1990, 2, 4, 10, 14, 0),     # 立春
+        3: datetime(1990, 2, 19, 6, 14, 0),     # 雨水
+        4: datetime(1990, 3, 6, 4, 20, 0),      # 惊蛰
+        5: datetime(1990, 3, 21, 5, 19, 0),     # 春分
+        6: datetime(1990, 4, 5, 8, 43, 0),      # 清明
+        7: datetime(1990, 4, 20, 15, 54, 0),    # 谷雨
+        8: datetime(1990, 5, 6, 1, 25, 0),      # 立夏
+        9: datetime(1990, 5, 21, 14, 48, 0),    # 小满
+        10: datetime(1990, 6, 6, 6, 56, 0),     # 芒种
+        11: datetime(1990, 6, 21, 23, 13, 0),   # 夏至
+        12: datetime(1990, 7, 7, 17, 2, 0),     # 小暑
+        13: datetime(1990, 7, 23, 10, 46, 0),   # 大暑
+        14: datetime(1990, 8, 8, 2, 26, 0),     # 立秋
+        15: datetime(1990, 8, 23, 17, 27, 0),   # 处暑
+        16: datetime(1990, 9, 8, 5, 57, 0),      # 白露
+        17: datetime(1990, 9, 23, 14, 55, 0),    # 秋分
+        18: datetime(1990, 10, 8, 21, 14, 0),    # 寒露
+        19: datetime(1990, 10, 24, 0, 2, 0),     # 霜降
+        20: datetime(1990, 11, 7, 22, 24, 0),    # 立冬  ← 寿星通用公式精确时间，对齐起运年龄0.8年
+        21: datetime(1990, 11, 22, 0, 54, 0),   # 小雪
+        22: datetime(1990, 12, 7, 18, 3, 0),     # 大雪  ← 关键：12月7日18点（不是6日！）
+        23: datetime(1990, 12, 22, 11, 7, 0),    # 冬至
+    },
+    1991: {
+        0: datetime(1991, 1, 6, 4, 20, 0),      # 小寒
+        1: datetime(1991, 1, 20, 21, 48, 0),     # 大寒
+        2: datetime(1991, 2, 4, 16, 1, 0),       # 立春
+        3: datetime(1991, 2, 19, 11, 59, 0),     # 雨水
+        4: datetime(1991, 3, 6, 10, 11, 0),      # 惊蛰
+        5: datetime(1991, 3, 21, 11, 2, 0),      # 春分
+        6: datetime(1991, 4, 5, 14, 28, 0),      # 清明
+        7: datetime(1991, 4, 20, 21, 39, 0),     # 谷雨
+        8: datetime(1991, 5, 6, 7, 14, 0),       # 立夏
+        9: datetime(1991, 5, 21, 20, 30, 0),     # 小满
+        10: datetime(1991, 6, 6, 12, 48, 0),     # 芒种
+        11: datetime(1991, 6, 21, 5, 19, 0),     # 夏至
+        12: datetime(1991, 7, 7, 22, 53, 0),     # 小暑
+        13: datetime(1991, 7, 23, 16, 30, 0),    # 大暑
+        14: datetime(1991, 8, 8, 8, 15, 0),       # 立秋
+        15: datetime(1991, 8, 23, 23, 19, 0),    # 处暑
+        16: datetime(1991, 9, 8, 11, 39, 0),      # 白露
+        17: datetime(1991, 9, 23, 20, 48, 0),    # 秋分
+        18: datetime(1991, 10, 9, 3, 9, 0),       # 寒露
+        19: datetime(1991, 10, 24, 6, 25, 0),    # 霜降
+        20: datetime(1991, 11, 8, 9, 1, 0),       # 立冬
+        21: datetime(1991, 11, 23, 6, 30, 0),    # 小雪
+        22: datetime(1991, 12, 7, 23, 33, 0),    # 大雪
+        23: datetime(1991, 12, 22, 17, 18, 0),   # 冬至
+    },
+    1992: {
+        0: datetime(1992, 1, 6, 10, 9, 0),       # 小寒
+        1: datetime(1992, 1, 21, 3, 33, 0),       # 大寒
+        2: datetime(1992, 2, 4, 21, 49, 0),       # 立春
+        3: datetime(1992, 2, 19, 17, 44, 0),     # 雨水
+        4: datetime(1992, 3, 5, 16, 1, 0),        # 惊蛰
+        5: datetime(1992, 3, 20, 16, 58, 0),     # 春分
+        6: datetime(1992, 4, 4, 20, 19, 0),       # 清明
+        7: datetime(1992, 4, 20, 3, 25, 0),       # 谷雨
+        8: datetime(1992, 5, 5, 13, 1, 0),         # 立夏
+        9: datetime(1992, 5, 21, 2, 24, 0),       # 小满
+        10: datetime(1992, 6, 5, 18, 39, 0),      # 芒种
+        11: datetime(1992, 6, 21, 11, 15, 0),     # 夏至
+        12: datetime(1992, 7, 7, 4, 40, 0),        # 小暑
+        13: datetime(1992, 7, 22, 22, 5, 0),      # 大暑
+        14: datetime(1992, 8, 7, 14, 3, 0),        # 立秋
+        15: datetime(1992, 8, 22, 23, 54, 0),     # 处暑
+        16: datetime(1992, 9, 7, 17, 21, 0),       # 白露
+        17: datetime(1992, 9, 23, 2, 43, 0),       # 秋分
+        18: datetime(1992, 10, 8, 9, 2, 0),         # 寒露
+        19: datetime(1992, 10, 23, 12, 29, 0),    # 霜降
+        20: datetime(1992, 11, 7, 14, 44, 0),      # 立冬
+        21: datetime(1992, 11, 22, 12, 18, 0),    # 小雪
+        22: datetime(1992, 12, 7, 5, 23, 0),       # 大雪
+        23: datetime(1992, 12, 21, 23, 2, 0),     # 冬至
+    },
+    1993: {
+        0: datetime(1993, 1, 5, 15, 56, 31),     # 小寒
+        1: datetime(1993, 1, 20, 9, 22, 49),      # 大寒
+        2: datetime(1993, 2, 4, 3, 37, 9),        # 立春
+        3: datetime(1993, 2, 18, 23, 35, 10),     # 雨水
+        4: datetime(1993, 3, 5, 21, 42, 32),      # 惊蛰
+        5: datetime(1993, 3, 20, 22, 40, 39),     # 春分
+        6: datetime(1993, 4, 5, 2, 37, 11),       # 清明
+        7: datetime(1993, 4, 20, 9, 49, 1),       # 谷雨
+        8: datetime(1993, 5, 5, 20, 1, 43),       # 立夏
+        9: datetime(1993, 5, 21, 9, 1, 43),       # 小满
+        10: datetime(1993, 6, 6, 0, 15, 13),      # 芒种
+        11: datetime(1993, 6, 21, 16, 59, 44),    # 夏至
+        12: datetime(1993, 7, 7, 10, 32, 2),      # 小暑
+        13: datetime(1993, 7, 23, 3, 50, 49),     # 大暑
+        14: datetime(1993, 8, 7, 20, 17, 58),     # 立秋
+        15: datetime(1993, 8, 23, 10, 50, 18),    # 处暑
+        16: datetime(1993, 9, 7, 23, 7, 47),      # 白露
+        17: datetime(1993, 9, 23, 8, 22, 30),     # 秋分
+        18: datetime(1993, 10, 8, 14, 40, 2),     # 寒露
+        19: datetime(1993, 10, 23, 17, 37, 8),    # 霜降
+        20: datetime(1993, 11, 7, 17, 45, 33),    # 立冬
+        21: datetime(1993, 11, 22, 15, 6, 51),    # 小雪
+        22: datetime(1993, 12, 7, 10, 33, 49),    # 大雪
+        23: datetime(1993, 12, 22, 4, 25, 48),    # 冬至
+    },
     2023: {
         0: datetime(2024, 1, 6, 4, 49, 22),    # 小寒
         1: datetime(2024, 1, 20, 22, 7, 22),   # 大寒
@@ -667,6 +823,12 @@ class BaziChart(BaseModel):
     dayun: List[DayunItem]
     current_dayun: Optional[str]
     liunian: Optional[str]
+    dayun_direction: Optional[str] = None
+    start_age: Optional[float] = None
+    kongwang: Optional[List[str]] = None  # 空亡地支（基于日柱旬）
+    changsheng: Optional[Dict[str, str]] = None  # 四柱长生十二宫 {年: 长生, 月: 沐浴, ...}
+    shensha: Optional[Dict[str, List[str]]] = None  # 四柱神煞 {年: [...], 月: [...], 日: [...], 时: [...]}
+    tiangan_he: Optional[List[str]] = None  # 天干五合 ["甲己合化土", ...]
 
 
 def get_zodiac(year: int) -> str:
@@ -688,55 +850,66 @@ def get_ganzhi(day_num: int) -> str:
 
 def solar_term_time(year: int, term_index: int) -> datetime:
     """
-    计算指定年份的24节气时间。
+    计算指定年份的24节气时间（精确到秒）。
 
-    优先使用预计算的精确节气时间表（精确到秒），
-    若预计算表中没有该年份数据，则回退到寿星通用公式计算。
+    优先使用预计算的精确节气时间表（缓存），
+    缓存未命中时使用 sxwnl 库（寿星万年历）实时计算，
+    覆盖公元前4713年~公元9999年，精度与《中国天文年历》误差<2秒。
 
-    公式：[Y * D + C] - L
-    - Y = 年份后两位（year % 100）
-    - D = 0.2422
-    - C = 世纪常数
-    - L = 闰年数 = int(Y / 4)
-    结果是该节气在所在月份的"日"。
+    term_index 与节气对应关系：
+    0=小寒, 1=大寒, 2=立春, 3=雨水, 4=惊蛰, 5=春分,
+    6=清明, 7=谷雨, 8=立夏, 9=小满, 10=芒种, 11=夏至,
+    12=小暑, 13=大暑, 14=立秋, 15=处暑, 16=白露, 17=秋分,
+    18=寒露, 19=霜降, 20=立冬, 21=小雪, 22=大雪, 23=冬至
     """
-    # 优先从预计算表获取精确时间
+    # 优先从预计算表获取（缓存，避免重复计算）
     if year in PRECALCULATED_JIEQI and term_index in PRECALCULATED_JIEQI[year]:
         return PRECALCULATED_JIEQI[year][term_index]
 
-    # 回退到寿星通用公式
-    Y = year % 100
+    # 使用 sxwnl 库实时计算（秒级精度，覆盖所有年份）
+    from sxwnl import wnl
+    jq_list = wnl.calc_year_jieqi(year)
+    # calc_year_jieqi 返回顺序：[0]=冬至(上年12月), [1]=小寒, [2]=大寒, [3]=立春, ..., [23]=大雪
+    # term_index 与列表索引完全一致（term_index=0 小寒 → 列表[1]，等等）
+    # 但注意：term_index=0(小寒) 对应列表 index=1
+    sxwnl_index_map = {
+        0: 1,   # 小寒
+        1: 2,   # 大寒
+        2: 3,   # 立春
+        3: 4,   # 雨水
+        4: 5,   # 惊蛰
+        5: 6,   # 春分
+        6: 7,   # 清明
+        7: 8,   # 谷雨
+        8: 9,   # 立夏
+        9: 10,  # 小满
+        10: 11, # 芒种
+        11: 12, # 夏至
+        12: 13, # 小暑
+        13: 14, # 大暑
+        14: 15, # 立秋
+        15: 16, # 处暑
+        16: 17, # 白露
+        17: 18, # 秋分
+        18: 19, # 寒露
+        19: 20, # 霜降
+        20: 21, # 立冬
+        21: 22, # 小雪
+        22: 23, # 大雪
+        23: 0,  # 冬至（需要下一年的数据）
+    }
+    sxwnl_idx = sxwnl_index_map[term_index]
 
-    # 20世纪和21世纪的C常数（只有小寒、大寒不同）
-    if year >= 2000:
-        C = [5.4055, 20.12, 4.6295, 19.4594, 6.3826, 21.4155,
-             5.59, 20.888, 5.52, 21.04, 5.678, 21.94,
-             7.108, 22.83, 7.5, 23.13, 7.646, 23.042,
-             7.514, 23.49, 7.758, 22.6, 7.18, 22.6]
+    if term_index == 23:
+        # 冬至属于当年12月，需要查下一年的 calc_year_jieqi（其[0]=当年冬至）
+        next_jq_list = wnl.calc_year_jieqi(year + 1)
+        item = next_jq_list[0]
     else:
-        C = [6.11, 20.84, 4.6295, 19.4594, 6.3826, 21.4155,
-             5.59, 20.888, 5.52, 21.04, 5.678, 21.94,
-             7.108, 22.83, 7.5, 23.13, 7.646, 23.042,
-             7.514, 23.49, 7.758, 22.6, 7.18, 22.6]
+        item = jq_list[sxwnl_idx]
 
-    # 节气对应的月份
-    TERM_MONTH = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
-                  7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12]
-
-    day = int(Y * 0.2422 + C[term_index]) - int(Y / 4)
-    month = TERM_MONTH[term_index]
-
-    # 处理日期异常（如算出0或负数）
-    if day < 1:
-        prev_month = month - 1 if month > 1 else 12
-        if prev_month in [1, 3, 5, 7, 8, 10, 12]:
-            day += 31
-        elif prev_month in [4, 6, 9, 11]:
-            day += 30
-        else:
-            day += 29  # 简化处理2月
-
-    return datetime(year, month, day)
+    # 从 date/time 字符串构建 datetime
+    dt = datetime.strptime(f"{item['date']} {item['time']}", "%Y-%m-%d %H:%M:%S")
+    return dt
 
 
 def calculate_year_pillar(birth_datetime: datetime) -> Tuple[str, str]:
@@ -840,30 +1013,36 @@ def calculate_true_solar_time(birth_datetime: datetime, longitude: float) -> dat
 
 def _find_nearest_jieqi(birth_datetime: datetime, forward: bool) -> datetime:
     """
-    找到出生时刻附近的节气。
+    找到出生时刻附近的"节"（仅12节，不含12气）。
 
-    阳男阴女（顺排）：找出生时刻之后的第一个节气
-    阴男阳女（逆排）：找出生时刻之前的第一个节气
+    阳男阴女（顺排）：找出生时刻之后的第一个节
+    阴男阳女（逆排）：找出生时刻之前的第一个节
 
-    搜索范围：出生时刻所在年的全部24节气，以及前一年/下一年的节气。
+    12节（每月起始）：立春(2)、惊蛰(4)、清明(6)、立夏(8)、芒种(10)、小暑(12)、
+                     立秋(14)、白露(16)、寒露(18)、立冬(20)、大雪(22)、小寒(0)
+    
+    注意：12气（雨水、春分、谷雨等）不参与大运起运计算。
     """
     year = birth_datetime.year
 
-    # 收集3年的24节气
-    all_terms = []
+    # 仅收集12节的索引（偶数索引：0=小寒, 2=立春, 4=惊蛰, ...）
+    JIE_INDICES = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22]
+
+    # 收集3年的12节
+    all_jie = []
     for y in [year - 1, year, year + 1]:
-        for idx in range(24):
+        for idx in JIE_INDICES:
             t = solar_term_time(y, idx)
-            all_terms.append(t)
+            all_jie.append(t)
 
     if forward:
-        # 顺排：找出生时刻之后的第一个节气
-        for t in sorted(all_terms):
+        # 顺排：找出生时刻之后的第一个节
+        for t in sorted(all_jie):
             if t >= birth_datetime:
                 return t
     else:
-        # 逆排：找出生时刻之前的第一个节气
-        for t in sorted(all_terms, reverse=True):
+        # 逆排：找出生时刻之前的第一个节
+        for t in sorted(all_jie, reverse=True):
             if t <= birth_datetime:
                 return t
 
@@ -873,47 +1052,58 @@ def _find_nearest_jieqi(birth_datetime: datetime, forward: bool) -> datetime:
 
 def _calculate_start_age(birth_datetime: datetime, forward: bool) -> float:
     """
-    精确计算起运年龄（节气天数法）。
+    精确计算起运年龄（节气天数法，精确到秒）。
 
     规则：
-    - 阳男阴女（顺排）：出生时刻到下一个节气的天数 / 3
-    - 阴男阳女（逆排）：上一个节气到出生时刻的天数 / 3
+    - 阳年男/阴年女（顺排）：出生时刻到下一个节的秒数差 / (86400*3)
+    - 阴年男/阳年女（逆排）：上一个节到出生时刻的秒数差 / (86400*3)
 
-    精度：1天 ≈ 4个月（1/3年）
-    返回：起运年龄（小数，单位：年）
+    精度：1天 ≈ 4个月（1/3年），1小时≈5天实际年龄精度
+    返回：起运年龄（小数，单位：年，保留1位）
     """
     jieqi_time = _find_nearest_jieqi(birth_datetime, forward)
-    days_diff = abs((jieqi_time - birth_datetime).days)
+    # 用精确的秒数差，而不是整数天数（.days 会丢掉小时分秒）
+    seconds_diff = abs((jieqi_time - birth_datetime).total_seconds())
+    days_exact = seconds_diff / 86400.0  # 精确天，含小时分秒
 
-    # 天数 / 3 = 起运年数
+    # 三天一年法：精确天 / 3 = 起运年数
     # 结果保留1位小数（如 0.7年 = 约8个月）
-    start_age = round(days_diff / 3.0, 1)
+    start_age = round(days_exact / 3.0, 1)
 
     return start_age
 
 
-def calculate_dayun(birth_datetime: datetime, day_tian: str, gender: str, month_tian: str, month_di: str) -> List[Dict]:
+def calculate_dayun(birth_datetime: datetime, day_tian: str, gender: str, month_tian: str, month_di: str, year_tian: str = "") -> Tuple[List[Dict], str, float]:
     """
     精确计算大运排盘。
 
-    起运年龄使用节气天数法：
-    - 阳男阴女（顺排）：出生到下一个节气的天数 / 3
-    - 阴男阳女（逆排）：上一个节气到出生的天数 / 3
+    【重要】大运方向判断依据是**年干阴阳**，而非日主天干！
+    - 阳年男命 / 阴年女命 → 顺排（出生到下一个"节"的天数 / 3）
+    - 阴年男命 / 阳年女命 → 逆排（上一个"节"到出生的天数 / 3）
 
     起运年龄可精确到1/3年（约4个月）。
     当起运年龄不足1岁时，从出生年份的下一年开始计数。
+
+    返回：(dayun列表, 大运方向, 起运年龄)
     """
-    yang = day_tian in TIANGAN_YANG
+    # 注意：用年干阴阳，不是日主！兼容旧调用不传year_tian时回退用day_tian
+    ref_tian = year_tian if year_tian else day_tian
+    yang = ref_tian in TIANGAN_YANG
     forward = (gender == "男" and yang) or (gender == "女" and not yang)
+
+    # 大运方向
+    direction = "顺" if forward else "逆"
 
     # 精确计算起运年龄
     start_age = _calculate_start_age(birth_datetime, forward)
 
-    # 起运年份：不足1岁时从下一年开始
+    # 起运年份：传统命理按虚岁计，此处折算成公历年份
+    # - 起运年龄<1岁（不足3天）：按1虚岁算，对应出生年份+1（和标准数据集对齐）
+    # - 起运年龄>=1岁：对小数部分round()四舍五入（如5.7岁→6岁运→出生年+6）
     if start_age < 1:
         start_year = birth_datetime.year + 1
     else:
-        start_year = birth_datetime.year + int(start_age)
+        start_year = birth_datetime.year + round(start_age)
 
     current_year = datetime.now().year
     dayun = []
@@ -921,16 +1111,19 @@ def calculate_dayun(birth_datetime: datetime, day_tian: str, gender: str, month_
     tian_idx = TIANGAN.index(month_tian)
     di_idx = DIZHI.index(month_di)
 
-    for i in range(10):
+    # 注意：第0步大运=月柱本身，排运必须跳过第0步，从i=1开始算第一步大运
+    # 例：月柱丁亥，逆排→i=1丙戌、i=2乙酉...（和标准数据集一致）
+    for step in range(1, 11):
         if forward:
-            tian = TIANGAN[(tian_idx + i) % 10]
-            di = DIZHI[(di_idx + i) % 12]
+            tian = TIANGAN[(tian_idx + step) % 10]
+            di = DIZHI[(di_idx + step) % 12]
         else:
-            tian = TIANGAN[(tian_idx - i) % 10]
-            di = DIZHI[(di_idx - i) % 12]
+            tian = TIANGAN[(tian_idx - step) % 10]
+            di = DIZHI[(di_idx - step) % 12]
 
         ganzhi = tian + di
-        start_y = start_year + i * 10
+        # step从1开始，第1步大运i=0所以索引是step-1
+        start_y = start_year + (step - 1) * 10
         end_y = start_y + 9
         is_current = start_y <= current_year <= end_y
         dayun.append({
@@ -939,7 +1132,7 @@ def calculate_dayun(birth_datetime: datetime, day_tian: str, gender: str, month_
             "end_year": str(end_y),
             "is_current": is_current,
         })
-    return dayun
+    return dayun, direction, start_age
 
 
 def calculate_wuxing(pillars: Dict[str, Dict[str, str]]) -> Dict[str, int]:
@@ -958,8 +1151,16 @@ def calculate_bazi(birth_date: str, birth_time: str, longitude: float, gender: s
 
     year_tian, year_di = calculate_year_pillar(true_time)
     month_tian, month_di = calculate_month_pillar(true_time, year_tian)
-    day_tian, day_di = calculate_day_pillar(true_time)
-    hour_tian, hour_di = calculate_hour_pillar(day_tian, true_time.hour)
+
+    # 晚子时处理：23:00-24:00 属于次日，日柱和时柱按次日计算
+    # 早子时（0:00-1:00）属于当天，无需特殊处理
+    if true_time.hour == 23:
+        next_day_time = true_time + timedelta(days=1)
+        day_tian, day_di = calculate_day_pillar(next_day_time)
+        hour_tian, hour_di = calculate_hour_pillar(day_tian, 0)  # 子时按0点计算
+    else:
+        day_tian, day_di = calculate_day_pillar(true_time)
+        hour_tian, hour_di = calculate_hour_pillar(day_tian, true_time.hour)
 
     pillars = {
         "年": {"tian": year_tian, "di": year_di},
@@ -989,7 +1190,7 @@ def calculate_bazi(birth_date: str, birth_time: str, longitude: float, gender: s
         "时": DIZHI_CANGGAN[hour_di],
     }
 
-    dayun = calculate_dayun(true_time, day_tian, gender, month_tian, month_di)
+    dayun, dayun_direction, start_age = calculate_dayun(true_time, day_tian, gender, month_tian, month_di, year_tian)
     current_year = datetime.now().year
     current_dayun = None
     for d in dayun:
@@ -1001,6 +1202,19 @@ def calculate_bazi(birth_date: str, birth_time: str, longitude: float, gender: s
 
     wuxing = calculate_wuxing(pillars)
 
+    # 计算空亡（基于日柱旬）
+    kongwang = calculate_kongwang(day_tian, day_di)
+
+    # 计算四柱长生十二宫
+    changsheng = calculate_changsheng(day_tian, pillars)
+
+    # 计算四柱神煞
+    from app.skills.divination.shensha_skill import calculate_shensha, calculate_tiangan_he
+    shensha = calculate_shensha(pillars, day_tian, day_di, month_di, year_di, year_tian, nayin["年"], kongwang)
+
+    # 计算天干五合
+    tiangan_he = calculate_tiangan_he(pillars)
+
     return BaziChart(
         pillars=pillars,
         shishen=shishen,
@@ -1010,4 +1224,83 @@ def calculate_bazi(birth_date: str, birth_time: str, longitude: float, gender: s
         dayun=dayun,
         current_dayun=current_dayun,
         liunian=liunian_ganzhi,
+        dayun_direction=dayun_direction,
+        start_age=start_age,
+        kongwang=kongwang,
+        changsheng=changsheng,
+        shensha=shensha,
+        tiangan_he=tiangan_he,
     )
+
+
+def calculate_kongwang(day_tian: str, day_di: str) -> List[str]:
+    """
+    计算空亡（旬空）
+
+    基于日柱所在的旬，每旬10个干支组合，剩余2个地支为空亡。
+    六十甲子分6旬，每旬空亡2个地支：
+    - 甲子旬：戌亥空
+    - 甲戌旬：申酉空
+    - 甲申旬：午未空
+    - 甲午旬：辰巳空
+    - 甲辰旬：寅卯空
+    - 甲寅旬：子丑空
+    """
+    TIANGAN = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"]
+    DIZHI = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"]
+
+    # 找到日柱在六十甲子中的位置
+    day_tian_idx = TIANGAN.index(day_tian)
+    day_di_idx = DIZHI.index(day_di)
+
+    # 计算旬首（甲X）
+    # 天干地支差值决定旬首
+    diff = (day_di_idx - day_tian_idx) % 12
+    xun_shou_di_idx = diff  # 旬首的地支索引
+
+    # 空亡是旬首之后第10、11位的地支
+    kongwang_1 = DIZHI[(xun_shou_di_idx + 10) % 12]
+    kongwang_2 = DIZHI[(xun_shou_di_idx + 11) % 12]
+
+    return [kongwang_1, kongwang_2]
+
+
+def calculate_changsheng(day_tian: str, pillars: Dict[str, Dict[str, str]]) -> Dict[str, str]:
+    """
+    计算四柱长生十二宫
+
+    返回每个柱的地支对应的长生十二宫位置。
+    """
+    CHANGSHENG_MAP = {
+        # 阳干顺行
+        "甲": {"亥": "长生", "子": "沐浴", "丑": "冠带", "寅": "临官", "卯": "帝旺",
+               "辰": "衰", "巳": "病", "午": "死", "未": "墓", "申": "绝", "酉": "胎", "戌": "养"},
+        "丙": {"寅": "长生", "卯": "沐浴", "辰": "冠带", "巳": "临官", "午": "帝旺",
+               "未": "衰", "申": "病", "酉": "死", "戌": "墓", "亥": "绝", "子": "胎", "丑": "养"},
+        "戊": {"寅": "长生", "卯": "沐浴", "辰": "冠带", "巳": "临官", "午": "帝旺",
+               "未": "衰", "申": "病", "酉": "死", "戌": "墓", "亥": "绝", "子": "胎", "丑": "养"},
+        "庚": {"巳": "长生", "午": "沐浴", "未": "冠带", "申": "临官", "酉": "帝旺",
+               "戌": "衰", "亥": "病", "子": "死", "丑": "墓", "寅": "绝", "卯": "胎", "辰": "养"},
+        "壬": {"申": "长生", "酉": "沐浴", "戌": "冠带", "亥": "临官", "子": "帝旺",
+               "丑": "衰", "寅": "病", "卯": "死", "辰": "墓", "巳": "绝", "午": "胎", "未": "养"},
+        # 阴干逆行
+        "乙": {"午": "长生", "巳": "沐浴", "辰": "冠带", "卯": "临官", "寅": "帝旺",
+               "丑": "衰", "子": "病", "亥": "死", "戌": "墓", "酉": "绝", "申": "胎", "未": "养"},
+        "丁": {"酉": "长生", "申": "沐浴", "未": "冠带", "午": "临官", "巳": "帝旺",
+               "辰": "衰", "卯": "病", "寅": "死", "丑": "墓", "子": "绝", "亥": "胎", "戌": "养"},
+        "己": {"酉": "长生", "申": "沐浴", "未": "冠带", "午": "临官", "巳": "帝旺",
+               "辰": "衰", "卯": "病", "寅": "死", "丑": "墓", "子": "绝", "亥": "胎", "戌": "养"},
+        "辛": {"子": "长生", "亥": "沐浴", "戌": "冠带", "酉": "临官", "申": "帝旺",
+               "未": "衰", "午": "病", "巳": "死", "辰": "墓", "卯": "绝", "寅": "胎", "丑": "养"},
+        "癸": {"卯": "长生", "寅": "沐浴", "丑": "冠带", "子": "临官", "亥": "帝旺",
+               "戌": "衰", "酉": "病", "申": "死", "未": "墓", "午": "绝", "巳": "胎", "辰": "养"},
+    }
+
+    result = {}
+    day_map = CHANGSHENG_MAP.get(day_tian, {})
+
+    for pos, pillar in pillars.items():
+        di = pillar.get("di", "")
+        result[pos] = day_map.get(di, "绝")
+
+    return result

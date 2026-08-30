@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useUserStore } from '../store/userStore'
-import Logo from '../components/Logo'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -54,14 +53,13 @@ export default function LoginPage() {
   const isPhoneValid = /^1\d{10}$/.test(phone)
 
   return (
-    <div className="min-h-screen flex items-start justify-center px-4 pt-[12vh]" style={{ background: 'linear-gradient(135deg, #6f5149 0%, #846358 50%, #977669 100%)' }}>
+    <div className="min-h-screen flex items-start justify-center px-4 pt-[12vh]" style={{ backgroundColor: '#8b6f5a' }}>
       <div className="w-full max-w-sm max-md:max-w-[320px]">
         {/* 品牌标识区 */}
         <div className="mb-8 flex flex-col items-center">
           {/* 品牌锁扣：Logo + 名称 */}
           <div className="flex items-center gap-3 mb-3">
-            <Logo size={44} />
-            <h1 className="text-[28px] font-bold text-white tracking-wide">趣算算</h1>
+            <span className="logo-text">趣算算</span>
           </div>
           {/* 副标题：半透明标签条 */}
           <span className="px-4 py-1 bg-white/15 backdrop-blur-sm rounded-full text-primary-100 text-xs tracking-wider">
@@ -103,7 +101,7 @@ export default function LoginPage() {
                 disabled={!isPhoneValid || countdown > 0 || isLoading}
                 className="px-4 py-3 rounded-xl text-sm font-medium whitespace-nowrap transition-all disabled:opacity-40 disabled:cursor-not-allowed max-md:px-3 max-md:text-xs"
                 style={{
-                  background: isPhoneValid && countdown === 0 ? 'linear-gradient(135deg, #846358, #a18072)' : '#e5e7eb',
+                  backgroundColor: isPhoneValid && countdown === 0 ? '#a7876f' : '#e5e7eb',
                   color: isPhoneValid && countdown === 0 ? 'white' : '#9ca3af',
                 }}
               >
@@ -124,7 +122,7 @@ export default function LoginPage() {
             onClick={handleLogin}
             disabled={phone.length !== 11 || code.length !== 6 || isLoading || !agreed}
             className="w-full py-3.5 rounded-xl text-white font-semibold text-base transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg hover:shadow-xl active:scale-[0.98]"
-            style={{ background: 'linear-gradient(135deg, #846358, #a18072)' }}
+            style={{ backgroundColor: '#a7876f' }}
           >
             {isLoading ? '登录中...' : '登录 / 注册'}
           </button>

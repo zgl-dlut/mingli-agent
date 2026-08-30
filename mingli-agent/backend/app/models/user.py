@@ -14,6 +14,7 @@ class User(Base):
     hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="密码哈希（手机登录可为空）")
     name: Mapped[str] = mapped_column(String(100), default="用户", comment="用户名")
     avatar: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="头像URL")
-    points: Mapped[int] = mapped_column(Integer, default=200, comment="积分余额（新用户赠送200，够1次首次解读160+1次追问40）")
+    points: Mapped[int] = mapped_column(Integer, default=0, comment="积分余额（白名单用户登录赠送，普通用户为0）")
+    wechat_openid: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True, comment="微信openid")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

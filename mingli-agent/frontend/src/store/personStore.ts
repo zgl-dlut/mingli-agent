@@ -67,6 +67,7 @@ export const usePersonStore = create<PersonStore>((set, get) => ({
         latitude: sp.birth_lat,
         bazi: null,
         astrology: null,
+        bazi_data: sp.bazi_data,
         created_at: sp.created_at,
         updated_at: sp.created_at,
       }))
@@ -106,6 +107,7 @@ export const usePersonStore = create<PersonStore>((set, get) => ({
       latitude: sp.birth_lat,
       bazi: null,
       astrology: null,
+      bazi_data: response.data.bazi_data,
       created_at: sp.created_at,
       updated_at: sp.created_at,
     }

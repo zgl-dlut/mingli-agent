@@ -37,6 +37,54 @@ def build_llm_extra_body(model_name: str) -> dict:
     return {}
 
 
+def build_cache_control_messages(system_prompt: str, user_messages: list) -> list:
+    """构造带显式缓存标记的 messages 数组。
+
+    阿里云百炼显式缓存要求 content 为数组格式，并在 text block 上加
+    cache_control: {"type": "ephemeral"} 标记。缓存最小 1024 tokens，
+    有效期 5 分钟，命中部分按输入价 10% 计费（隐式为 20%）。
+
+    在 "# 本次会话信息" 处拆分 system_prompt 为两个 system message：
+    第一个 message 包含固定规则段（约 8000+ tokens），用 content 数组格式
+    加 cache_control 标记；第二个 message 包含动态命盘数据，用字符串格式。
+    实测单 system message 多 content block 结构缓存不命中，拆成两个 system
+    message 后缓存正常工作。
+    """
+    SPLIT_MARKER = "# 本次会话信息"
+    split_idx = system_prompt.find(SPLIT_MARKER)
+
+    if split_idx > 0:
+        fixed_part = system_prompt[:split_idx].rstrip()
+        dynamic_part = system_prompt[split_idx:]
+        return [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": fixed_part,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
+            {"role": "system", "content": dynamic_part},
+        ] + user_messages
+    else:
+        # 兜底：无分隔符时整体标记
+        return [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": system_prompt,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            }
+        ] + user_messages
+
+
 class ModelConfig(BaseModel):
     name: str
     api_key: str
@@ -106,7 +154,7 @@ async def generate_ai_response(
         return
     
     max_attempts = len(model_pool)
-    messages_list = [{"role": "system", "content": system_prompt}] + messages
+    messages_list = build_cache_control_messages(system_prompt, messages)
     
     for attempt in range(max_attempts):
         # 获取当前优先级最高的模型
@@ -281,11 +329,15 @@ async def generate_first_reading_structured(
     location: str,
     longitude: float,
     latitude: float,
+    usage_holder: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     """首次命理报告结构化生成：输出FollowupReport JSON字符串（非流式）。
 
     复用追问报告的 FollowupReport schema + 容错提取 + 规范化链路，
     与 generate_followup_structured 的 LLM 调用模式一致。
+
+    usage_holder: 可选 dict，LLM 调用成功后填充用量信息（供调用方落库 ai_usage_logs）；
+    未填充或无 success 键视为失败记录。
     """
     import json
     from app.services.prompt_builder import build_first_reading_structured_prompt
@@ -372,7 +424,7 @@ async def generate_first_reading_structured(
         try:
             response = await client.chat.completions.create(
                 model=model_config.name,
-                messages=[{"role": "system", "content": system_prompt}] + messages,
+                messages=build_cache_control_messages(system_prompt, messages),
                 temperature=0.3,
                 max_tokens=8000,
                 response_format={"type": "json_object"},
@@ -418,6 +470,44 @@ async def generate_first_reading_structured(
         f"[StructuredFirstReading] LLM响应: 模型={model_config.name}, 状态=成功, "
         f"finish_reason={finish_reason}, 长度={len(raw_content)}, 耗时={elapsed:.1f}s"
     )
+
+    # token 用量统计（含上下文缓存命中观测）
+    # 注意：OpenAI SDK 1.35.3 的 CompletionUsage 未定义 prompt_tokens_details 字段，
+    # 阿里云返回的 prompt_tokens_details 被 SDK 存为原始 dict（而非对象），
+    # 必须用 dict.get() 取值，getattr() 在 dict 上取不到 key。
+    prompt_tokens = completion_tokens = total_tokens = cached_tokens = 0
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+        total_tokens = getattr(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens)
+        details = getattr(usage, "prompt_tokens_details", None)
+        if details is not None:
+            if isinstance(details, dict):
+                cached_tokens = details.get("cached_tokens", 0) or 0
+            else:
+                cached_tokens = getattr(details, "cached_tokens", 0) or 0
+        if not cached_tokens:
+            if isinstance(usage, dict):
+                cached_tokens = usage.get("cached_tokens", 0) or 0
+            else:
+                cached_tokens = getattr(usage, "cached_tokens", 0) or 0
+        logger.info(
+            f"[StructuredFirstReading] token用量: prompt={prompt_tokens}, cached={cached_tokens}, "
+            f"completion={completion_tokens}, total={total_tokens}"
+        )
+    # 填充用量钩子（供调用方落库 ai_usage_logs）
+    if usage_holder is not None:
+        usage_holder.update({
+            "success": True,
+            "model": model_config.name,
+            "input_chars": len(system_prompt),
+            "output_chars": len(raw_content),
+            "input_tokens": prompt_tokens,
+            "output_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "cached_tokens": cached_tokens,
+        })
 
     # 4. 解析 + 容错提取
     try:

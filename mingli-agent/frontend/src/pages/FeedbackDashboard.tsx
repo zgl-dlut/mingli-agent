@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { feedbackApi, FeedbackRecord, FeedbackStats, TagInfo } from '../api/feedback'
+import AdminNav from '../components/AdminNav'
 
 type ViewMode = 'list' | 'detail'
 
@@ -34,7 +35,7 @@ export default function FeedbackDashboard() {
   const loadTags = useCallback(async () => {
     try {
       const data = await feedbackApi.tags()
-      setTags(data.tags)
+      setTags(data.tags || [])
     } catch (e) { console.error(e) }
   }, [])
 
@@ -48,8 +49,8 @@ export default function FeedbackDashboard() {
         offset,
         limit,
       })
-      setRecords(data.items)
-      setTotal(data.total)
+      setRecords(data.items || [])
+      setTotal(data.total || 0)
     } catch (e) { console.error(e) }
   }, [filterTag, filterMinModel, filterMaxModel, filterKeyword, offset])
 
@@ -121,6 +122,7 @@ export default function FeedbackDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <AdminNav />
       {view === 'detail' && selected ? (
         <DetailView
           record={selected}
@@ -183,7 +185,7 @@ function ListView(props: {
   limit: number
 }) {
   const {
-    stats, tags, records, total,
+    stats, tags = [], records = [], total,
     filterTag, setFilterTag,
     filterMinModel, setFilterMinModel,
     filterMaxModel, setFilterMaxModel,
@@ -221,7 +223,7 @@ function ListView(props: {
       )}
 
       {/* 标签统计 */}
-      {stats && stats.tags.length > 0 && (
+      {stats && stats.tags && stats.tags.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
           <h2 className="text-base font-semibold text-slate-700 mb-3">🏷️ 标签分布</h2>
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">

@@ -15,4 +15,5 @@ class Transaction(Base):
     points: Mapped[int] = mapped_column(nullable=False)
     order_id: Mapped[Optional[int]] = mapped_column()
     description: Mapped[str] = mapped_column(Text)
+    biz_type: Mapped[Optional[str]] = mapped_column(String(20))  # first_reading / followup / recharge
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)

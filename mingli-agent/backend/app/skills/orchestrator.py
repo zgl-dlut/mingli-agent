@@ -263,6 +263,12 @@ def generate_full_analysis(
     nayin = bazi.nayin                 # {"年": "路旁土", ...}
     dayun_list = bazi.dayun            # [{"ganzhi": "癸卯", "start_year": "2020", ...}, ...]
     current_dayun = bazi.current_dayun  # "癸卯" 或 None
+    dayun_direction = getattr(bazi, 'dayun_direction', None)  # "顺" 或 "逆"
+    start_age = getattr(bazi, 'start_age', None)  # 起运年龄
+    kongwang = getattr(bazi, 'kongwang', None)  # 空亡
+    changsheng = getattr(bazi, 'changsheng', None)  # 长生十二宫
+    shensha = getattr(bazi, 'shensha', None)  # 神煞
+    tiangan_he = getattr(bazi, 'tiangan_he', None)  # 天干五合
 
     day_tian = pillars_cn["日"]["tian"]
     day_di = pillars_cn["日"]["di"]
@@ -380,8 +386,8 @@ def generate_full_analysis(
             pillars=pillars_cn,
             yongshen=tiaohou_result["yongshen"],
             jishen=tiaohou_result["jishen"],
-            current_year=current_year,
-            analyze_range=20,
+            current_year=current_year - 5,  # 从当前年份前5年开始，包含2021-2025历史流年
+            analyze_range=25,  # 共25年：前5年 + 后20年
         )
     except ImportError as e:
         logger.warning(f"dayun_liunian_skill 未就绪，跳过大运流年解读部分: {e}")
@@ -456,6 +462,16 @@ def generate_full_analysis(
                 current_dayun_str = f"{gz} {sy}-{ey}"
                 break
 
+    # 大运列表（完整10步大运，供评测端校验 LLM 引用的大运是否合法；
+    # 未起运时"当前大运"为空，此列表是唯一的大运合法依据）
+    dayun_list_output = []
+    for d in dayun_list:
+        dayun_list_output.append({
+            "ganzhi": d.ganzhi if hasattr(d, 'ganzhi') else d["ganzhi"],
+            "start_year": d.start_year if hasattr(d, 'start_year') else d["start_year"],
+            "end_year": d.end_year if hasattr(d, 'end_year') else d["end_year"],
+        })
+
     # 纳音（中文 key 转换）
     nayin_output = nayin  # 已经是 {"年": "路旁土", ...} 格式
 
@@ -509,7 +525,10 @@ def generate_full_analysis(
         "十神分布": shishen_dist,
         "五行分布": wuxing,
         "纳音": nayin_output,
+        "大运方向": dayun_direction,
+        "起运年龄": start_age,
         "当前大运": current_dayun_str,
+        "大运列表": dayun_list_output,
         "大运解读": dayun_interpretation,
         "重点流年": key_liunian_list,
         "五行应用": wuxing_app,
@@ -520,6 +539,10 @@ def generate_full_analysis(
             "调候标签": motto_result.get("调候标签", ""),
             "十神做功标签": motto_result.get("十神做功标签", ""),
         },
+        "空亡": kongwang,
+        "长生十二宫": changsheng,
+        "神煞": shensha,
+        "天干五合": tiangan_he,
     }
 
     return result

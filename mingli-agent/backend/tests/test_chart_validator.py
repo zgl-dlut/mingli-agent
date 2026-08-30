@@ -188,8 +188,8 @@ def test_context_vars_missing_fields_marked():
     assert ctx["wangshuai"] == MISSING_MARKER
     assert ctx["geju_description"] == MISSING_MARKER
     assert ctx["current_dayun"] == MISSING_MARKER
-    # key_liunian 空列表时 _format_key_liunian 返回"暂无"（非空，LLM 不会编造）
-    assert ctx["key_liunian"] == "暂无"
+    # key_liunian 空列表时 _format_key_liunian 返回骨架文本（含"暂无"，LLM 不会编造）
+    assert "暂无" in ctx["key_liunian"]
     print("✓ test_context_vars_missing_fields_marked")
 
 
@@ -228,6 +228,64 @@ def test_first_reading_prompt_partial_missing():
     print("✓ test_first_reading_prompt_partial_missing")
 
 
+# ============================================================
+# 首次报告 prompt 缓存友好布局测试
+# 静态规则前置、动态"用户输入数据"统一收尾，形成可缓存公共前缀
+# ============================================================
+
+def _common_prefix_len(a: str, b: str) -> int:
+    n = min(len(a), len(b))
+    i = 0
+    while i < n and a[i] == b[i]:
+        i += 1
+    return i
+
+
+def test_first_reading_static_prefix_stable():
+    """不同命盘构建的 prompt，静态公共前缀足够长（命盘数据在尾部，不破坏前缀）"""
+    c1 = _full_chart()
+    c2 = _full_chart()
+    c2["日主"] = "壬水（江河之水）"
+    c2["四柱"] = "壬申 庚戌 壬子 辛亥"
+    c2["用神"] = "金水"
+    c2["忌神"] = "火土"
+    c2["重点流年"] = [{"year": "2028", "ganzhi": "戊申", "judge": "吉", "reason": "金助身"}]
+
+    # 同年龄段（同为成人），保证 age_stage 模板分支一致，前缀可比
+    p1 = build_first_reading_structured_prompt(c1, "男", "1990-11-10", "08:00", "北京")
+    p2 = build_first_reading_structured_prompt(c2, "女", "1990-11-10", "08:00", "上海")
+
+    prefix_len = _common_prefix_len(p1, p2)
+    # 静态规则区（角色/任务/输出格式/硬性规范）应全部命中缓存，阈值取 5000 字
+    assert prefix_len >= 5000, f"首次报告静态公共前缀仅{prefix_len}字，缓存收益受限"
+    print(f"✓ test_first_reading_static_prefix_stable (公共前缀={prefix_len}字)")
+
+
+def test_first_reading_dynamic_data_at_tail():
+    """动态"用户输入数据"区块位于 prompt 尾部，不切断静态前缀"""
+    prompt = build_first_reading_structured_prompt(
+        _full_chart(), "男", "1990-11-10", "08:00", "北京"
+    )
+    data_pos = prompt.index("# 用户输入数据")
+    rule_pos = prompt.index("# 文风、字数、格式硬性规范")
+    # 动态数据区在所有静态规则之后
+    assert data_pos > rule_pos, "用户输入数据未移到尾部，会切断缓存前缀"
+    # 命盘数据（日主/四柱）应出现在尾部数据区内
+    assert prompt.index("【日主五行】") > rule_pos
+    print("✓ test_first_reading_dynamic_data_at_tail")
+
+
+def test_first_reading_yongshen_ref_moved():
+    """用神/忌神不再内联注入模板，改为引用文末数据（保证模板静态）"""
+    prompt = build_first_reading_structured_prompt(
+        _full_chart(), "男", "1990-11-10", "08:00", "北京"
+    )
+    # 模板内改为静态引用措辞，不再硬编码具体用神忌神值
+    assert "具体取值见文末" in prompt
+    assert "明确标注用神（木）和忌神（水）" not in prompt
+    print("✓ test_first_reading_yongshen_ref_moved")
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("命盘数据校验模块测试")
@@ -248,5 +306,8 @@ if __name__ == "__main__":
     test_first_reading_prompt_full_data()
     test_first_reading_prompt_missing_data_marked()
     test_first_reading_prompt_partial_missing()
+    test_first_reading_static_prefix_stable()
+    test_first_reading_dynamic_data_at_tail()
+    test_first_reading_yongshen_ref_moved()
     print("=" * 60)
     print("全部测试通过")

@@ -122,7 +122,8 @@ export default function BaziCard({ baziResult, onStartReading, phase }: BaziCard
       <div className={`start-reading-btn ${showButton ? 'visible' : ''}`}>
         <button
           onClick={onStartReading}
-          className="w-full py-3.5 rounded-xl text-white font-semibold text-base shadow-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 active:scale-[0.98] transition-all"
+          className="w-full py-3.5 rounded-xl text-white font-semibold text-base shadow-lg active:scale-[0.98] transition-all"
+          style={{ backgroundColor: '#8b6f5a' }}
         >
           ✨ 开始解读
         </button>

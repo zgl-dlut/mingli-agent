@@ -28,12 +28,16 @@ class Settings(BaseSettings):
 
     # 微信支付
     WECHAT_APP_ID: Optional[str] = None
+    WECHAT_APP_SECRET: Optional[str] = None  # 公众号AppSecret（OAuth网页授权用，非APIv3密钥）
     WECHAT_MCH_ID: Optional[str] = None
     WECHAT_API_KEY: Optional[str] = None
     WECHAT_CERT_PATH: Optional[str] = None
     WECHAT_KEY_PATH: Optional[str] = None
     WECHAT_SERIAL_NO: Optional[str] = None
     WECHAT_NOTIFY_URL: Optional[str] = None
+    WECHAT_OAUTH_REDIRECT_URI: Optional[str] = None
+    WECHAT_PUBLIC_KEY_ID: Optional[str] = None
+    WECHAT_PUBLIC_KEY_PATH: Optional[str] = None
 
     # 支付宝
     ALIPAY_APP_ID: Optional[str] = None
@@ -44,6 +48,10 @@ class Settings(BaseSettings):
     POINTS_FIRST_READING: int = 160
     POINTS_FOLLOW_UP: int = 40
     POINTS_PER_YUAN: int = 10
+    
+    # 白名单手机号赠送积分（逗号分隔）
+    BONUS_PHONE_LIST: str = ""
+    BONUS_POINTS: int = 1000
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -228,18 +228,36 @@ def _check_hua_shen_deling(he_wx: str, month_dz: str, extra_dz: str = "") -> boo
     return False
 
 
-def _wuxing_judge(wuxing: str, yongshen: str, jishen: str) -> str:
-    """判断单个五行与用神/忌神的关系，返回 '吉'/'凶'/'平'。"""
+def _wuxing_judge(wuxing: str, yongshen: str, jishen: str,
+                  day_wx: str = "", is_strong: bool = False) -> str:
+    """
+    判断单个五行与用神/忌神/身强身弱的关系，返回 '吉'/'凶'/'平'。
+
+    【判定优先级】：
+    1. 直接为用神 → 吉；直接为忌神 → 凶
+    2. 身强身弱判定（日主同类五行）：
+       - 身弱：同五行（帮身比劫）→ 吉（如己土身弱遇土=帮身吉）
+       - 身强：同五行（再帮=旺极）→ 凶（如己土身强遇土=劫财凶）
+    3. 生用神（喜神）→ 吉（如木生火助火用神）
+    4. 其余（生忌神、克泄耗但非直接忌）→ 平（不直接判凶，由互动细判）
+
+    注意：day_wx 和 is_strong 默认空/False 兼容老调用；新代码务必传！
+    """
+    # 1. 直接用忌
     if wuxing == yongshen:
         return "吉"
     if wuxing == jishen:
         return "凶"
-    # 判断是否生用神（喜神）
+    # 2. 日主同类五行 + 身强/身弱（最重要的校准：己土身弱遇土=帮身吉）
+    if day_wx and wuxing == day_wx:
+        if is_strong:
+            return "凶"  # 身强再帮=旺极，凶
+        else:
+            return "吉"  # 身弱需帮=比劫助身，吉
+    # 3. 生用神（喜神）
     if WUXING_SHENG.get(wuxing) == yongshen:
         return "吉"
-    # 判断是否生忌神
-    if WUXING_SHENG.get(wuxing) == jishen:
-        return "凶"
+    # 4. 生忌神/其他中性 → 平（生忌=间接，不直接判凶）
     return "平"
 
 
@@ -470,92 +488,120 @@ def _analyze_interactions(
 def _compute_overall_judge(
     tian_wx: str, di_wx: str, yongshen: str, jishen: str,
     interactions: List[str],
+    day_wx: str = "", is_strong: bool = False,
 ) -> str:
-    """综合判定吉凶，从 interactions 解析冲合化刑要素计分。
-
-    返回: "大吉" / "吉" / "平" / "凶" / "大凶"
-
-    计分规则（标准排盘合化体系）：
-    - 基础：天干/地支五行 vs 用忌（_wuxing_judge）
-    - 冲用神: xiong+2（用神被冲破，大凶）；冲忌神: ji+1（去忌为吉）；中性冲: xiong+1（主变动）
-    - 三会化忌克身: xiong+3（力量最强）；三合化忌克身: xiong+2；带中神半合化忌: xiong+1
-    - 三会化用生身: ji+3；三合化用生身: ji+2；带中神半合化用: ji+1
-    - 天干合化忌神: xiong+1；天干合化用神: ji+1；合而不化不计
-    - 六合绊用神: xiong+1（羁绊用神减吉）；六合绊忌神: ji+1（羁绊忌神减凶）
-    - 自刑: 偏凶，影响判定阈值
-    """
-    scores = [_wuxing_judge(tian_wx, yongshen, jishen), _wuxing_judge(di_wx, yongshen, jishen)]
+    """综合判定吉凶，从 interactions 解析冲合化刑要素计分。v2最终校准版"""
+    # 基础分：传入身强/日主五行，身弱时土（同类）=吉
+    scores = [
+        _wuxing_judge(tian_wx, yongshen, jishen, day_wx, is_strong),
+        _wuxing_judge(di_wx, yongshen, jishen, day_wx, is_strong),
+    ]
     ji_count = scores.count("吉")
     xiong_count = scores.count("凶")
 
-    has_chong = False       # 有冲（中性冲或冲用神）
-    has_zi_xing = False     # 有自刑
-    has_he_ji = False       # 完整三合/三会化忌克身（强力凶，影响大吉判定）
+    has_bad_chong = False   # 冲用神=恶性冲
+    has_any_chong = False   # 中性冲
+    has_zi_xing = False
+    has_he_ji = False       # 三合/三会化忌克身
+    has_liuhe_ban_yong = False  # 六合绊用神（降级用）
+    has_he_hua_bu_hua = False   # 合而不化（降级用）
 
     for inter in interactions:
         if "自刑" in inter:
             has_zi_xing = True
-            continue
-        # 六冲方向（先判冲用神/冲忌神，再判中性冲）
+        if "合而不化" in inter:
+            has_he_hua_bu_hua = True
+        if "六合绊用神" in inter:
+            has_liuhe_ban_yong = True
+        # 六冲
         if "冲用神" in inter:
-            has_chong = True
-            xiong_count += 2
+            has_bad_chong = True; has_any_chong = True; xiong_count += 2
         elif "冲忌神" in inter:
-            ji_count += 1  # 去忌为吉，不计冲凶
+            ji_count += 1
         elif "相冲，主变动" in inter:
-            has_chong = True
-            xiong_count += 1
-        # 三会局化神（力量最强）
+            has_any_chong = True  # xiong+0：中性冲不扣分
+        # 三会：化忌+1（原+2→+1，再降；午火通关）
         elif "三会" in inter and "克身" in inter:
-            has_he_ji = True
-            xiong_count += 3
+            has_he_ji = True; xiong_count += 1
         elif "三会" in inter and "生身" in inter:
             ji_count += 3
-        # 完整三合局化神
+        # 三合：化忌+0（原+1→归零；三合+通关≈不克）
         elif "三合" in inter and "克身" in inter:
             has_he_ji = True
-            xiong_count += 2
         elif "三合" in inter and "生身" in inter:
             ji_count += 2
-        # 带中神半合化神
-        elif "半合" in inter and "克身" in inter:
-            xiong_count += 1
+        # 半合：化忌+0（保持）
         elif "半合" in inter and "生身" in inter:
             ji_count += 1
-        # 天干合化（区分合化忌神/用神/中性，合而不化不计）
-        elif "合化" in inter and "忌神" in inter:
-            xiong_count += 1
+        # 天干合化：化忌+0（原+1→归零，考虑通关）；化用+1（保持）
         elif "合化" in inter and "用神" in inter:
             ji_count += 1
-        # 六合绊（区分绊用神/绊忌神/中性合作）
-        elif "六合绊用神" in inter:
-            xiong_count += 1
-        elif "六合绊忌神" in inter:
-            ji_count += 1
 
-    # 判定阈值（保持原框架，has_chong/has_zi_xing/has_he_ji 抑制大吉）
-    if ji_count >= 2 and xiong_count == 0 and not has_chong and not has_zi_xing and not has_he_ji:
-        return "大吉"
-    if ji_count >= 1 and xiong_count == 0:
-        return "吉"
-    if ji_count > xiong_count and xiong_count > 0:
-        # 吉多凶少（如三合生身+地支生忌），偏吉
-        return "吉"
-    if ji_count == xiong_count or (ji_count == 1 and xiong_count == 1):
-        if has_zi_xing:
-            return "平"
-        if has_chong:
-            return "凶"
-        return "平"
-    if xiong_count >= 1 and ji_count == 0:
-        if has_chong:
-            return "大凶"
-        return "凶"
-    if xiong_count > ji_count:
-        if has_chong:
-            return "大凶"
-        return "凶"
-    return "平"
+    # ===== 第一步：阈值判定（大吉门槛ji>=4，原ji>=2太松）=====
+    # 先记基础吉数量（用于纯基础吉判定）
+    base_ji_count = scores.count("吉")
+    base_xiong_count = scores.count("凶")
+    inter_ji = ji_count - base_ji_count  # 互动部分带来的吉加分
+    inter_xi = xiong_count - base_xiong_count
+
+    if (ji_count >= 4 and xiong_count == 0
+        and not has_bad_chong and not has_any_chong
+        and not has_zi_xing and not has_he_ji
+        and not has_liuhe_ban_yong and not has_he_hua_bu_hua):
+        result = "大吉"
+    elif ji_count >= 1 and xiong_count == 0:
+        # 边界校准：
+        # - 纯基础1吉 + 无任何冲合(中性冲=0，互动无加分) → 平（例2028戊申：帮身+泄身=功过相抵）
+        # - 有中性冲的基础1吉→仍判吉（例2021/2029/2030：有变动=主动生财机会）
+        # - 否则吉
+        if (ji_count == 1 and base_ji_count == 1
+            and inter_ji == 0 and not has_any_chong
+            and not has_he_ji and not has_he_hua_bu_hua
+            and not has_liuhe_ban_yong and not has_zi_xing):
+            result = "平"
+        else:
+            result = "吉"
+    elif ji_count > xiong_count:
+        result = "吉"
+    elif ji_count == xiong_count:
+        result = "平"
+    elif xiong_count == ji_count + 1 and (
+        (has_any_chong and not has_bad_chong and not has_he_ji)
+        or (has_he_ji and not has_bad_chong)  # 三会/三合化忌但有通关缓冲，差1级判平
+    ):
+        result = "平"
+    elif xiong_count >= 1 and ji_count == 0:
+        if (has_bad_chong or has_he_ji) and xiong_count >= 2:
+            result = "大凶"
+        else:
+            result = "凶"
+    elif xiong_count > ji_count:
+        if (has_bad_chong or has_he_ji) and (xiong_count - ji_count) >= 2:
+            result = "大凶"
+        else:
+            result = "凶"
+    else:
+        result = "平"
+
+    # ===== 第二步：降级逻辑 =====
+    downgrade = False
+    # 六合绊用神：当唯一吉神(ji<=1)被绊时才降（ji>=2多吉神撑住不降，例2026丙午双火）
+    if has_liuhe_ban_yong and result in ("大吉", "吉") and ji_count <= 1:
+        downgrade = True
+    # 自刑：只有大吉才必降（大吉不允许瑕疵）；吉除非唯一吉才降
+    # - 双吉神(ji>=2)带自刑：不降（例2026丙午双火用神，午午自刑虽内心波动但用神旺不影响吉势）
+    if has_zi_xing and result == "大吉":
+        downgrade = True
+    if has_zi_xing and result == "吉" and ji_count == 1:
+        downgrade = True
+    # 合而不化 / 中性冲 → 大吉降一级（吉不降，大吉不允许瑕疵）
+    if result == "大吉" and (has_any_chong or has_he_hua_bu_hua):
+        downgrade = True
+    if downgrade:
+        lv = ["大吉", "吉", "平", "凶", "大凶"]
+        result = lv[min(lv.index(result) + 1, len(lv) - 1)]
+
+    return result
 
 
 def _build_description(
@@ -633,6 +679,7 @@ def analyze_dayun(
     pillars: Dict,
     yongshen: str,
     jishen: str,
+    is_strong: bool = False,
 ) -> Dict:
     """
     分析大运与原局的关系。
@@ -671,6 +718,7 @@ def analyze_dayun(
     # 综合判定（冲合化刑要素由 _compute_overall_judge 从 interactions 解析）
     overall_judge = _compute_overall_judge(
         tian_wx, di_wx, yongshen, jishen, interactions,
+        day_wx=TIANGAN_WUXING.get(day_tian, ""), is_strong=is_strong,
     )
 
     description = _build_description(
@@ -697,6 +745,7 @@ def analyze_liunian(
     pillars: Dict,
     yongshen: str,
     jishen: str,
+    is_strong: bool = False,
 ) -> Dict:
     """
     分析流年与大运、原局的关系。
@@ -794,6 +843,7 @@ def analyze_liunian(
     # 综合判定（冲合化刑要素由 _compute_overall_judge 从 interactions 解析）
     overall_judge = _compute_overall_judge(
         tian_wx, di_wx, yongshen, jishen, interactions,
+        day_wx=TIANGAN_WUXING.get(day_tian, ""), is_strong=is_strong,
     )
 
     description = _build_description(
@@ -914,29 +964,31 @@ def get_key_years(
 
         reason_str = "，".join(reasons)
 
-        # 判定标签
+        # 判定标签（自刑不改写标签，只在理由中追加注意提醒）
         judge = analysis["overall_judge"]
         # 重点年份标注逻辑
         if tian_wx == yongshen and di_wx == yongshen:
             judge = "大吉"
         elif tian_wx == jishen and di_wx == jishen and any("相冲" in i for i in analysis["interactions"]):
             judge = "大凶"
-        elif any("自刑" in i for i in analysis["interactions"]):
-            if judge == "吉":
-                judge = "吉（注意）"
-            elif judge == "平":
-                judge = "平（注意）"
-            elif judge == "凶":
-                judge = "凶（注意）"
-        elif any("五合" in i for i in analysis["interactions"]):
-            if judge in ("吉", "大吉"):
-                pass  # 保持
-            else:
+        # 自刑：将注意提醒追加到理由描述中，不改写吉凶标签
+        if any("自刑" in i for i in analysis["interactions"]):
+            if "注意" not in reason_str:
+                reason_str += "，有自刑，注意内心起伏与决策冷静"
+        # 五合提示
+        if any("五合" in i for i in analysis["interactions"]):
+            if judge not in ("吉", "大吉"):
                 reason_str += "，天干合化主变化"
 
         results.append({
             "year": year,
             "ganzhi": ganzhi,
+            "tian_wuxing": analysis["tian_wuxing"],
+            "di_wuxing": analysis["di_wuxing"],
+            "is_yongshen": analysis["is_yongshen"],
+            "is_jishen": analysis["is_jishen"],
+            "overall_judge": analysis["overall_judge"],
+            "description": analysis["description"],
             "judge": judge,
             "reason": reason_str,
             "detail": analysis,
@@ -990,12 +1042,69 @@ LIUYUE_MONTHS = [
 ]
 
 
+# 天干阴阳：甲丙戊庚壬=阳；乙丁己辛癸=阴
+TIANGAN_YINYANG = {"甲": 1, "丙": 1, "戊": 1, "庚": 1, "壬": 1,
+                   "乙": 0, "丁": 0, "己": 0, "辛": 0, "癸": 0}
+
+
+def compute_tiangan_shishen(tian_gan: str, day_tian: str) -> str:
+    """给定目标天干 + 日主天干，返回十神名称（标准名称）。
+
+    规则（以日主为基准）：
+      ① 同我（比劫）：五行相同，阴阳同=比肩，阴阳异=劫财
+      ② 生我（印枭）：生我之五行，阴阳异=正印，阴阳同=偏印
+      ③ 我生（食伤）：我生之五行，阴阳异=伤官，阴阳同=食神
+      ④ 克我（官杀）：克我之五行，阴阳异=正官，阴阳同=七杀
+      ⑤ 我克（财星）：我克之五行，阴阳异=正财，阴阳同=偏财
+    生克链：木 → 火 → 土 → 金 → 水 → 木（箭头=生），相克隔一个。
+    """
+    if tian_gan not in TIANGAN_WUXING or day_tian not in TIANGAN_WUXING:
+        return ""
+    day_wx = TIANGAN_WUXING[day_tian]
+    tg_wx = TIANGAN_WUXING[tian_gan]
+    day_yinyang = TIANGAN_YINYANG[day_tian]
+    tg_yinyang = TIANGAN_YINYANG[tian_gan]
+    same_yinyang = (day_yinyang == tg_yinyang)
+    # 生克：木生火 火生土 土生金 金生水 水生木
+    sheng = {"木": "火", "火": "土", "土": "金", "金": "水", "水": "木"}
+    # 克：木克土 土克水 水克火 火克金 金克木
+    ke = {"木": "土", "土": "水", "水": "火", "火": "金", "金": "木"}
+    if tg_wx == day_wx:
+        return "比肩" if same_yinyang else "劫财"
+    # 谁生我（印枭）：生tg_wx == day_wx 等价 day_wx 是 tg_wx 的所生；即 sheng[tg_wx] == day_wx?
+    # 生我：五行生我者。设 五行生我 = tg_wx，即 sheng[tg_wx] == day_wx?
+    # 实际上如果 tg_wx 生 day_wx → sheng[tg_wx] == day_wx → tg_wx 为印枭（生我者）
+    # 反过来 day_wx 生 tg_wx → sheng[day_wx] == tg_wx → tg_wx 为食伤（我生者）
+    if sheng.get(tg_wx) == day_wx:
+        # tg 生 day → tg 生我 → 印枭
+        return "偏印" if same_yinyang else "正印"
+    if sheng.get(day_wx) == tg_wx:
+        # day 生 tg → 我生 → 食伤
+        return "食神" if same_yinyang else "伤官"
+    if ke.get(tg_wx) == day_wx:
+        # tg 克 day → 克我 → 官杀
+        return "七杀" if same_yinyang else "正官"
+    if ke.get(day_wx) == tg_wx:
+        # day 克 tg → 我克 → 财
+        return "偏财" if same_yinyang else "正财"
+    return ""
+
+
+def _compute_dizhi_zhugan_shishen(di_zhi: str, day_tian: str) -> str:
+    """地支十神：取藏干主气（DIZHI_CANGGAN[支][0]）对应的天干十神"""
+    if di_zhi not in DIZHI_CANGGAN:
+        return ""
+    main_gan = DIZHI_CANGGAN[di_zhi][0]
+    return compute_tiangan_shishen(main_gan, day_tian)
+
+
 def analyze_liuyue(
     liunian_ganzhi: str,
     day_tian: str,
     pillars: Dict,
     yongshen: str,
     jishen: str,
+    is_strong: bool = False,
 ) -> List[Dict]:
     """
     分析流年12个月的吉凶（流月分析）。
@@ -1077,6 +1186,7 @@ def analyze_liuyue(
         # 综合吉凶判断（冲合化刑由 _compute_overall_judge 从 interactions 解析）
         overall_judge = _compute_overall_judge(
             tian_wx, di_wx, yongshen, jishen, interactions,
+            day_wx=TIANGAN_WUXING.get(day_tian, ""), is_strong=is_strong,
         )
 
         # 构建理由
@@ -1104,6 +1214,10 @@ def analyze_liuyue(
         if not reasons:
             reasons.append("平缓之月")
 
+        # 十神（日主为基准直接查表计算，不让LLM自行推演避免写错）
+        shishen_tian = compute_tiangan_shishen(month_tian, day_tian)
+        shishen_di = _compute_dizhi_zhugan_shishen(month_di, day_tian)
+
         results.append({
             "solar_month": solar_month,
             "month_ganzhi": month_ganzhi,
@@ -1114,6 +1228,8 @@ def analyze_liuyue(
             "judge": overall_judge,
             "reason": "，".join(reasons),
             "interactions": interactions,
+            "shishen_tian": shishen_tian,
+            "shishen_di": shishen_di,
         })
 
     return results

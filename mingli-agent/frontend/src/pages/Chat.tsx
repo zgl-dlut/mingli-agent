@@ -100,10 +100,35 @@ export default function Chat() {
   } = useChatStore()
   const { user, fetchUserInfo } = useUserStore()
 
+  // 动态获取真实可见视口高度与偏移（解决移动端 100vh 包含地址栏 + iOS 键盘弹出时输入框位置错乱的问题）
+  // iOS 键盘弹出时 visualViewport.height 变小且 offsetTop 增大（可视区被向上推），
+  // fixed 容器需同时跟随 height 和 offsetTop，才能始终贴在键盘正上方
+  const [viewportHeight, setViewportHeight] = useState(
+    () => window.visualViewport?.height ?? window.innerHeight
+  )
+  const [viewportOffsetTop, setViewportOffsetTop] = useState(0)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const handleUpdate = () => {
+      setViewportHeight(vv.height)
+      setViewportOffsetTop(vv.offsetTop)
+    }
+    handleUpdate()
+    vv.addEventListener('resize', handleUpdate)
+    // 键盘弹出/收起动画过程中 offsetTop 持续变化，scroll 事件负责实时跟随
+    vv.addEventListener('scroll', handleUpdate)
+    return () => {
+      vv.removeEventListener('resize', handleUpdate)
+      vv.removeEventListener('scroll', handleUpdate)
+    }
+  }, [])
+
   const [person, setPerson] = useState<Person | null>(null)
   const [sessionId, setSessionId] = useState<number | null>(null)
   const [inputValue, setInputValue] = useState('')
   const [baziResult, setBaziResult] = useState<AnalyzeResult | null>(null)
+  const [, setBaziLoading] = useState(false)
   const [cardPhase, setCardPhase] = useState<'loading' | 'ready' | 'done' | 'error'>('loading')
   const [isRechargeOpen, setIsRechargeOpen] = useState(false)
   // 生成进度相关状态（按人独立，支持并发生成）
@@ -111,7 +136,8 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   // 滚动控制状态
-  const [scrollButton, setScrollButton] = useState<'up' | 'down' | null>(null)
+  const [showScrollUp, setShowScrollUp] = useState(false)
+  const [showScrollDown, setShowScrollDown] = useState(false)
   // optimistic用户消息：发送追问时立即显示，fetchMessages后自动清除
   const [pendingUserMsg, setPendingUserMsg] = useState<string | null>(null)
   // optimistic 消息所属的 personId，防止切换会话后泄漏到其他人的对话框
@@ -142,8 +168,6 @@ export default function Chat() {
   
   // 上一次滚动位置
   const lastScrollTopRef = useRef(0)
-  // 滚动防抖定时器
-  const scrollTimerRef = useRef<number | null>(null)
 
   // debug 日志仅输出到 console（避免 async 函数中频繁 setState 触发不必要的重渲染）
   const dlog = (msg: string) => {
@@ -151,75 +175,51 @@ export default function Chat() {
     console.log(`[${ts}] ${msg}`)
   }
 
-  // 滚动监听，智能显示翻页按钮
+  // 检查并更新滚动按钮状态
+  const checkScrollButtons = () => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const scrollTop = container.scrollTop
+    const scrollHeight = container.scrollHeight
+    const clientHeight = container.clientHeight
+    
+    lastScrollTopRef.current = scrollTop
+
+    // 判断内容是否可以滚动（内容高度大于容器高度）
+    const canScroll = scrollHeight > clientHeight + 10
+    
+    // 只有在可以滚动的前提下，才根据位置显示按钮
+    // 向上按钮：可以滚动 且 不在顶部（距离顶部 > 100px）
+    setShowScrollUp(canScroll && scrollTop > 100)
+    // 向下按钮：可以滚动 且 不在底部（距离底部 > 100px）
+    setShowScrollDown(canScroll && scrollTop < scrollHeight - clientHeight - 100)
+  }
+
+  // 滚动监听，智能显示翻页按钮（不自动隐藏）
+  // 注意：person 未加载时主容器未渲染，scrollContainerRef 为 null，
+  // 依赖 person?.id 确保容器真正挂载后再绑定监听器，否则监听器永远不会生效
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container) return
 
-    const handleScroll = () => {
-      const scrollTop = container.scrollTop
-      const scrollHeight = container.scrollHeight
-      const clientHeight = container.clientHeight
-      const scrollDirection = scrollTop > lastScrollTopRef.current ? 'down' : 'up'
-      
-      lastScrollTopRef.current = scrollTop
-
-      // 清除之前的定时器
-      if (scrollTimerRef.current) {
-        clearTimeout(scrollTimerRef.current)
-      }
-
-      // 判断是否显示按钮
-      // 只要滚动了就显示按钮，不再限制在中间区域
-      if (scrollTop > 50) {
-        // 滚动距离顶部超过50px，显示向上按钮（回到顶部）
-        setScrollButton('up')
-      }
-      
-      if (scrollTop < scrollHeight - clientHeight - 50) {
-        // 滚动距离底部超过50px，显示向下按钮（回到底部）
-        setScrollButton('down')
-      }
-      
-      // 如果既不在顶部也不在底部，根据滚动方向决定显示哪个按钮
-      if (scrollTop > 50 && scrollTop < scrollHeight - clientHeight - 50) {
-        setScrollButton(scrollDirection === 'down' ? 'down' : 'up')
-      }
-      
-      // 已经在顶部，不显示向上按钮
-      if (scrollTop <= 50) {
-        // 如果还没到最底部，显示向下按钮
-        if (scrollTop < scrollHeight - clientHeight - 50) {
-          setScrollButton('down')
-        } else {
-          setScrollButton(null)
-        }
-      }
-      
-      // 已经在底部，不显示向下按钮
-      if (scrollTop >= scrollHeight - clientHeight - 50) {
-        // 如果还没到最顶部，显示向上按钮
-        if (scrollTop > 50) {
-          setScrollButton('up')
-        } else {
-          setScrollButton(null)
-        }
-      }
-
-      // 3秒后自动隐藏
-      scrollTimerRef.current = window.setTimeout(() => {
-        setScrollButton(null)
-      }, 3000)
-    }
-
-    container.addEventListener('scroll', handleScroll, { passive: true })
+    container.addEventListener('scroll', checkScrollButtons, { passive: true })
+    // 初始检查一次，确保按钮状态正确
+    checkScrollButtons()
     return () => {
-      container.removeEventListener('scroll', handleScroll)
-      if (scrollTimerRef.current) {
-        clearTimeout(scrollTimerRef.current)
-      }
+      container.removeEventListener('scroll', checkScrollButtons)
     }
-  }, [])
+  }, [person?.id])
+
+  // 内容变化后重新检查滚动按钮状态（解决异步加载内容后按钮不显示的问题）
+  // 键盘弹出会改变容器高度（viewportHeight 变化），也需要重新检查
+  useEffect(() => {
+    // 延迟检查，等待DOM更新完成
+    const timer = setTimeout(() => {
+      checkScrollButtons()
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [messages, currentMessage, pendingUserMsg, cardPhase, viewportHeight])
 
   /** 判断用户是否已经在页面底部附近（阈值 150px） */
   const isNearBottom = () => {
@@ -242,7 +242,13 @@ export default function Chat() {
     }
     // 设置防抖滚动，避免频繁滚动导致闪烁
     debounceScrollRef.current = window.setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      const container = scrollContainerRef.current
+      if (!container) return
+      // 使用容器的 scrollTo 而非元素的 scrollIntoView，避免影响外部布局
+      container.scrollTo({
+        top: container.scrollHeight - container.clientHeight,
+        behavior: 'smooth'
+      })
     }, 100)
   }
 
@@ -260,6 +266,8 @@ export default function Chat() {
   }, [messages])
 
   const scrollToTop = () => {
+    // 点击后立即隐藏按钮，不等待 scroll 事件回调，避免视觉延迟
+    setShowScrollUp(false)
     scrollContainerRef.current?.scrollTo({
       top: 0,
       behavior: 'smooth'
@@ -280,7 +288,7 @@ export default function Chat() {
       } else {
         percent = 70 + Math.min(25, ((elapsed - 120) / 60) * 25)
       }
-      const time = elapsed < 180 ? '预计5-8分钟' : elapsed < 300 ? '预计3-5分钟' : '即将完成...'
+      const time = elapsed < 60 ? '预计1-2分钟' : elapsed < 120 ? '预计1分钟内' : '即将完成...'
       return { percent: Math.round(percent), time }
     }
 
@@ -367,7 +375,31 @@ export default function Chat() {
       navigate('/')
       return
     }
-    setPerson(p)
+    // 如果 person 缺少 bazi_data（旧缓存），从 API 拉取最新数据
+    if (!p.bazi_data || Object.keys(p.bazi_data).length === 0) {
+      logger.info(`[Lifecycle] person缺少bazi_data，从API拉取`, { personId: id })
+      personApi.get(id).then(res => {
+        if (res.data.bazi_data) {
+          // 更新 store 中的 person
+          const updatedPerson = { ...p, bazi_data: res.data.bazi_data }
+          usePersonStore.getState().setPersons(
+            usePersonStore.getState().persons.map(pp => pp.id === id ? updatedPerson : pp)
+          )
+          setPerson(updatedPerson)
+          logger.info(`[Lifecycle] 已从API获取bazi_data`, { personId: id })
+        } else {
+          // API 返回也没有 bazi_data，使用原始 person
+          setPerson(p)
+        }
+      }).catch(err => {
+        logger.error(`[Lifecycle] 获取person详情失败`, String(err))
+        // 失败时使用原始 person
+        setPerson(p)
+      })
+    } else {
+      // person 有 bazi_data，直接设置
+      setPerson(p)
+    }
     // 切换当前会话（加载本地缓存，不重置生成状态，让生成中切换后进度条保留）
     setCurrentPerson(id)
     // 获取 session_id 并从后端拉取消息（person-safe：仅当前会话才更新可视列表）
@@ -439,7 +471,20 @@ export default function Chat() {
   useEffect(() => {
     if (!person) return
     setCardPhase(hasFirstReading(person.id) ? 'done' : 'loading')
-    // 无论是否有历史，都要拿到 baziResult 用于后续追问！
+    setBaziLoading(true)
+    setBaziResult(null)
+    
+    // 优先从 Person 对象获取已持久化的排盘数据
+    if (person.bazi_data && Object.keys(person.bazi_data).length > 0) {
+      setBaziResult(person.bazi_data as unknown as AnalyzeResult)
+      setBaziLoading(false)
+      if (!hasFirstReading(person.id)) {
+        setCardPhase('ready')
+      }
+      return
+    }
+    
+    // 如果 Person 没有排盘数据，调用 analyzeBazi 获取（兼容旧数据）
     analyzeBazi({
       birth_date: person.birth_date,
       birth_time: person.birth_time,
@@ -461,8 +506,10 @@ export default function Chat() {
           setCardPhase('error')
         }
       })
-      .finally(() => {})
-  }, [person?.id])
+      .finally(() => {
+        setBaziLoading(false)
+      })
+  }, [person?.id, person?.bazi_data])
 
   const handleGenerateFirstReading = async () => {
     const callId = traceId()
@@ -631,9 +678,12 @@ export default function Chat() {
       isSendingMapRef.current.set(pid, false)
       return
     }
-    if (!baziResult) {
+    // 使用 baziResult 或 person.bazi_data（兜底）
+    const baziDataToSend = baziResult || (person.bazi_data && Object.keys(person.bazi_data).length > 0 ? person.bazi_data as unknown as AnalyzeResult : null)
+    
+    if (!baziDataToSend) {
       dlog(`baziResult未就绪，退出`)
-      logger.warn(`[${callId}] baziResult未就绪，退出`)
+      logger.warn(`[${callId}] baziResult未就绪，退出`, { hasBaziResult: !!baziResult, hasPersonBaziData: !!person.bazi_data })
       alert('命理数据未就绪，请稍等或刷新页面重试')
       isSendingMapRef.current.set(pid, false)
       return
@@ -799,7 +849,7 @@ export default function Chat() {
 
   if (!person) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f2f0ed' }}>
         <div className="text-primary-600">加载中...</div>
       </div>
     )
@@ -818,24 +868,24 @@ export default function Chat() {
   )
 
   return (
-    <div style={{ maxWidth: '768px', margin: '0 auto', minHeight: '100vh' }}>
+    <div style={{ position: 'fixed', top: `${viewportOffsetTop}px`, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '820px', height: `${viewportHeight}px`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* 页面标题栏 */}
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-30">
-        <div className="px-4 py-3">
+      <div className="bg-white/80 backdrop-blur-sm border-b border-brand-inputBorder/40 flex-shrink-0 z-30">
+        <div className="px-4 py-2.5">
         <div className="flex items-start gap-3">
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="text-gray-600 hover:text-gray-800 text-xl w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-all shrink-0 mt-0.5"
+            className="text-brand-brown/60 hover:text-brand-brown text-xl w-9 h-9 flex items-center justify-center rounded-lg hover:bg-brand-bgCard transition-all shrink-0 mt-0.5"
           >
             ←
           </button>
           <div className="flex-1 min-w-0 py-0.5">
-            <h1 className="text-lg font-bold text-gray-800 truncate">
+            <h1 className="text-base font-bold text-brand-brownStrong truncate">
               {person.name || '命盘'}
             </h1>
             {(cardPhase === 'done' || hasGenerated) && baziResult?.命格箴言 && (
-              <p className="text-xs text-primary-600/70 truncate mt-0.5 tracking-wide">
+              <p className="text-[11px] text-brand-brown/50 truncate mt-0.5 tracking-wide">
                 {baziResult.命格箴言}
               </p>
             )}
@@ -847,8 +897,8 @@ export default function Chat() {
       {/* 内容区域 */}
       <div
         ref={scrollContainerRef}
-        className="px-4 py-4 pb-36 overflow-y-auto"
-        style={{ maxHeight: 'calc(100vh - 200px)' }}
+        className="px-4 py-4 overflow-y-auto"
+        style={{ flex: 1, minHeight: 0 }}
       >
         {cardPhase === 'ready' && baziResult && (
           <div className="bg-white rounded-2xl shadow-sm p-6 text-center">
@@ -895,7 +945,8 @@ export default function Chat() {
                 setCardPhase('done')
                 handleGenerateFirstReading()
               }}
-              className="w-full bg-gradient-to-r from-primary-600 to-primary-700 text-white py-3 rounded-xl text-sm font-medium shadow-md active:scale-[0.98] transition-all"
+              className="w-full py-3 rounded-xl text-sm font-medium shadow-md active:scale-[0.98] transition-all"
+              style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
             >
               查看完整解读
             </button>
@@ -906,7 +957,7 @@ export default function Chat() {
         {cardPhase === 'loading' && (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="bazi-loading-mystic">☯</div>
-            <p className="text-indigo-400 text-sm mt-4 animate-pulse">正在排盘分析...</p>
+            <p className="text-brand-button text-sm mt-4 animate-pulse">正在排盘分析...</p>
           </div>
         )}
 
@@ -943,100 +994,134 @@ export default function Chat() {
 
         {/* 对话消息区域 */}
         {(cardPhase === 'done' || hasGenerated) && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {messages.filter(Boolean).map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-start gap-2`}
-              >
-                {msg.role === 'assistant' && (
-                  <div className="flex-shrink-0 mt-1">
-                    <Logo size={32} dark />
+              <div key={msg.id} className="flex items-start gap-2">
+                {/* 左侧头像 */}
+                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }}>
+                  {msg.role === 'assistant' ? (
+                    <Logo dark className="logo-sm" showText={false} />
+                  ) : null}
+                </div>
+                {/* 气泡 - flex-1 占满头像之间的空间，所有气泡左右边缘严格对齐 */}
+                <div className="flex-1">
+                  <div
+                    className={`px-4 py-3 rounded-2xl ${
+                      msg.role === 'user'
+                        ? 'rounded-br-sm bg-[#8b6f5a] text-[#f4f2f0] ml-auto w-fit'
+                        : 'bg-white text-brand-brown rounded-bl-sm shadow-sm'
+                    }`}
+                  >
+                    {msg.role === 'user' ? (
+                      <div className="whitespace-pre-wrap">{msg.content}</div>
+                    ) : (
+                      <HtmlContent content={msg.content || ''} />
+                    )}
                   </div>
-                )}
-                <div
-                  className={`max-w-[80%] px-4 py-3 rounded-2xl ${
-                    msg.role === 'user'
-                      ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-br-sm'
-                      : 'bg-white text-gray-800 rounded-bl-sm shadow-sm'
-                  }`}
-                >
+                </div>
+                {/* 右侧头像 */}
+                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }}>
                   {msg.role === 'user' ? (
-                    <div className="whitespace-pre-wrap">{msg.content}</div>
-                  ) : (
-                    <HtmlContent content={msg.content || ''} />
-                  )}
+                    <div
+                      className="flex items-center justify-center rounded-full text-white font-bold"
+                      style={{ backgroundColor: '#8b6f5a', width: 36, height: 36, fontSize: 14 }}
+                    >
+                      {user?.name?.[0] || '?'}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}
 
-            {/* optimistic用户消息：发送追问时立即显示，fetchMessages后清除；仅当前生成人物显示 */}
+            {/* optimistic用户消息 */}
             {pendingUserMsg && pendingUserMsgPid === person.id && (
-              <div className="flex justify-end items-start gap-2">
-                <div className="max-w-[80%] px-4 py-3 rounded-2xl bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-br-sm">
-                  <div className="whitespace-pre-wrap">{pendingUserMsg}</div>
+              <div className="flex items-start gap-2">
+                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }} />
+                <div className="flex-1">
+                  <div className="px-4 py-3 rounded-2xl rounded-br-sm bg-[#8b6f5a] text-[#f4f2f0] ml-auto w-fit">
+                    <div className="whitespace-pre-wrap">{pendingUserMsg}</div>
+                  </div>
+                </div>
+                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }}>
+                  <div className="flex items-center justify-center rounded-full text-white font-bold" style={{ backgroundColor: '#8b6f5a', width: 36, height: 36, fontSize: 14 }}>
+                    {user?.name?.[0] || '?'}
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* 正在生成提示 - 仅当前人物在生成时显示进度条，切换会话不中断 */}
+            {/* 正在生成提示 */}
             {isPersonGenerating(person.id) && (() => {
               const p = progressMap[person.id]
               const percent = p?.percent ?? 0
-              const time = p?.time ?? '预计5-8分钟'
+              const time = p?.time ?? '预计1-2分钟'
               return (
-              <div className="flex justify-start items-start gap-2">
-                <div className="flex-shrink-0 mt-1">
-                  <Logo size={32} dark />
+              <div className="flex items-start gap-2">
+                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }}>
+                  <Logo dark className="logo-sm" showText={false} />
                 </div>
-                <div className="min-w-[320px] max-w-[80%] px-6 py-5 rounded-2xl bg-white/80 backdrop-blur-sm rounded-bl-sm shadow-sm border border-indigo-100/50">
-                  {/* 加载动画 */}
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="text-indigo-400 text-sm animate-pulse">正在分析中，请稍后…</span>
-                  </div>
-
-                  {/* 动态进度条 */}
-                  <div className="w-full h-3 bg-indigo-100 rounded-full overflow-hidden mb-3">
-                    <div
-                      className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 ease-out"
-                      style={{ width: `${percent}%` }}
-                    />
-                  </div>
-                  {/* 进度百分比和预计时间 */}
-                  <div className="flex justify-between items-center">
-                    <p className="text-indigo-400 text-sm">{percent}%</p>
-                    <p className="text-indigo-300 text-sm">{time}</p>
+                <div className="flex-1">
+                  <div className="px-6 py-5 rounded-2xl bg-white/90 backdrop-blur-sm rounded-bl-sm shadow-sm border border-brand-gold/20">
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-brand-button text-sm animate-pulse">正在分析中，请稍后…</span>
+                    </div>
+                    <div className="w-full h-3 bg-brand-bgCard rounded-full overflow-hidden mb-3">
+                      <div className="h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${percent}%`, backgroundColor: '#a7876f' }} />
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <p className="text-brand-button text-sm">{percent}%</p>
+                      <p className="text-brand-brown/50 text-sm">{time}</p>
+                    </div>
                   </div>
                 </div>
+                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }} />
               </div>
               )
             })()}
             <div ref={messagesEndRef} />
           </div>
         )}
-        
-        {/* 智能悬浮翻页按钮 */}
-        {scrollButton && (
-          <button
-            type="button"
-            onClick={scrollButton === 'up' ? scrollToTop : () => scrollToBottom({ force: true })}
-            className="fixed right-4 z-20 bg-gray-200/80 text-gray-500 w-6 h-6 rounded-full flex items-center justify-center text-xs hover:bg-gray-300 transition-all backdrop-blur-sm"
-            style={{ top: '50%', transform: 'translateY(-50%)' }}
-          >
-            {scrollButton === 'up' ? '↑' : '↓'}
-          </button>
-        )}
       </div>
+
+      {/* 智能悬浮翻页按钮（在 flex 容器内，fixed 定位） */}
+      {(showScrollUp || showScrollDown) && (
+        <div className="fixed z-50 flex flex-col gap-3" style={{ right: '16px', bottom: '180px' }}>
+          {showScrollUp && (
+            <button
+              type="button"
+              onClick={scrollToTop}
+              className="bg-white/95 text-brand-brown w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold hover:bg-white transition-all backdrop-blur-sm shadow-lg border border-gray-200 active:scale-95"
+              title="回到顶部"
+            >
+              ↑
+            </button>
+          )}
+          {showScrollDown && (
+            <button
+              type="button"
+              onClick={() => {
+                // 点击后立即隐藏按钮，不等待 scroll 事件回调，避免视觉延迟
+                setShowScrollDown(false)
+                scrollToBottom({ force: true })
+              }}
+              className="bg-white/95 text-brand-brown w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold hover:bg-white transition-all backdrop-blur-sm shadow-lg border border-gray-200 active:scale-95"
+              title="回到底部"
+            >
+              ↓
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 底部输入栏 */}
       {(hasGenerated || cardPhase === 'done') && (
-        <div className="fixed bottom-0 bg-white border-t border-gray-100" style={{ left: 0, right: 0, maxWidth: '768px', margin: '0 auto', paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
+        <div className="bg-white/90 backdrop-blur-sm border-t border-brand-inputBorder/40 flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
           <div>
           {/* 积分提示 */}
-          <div className="text-center text-gray-400 text-xs pt-2">
+          <div className="text-center text-brand-muted text-xs pt-2">
             {isRetryOfUnanswered
-              ? <>本次为<span className="text-primary-600 font-medium">重新生成</span>，不扣积分（当前余额 <span className="text-primary-600 font-medium">{user?.points ?? 0}</span> 积分）</>
-              : <>本次分析消耗 <span className="text-primary-600 font-medium">40</span> 积分，当前余额 <span className="text-primary-600 font-medium">{user?.points ?? 0}</span> 积分</>
+              ? <>本次为<span className="text-brand-button font-medium">重新生成</span>，不扣积分（当前余额 <span className="text-brand-button font-medium">{user?.points ?? 0}</span> 积分）</>
+              : <>本次分析消耗 <span className="text-brand-button font-medium">40</span> 积分，当前余额 <span className="text-brand-button font-medium">{user?.points ?? 0}</span> 积分</>
             }
           </div>
 
@@ -1065,13 +1150,14 @@ export default function Chat() {
                 }
               }}
               placeholder="追问，如：算一下今日运势/工作/财运/子女等"
-              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-full focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all bg-gray-50 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2.5 border border-brand-inputBorder rounded-full focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition-all bg-brand-bgInput text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             {(user?.points ?? 0) < 40 && !isRetryOfUnanswered ? (
               <button
                 type="button"
                 onClick={() => setIsRechargeOpen(true)}
-                className="bg-gradient-to-r from-primary-600 to-primary-700 text-white px-5 h-10 rounded-full text-sm font-medium hover:from-primary-700 hover:to-primary-800 transition-all whitespace-nowrap"
+                className="px-5 h-10 rounded-full text-sm font-medium transition-all whitespace-nowrap"
+                style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
               >
                 去充值
               </button>
@@ -1083,7 +1169,8 @@ export default function Chat() {
                   logger.info('[Button] 追问按钮点击', { timeStamp: e.timeStamp, inputLen: inputValue.trim().length })
                   handleSend()
                 }}
-                className="bg-gradient-to-r from-primary-600 to-primary-700 text-white px-5 h-10 rounded-full text-sm font-medium hover:from-primary-700 hover:to-primary-800 transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                className="px-5 h-10 rounded-full text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
               >
                 追问
               </button>
@@ -1091,7 +1178,7 @@ export default function Chat() {
           </div>
 
           {/* 免责声明 */}
-          <div className="text-center text-gray-300 text-[10px] py-1">
+          <div className="text-center text-brand-muted/40 text-[10px] py-1">
             AI存在幻觉，仅供传统文化体验与娱乐参考，不具有科学预测能力
           </div>
           </div>

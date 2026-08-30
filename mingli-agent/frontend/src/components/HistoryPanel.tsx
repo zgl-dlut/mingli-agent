@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { usePersonStore } from '../store/personStore'
 import { useUserStore } from '../store/userStore'
 import { useChatStore } from '../store/chatStore'
-import Logo from './Logo'
+import { authApi } from '../api/auth'
 import type { Person } from '../types'
 
 interface HistoryPanelProps {
@@ -18,13 +18,17 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
   const navigate = useNavigate()
   const location = useLocation()
   const { persons, deletePerson, renamePerson } = usePersonStore()
-  const { user, logout, clearUser } = useUserStore()
+  const { user, logout, setUser } = useUserStore()
   const { deletePersonChat } = useChatStore()
   const [isExiting, setIsExiting] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [expandedMenuId, setExpandedMenuId] = useState<number | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [showNicknameModal, setShowNicknameModal] = useState(false)
+  const [nickname, setNickname] = useState('')
+  const [savingNickname, setSavingNickname] = useState(false)
 
   const handleClose = () => {
     setIsExiting(true)
@@ -38,6 +42,7 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
   useEffect(() => {
     const handleClickOutside = () => {
       setExpandedMenuId(null)
+      setUserMenuOpen(false)
     }
     document.addEventListener('click', handleClickOutside)
     return () => document.removeEventListener('click', handleClickOutside)
@@ -100,11 +105,46 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
     navigate('/login', { replace: true })
   }
 
-  const handleReset = () => {
-    if (confirm('确定要清空所有数据吗？此操作不可恢复。')) {
-      // clearUser 已包含清空 chats/persons/transactions + token/user
-      clearUser()
-      navigate('/login', { replace: true })
+  const handleGoRecharge = () => {
+    setUserMenuOpen(false)
+    if (isDesktop) {
+      navigate('/recharge')
+    } else {
+      handleClose()
+      setTimeout(() => navigate('/recharge'), 260)
+    }
+  }
+
+  const handleGoPoints = () => {
+    setUserMenuOpen(false)
+    if (isDesktop) {
+      navigate('/points')
+    } else {
+      handleClose()
+      setTimeout(() => navigate('/points'), 260)
+    }
+  }
+
+  const handleOpenNicknameModal = () => {
+    setUserMenuOpen(false)
+    setNickname(user?.name || '')
+    setShowNicknameModal(true)
+  }
+
+  const handleSaveNickname = async () => {
+    const name = nickname.trim()
+    if (!name) return
+    setSavingNickname(true)
+    try {
+      const { data } = await authApi.updateProfile(name)
+      if (user) {
+        setUser({ ...user, name: data.name })
+      }
+      setShowNicknameModal(false)
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || '昵称修改失败')
+    } finally {
+      setSavingNickname(false)
     }
   }
 
@@ -116,14 +156,13 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
       {/* 侧滑面板 */}
       <div className={`history-panel ${isDesktop ? 'history-panel-desktop' : ''} ${isDesktop && !isOpen ? 'panel-exit' : ''} ${!isDesktop && isExiting ? 'panel-exit' : ''}`}>
         {/* 顶部栏 - 品牌logo + 品牌名 + 收起按钮 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #C9B5A1' }}>
           {/* 左侧：品牌logo + 品牌名 */}
           <div className="flex items-center gap-3">
-            <Logo size={24} dark={true} />
-            <span className="text-lg font-bold text-gray-800">趣算算</span>
+            <span className="logo-text" style={{ color: '#44403d' }}>趣算算</span>
           </div>
           {/* 右侧：收起按钮 */}
-          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none p-1">
+          <button onClick={handleClose} style={{ color: '#846456' }} className="hover:text-gray-600 text-lg leading-none p-1">
             {isDesktop ? (
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M15 18l-6-6 6-6" />
@@ -258,36 +297,77 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
                 setTimeout(() => onNavigateToAddPerson(), 260)
               }
             }}
-            className="w-full bg-gradient-to-r from-primary-600 to-primary-700 text-white py-3 rounded-xl font-medium mb-4 hover:from-primary-700 hover:to-primary-800 transition-all"
+            className="w-full py-3 rounded-xl font-medium mb-4 transition-all"
+            style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
           >
             ＋ 添加新分析
           </button>
 
           {/* 用户信息 */}
-          <div className="flex items-center space-x-3 mb-3 px-1">
-            <div className="w-9 h-9 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+          <div className="flex items-center space-x-3 px-1">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm" style={{ backgroundColor: '#8b6f5a' }}>
               {user?.name?.[0] || '?'}
             </div>
             <div className="flex-1">
               <p className="text-gray-800 text-sm font-medium">{user?.name || '未登录'}</p>
               <p className="text-gray-400 text-xs">剩余积分：{user?.points || 0}</p>
             </div>
-          </div>
-
-          {/* 操作按钮 */}
-          <div className="flex space-x-2">
-            <button
-              onClick={handleLogout}
-              className="flex-1 py-2 rounded-lg border border-gray-200 text-gray-500 text-sm hover:bg-gray-50 transition-all"
-            >
-              退出登录
-            </button>
-            <button
-              onClick={handleReset}
-              className="flex-1 py-2 rounded-lg border border-red-200 text-red-400 text-sm hover:bg-red-50 transition-all"
-            >
-              清空数据
-            </button>
+            {/* 更多功能入口 */}
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setUserMenuOpen(!userMenuOpen)
+                }}
+                className="text-gray-400 hover:text-gray-600 p-1 transition-colors"
+                aria-label="更多功能"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </button>
+              {userMenuOpen && (
+                <div className="absolute right-0 bottom-full mb-1 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50 min-w-[110px]">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleGoRecharge()
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-primary-500"
+                  >
+                    购买积分
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleGoPoints()
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-primary-500"
+                  >
+                    积分明细
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleOpenNicknameModal()
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-primary-500"
+                  >
+                    用户信息
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setUserMenuOpen(false)
+                      handleLogout()
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-red-400"
+                  >
+                    退出登录
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -316,6 +396,47 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
                 className="flex-1 py-2.5 rounded-lg bg-red-500 text-white text-sm hover:bg-red-600 transition-all"
               >
                 确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 修改昵称弹窗 */}
+      {showNicknameModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          onClick={() => setShowNicknameModal(false)}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-2xl p-5 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-gray-800 text-base font-medium mb-4">修改昵称</h3>
+            <input
+              type="text"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNickname() }}
+              maxLength={20}
+              placeholder="请输入昵称（1-20 个字符）"
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 mb-4"
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowNicknameModal(false)}
+                className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 text-sm hover:bg-gray-50 transition-all"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveNickname}
+                disabled={savingNickname || !nickname.trim()}
+                className="flex-1 py-2.5 rounded-lg text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+              >
+                {savingNickname ? '保存中...' : '保存'}
               </button>
             </div>
           </div>

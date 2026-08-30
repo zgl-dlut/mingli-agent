@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,7 +14,10 @@ from app.models.user import User
 from app.services.bazi_service import calculate_bazi
 from app.services.astrology_service import calculate_astrology
 from app.services.payment_service import deduct_points
+
+logger = logging.getLogger(__name__)
 from app.config import settings
+from app.skills.orchestrator import generate_full_analysis
 
 router = APIRouter(prefix="/api/persons", tags=["persons"])
 
@@ -52,25 +56,42 @@ async def create_person(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    await deduct_points(
-        db, current_user.id, settings.POINTS_FIRST_READING,
-        f"创建人物{request.name}，生成命盘"
+    # 去重检查：同一用户相同生辰（性别+出生日期+出生时间+出生地点）已存在时，返回已有记录，不重复扣费
+    existing = await db.execute(
+        select(Person).where(
+            Person.user_id == current_user.id,
+            Person.gender == request.gender,
+            Person.birth_date == request.birth_date,
+            Person.birth_time == request.birth_time,
+            Person.birth_location == request.birth_location,
+        ).limit(1)
     )
-    
-    bazi_chart = calculate_bazi(
-        birth_date=request.birth_date,
-        birth_time=request.birth_time,
-        longitude=request.birth_lng,
-        gender=request.gender,
-    )
-    
+    dup = existing.scalar_one_or_none()
+    if dup:
+        logger.info(f"[person] 重复创建检测: user={current_user.id} 已有相同生辰 person_id={dup.id}，跳过扣费")
+        return {"person": dup, "duplicated": True}
+
+    # 先生成排盘数据，成功后再扣费，避免排盘失败却已扣积分
+    try:
+        bazi_data = generate_full_analysis(
+            birth_date=request.birth_date,
+            birth_time=request.birth_time,
+            longitude=request.birth_lng,
+            latitude=request.birth_lat,
+            gender=request.gender,
+            location=request.birth_location,
+        )
+    except Exception as e:
+        logger.error(f"[person] 排盘失败: user={current_user.id}, error={e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"排盘失败，请稍后重试: {str(e)}")
+
     astro_chart = calculate_astrology(
         birth_date=request.birth_date,
         birth_time=request.birth_time,
         latitude=request.birth_lat,
         longitude=request.birth_lng,
     )
-    
+
     person = Person(
         user_id=current_user.id,
         name=request.name,
@@ -83,10 +104,18 @@ async def create_person(
         calendar_type=request.calendar_type,
         province=request.province,
         city=request.city,
+        bazi_data_json=bazi_data,
     )
     db.add(person)
     await db.commit()
     await db.refresh(person)
+
+    # 排盘和人物创建成功后再扣费
+    await deduct_points(
+        db, current_user.id, settings.POINTS_FIRST_READING,
+        f"创建人物{request.name}，生成命盘",
+        biz_type="first_reading",
+    )
     
     from app.services.ai_service import generate_first_reading
     from app.models.session import ChatSession
@@ -94,7 +123,7 @@ async def create_person(
     
     session = ChatSession(
         person_id=person.id,
-        bazi_data_json=bazi_chart.model_dump(),
+        bazi_data_json=bazi_data,
         astro_data_json=astro_chart.model_dump(),
         title=f"{person.name}的命盘",
     )
@@ -125,7 +154,7 @@ async def create_person(
             "city": person.city,
         },
         "session_id": session.id,
-        "bazi_data": bazi_chart.model_dump(),
+        "bazi_data": bazi_data,
         "astro_data": astro_chart.model_dump(),
     }
 
@@ -149,6 +178,21 @@ async def get_persons(
         )
         session = session_result.scalar_one_or_none()
         
+        # 如果 bazi_data_json 为 null，自动生成并持久化（兼容旧数据）
+        bazi_data = person.bazi_data_json
+        if not bazi_data:
+            bazi_data = generate_full_analysis(
+                birth_date=person.birth_date,
+                birth_time=person.birth_time,
+                longitude=person.birth_lng,
+                latitude=person.birth_lat,
+                gender=person.gender,
+                location=person.birth_location,
+            )
+            person.bazi_data_json = bazi_data
+            await db.commit()
+            await db.refresh(person)
+        
         result_list.append({
             "id": person.id,
             "name": person.name,
@@ -162,6 +206,7 @@ async def get_persons(
             "province": person.province,
             "city": person.city,
             "session_id": session.id if session else None,
+            "bazi_data": bazi_data,
             "created_at": person.created_at.isoformat(),
         })
     
@@ -189,6 +234,21 @@ async def get_person(
     )
     session = session_result.scalar_one_or_none()
     
+    # 如果 bazi_data_json 为 null，自动生成并持久化（兼容旧数据）
+    bazi_data = person.bazi_data_json
+    if not bazi_data:
+        bazi_data = generate_full_analysis(
+            birth_date=person.birth_date,
+            birth_time=person.birth_time,
+            longitude=person.birth_lng,
+            latitude=person.birth_lat,
+            gender=person.gender,
+            location=person.birth_location,
+        )
+        person.bazi_data_json = bazi_data
+        await db.commit()
+        await db.refresh(person)
+    
     return {
         "id": person.id,
         "name": person.name,
@@ -202,6 +262,7 @@ async def get_person(
         "province": person.province,
         "city": person.city,
         "session_id": session.id if session else None,
+        "bazi_data": bazi_data,
         "created_at": person.created_at.isoformat(),
     }
 
@@ -281,12 +342,22 @@ async def ensure_session(
         return {"session_id": session.id, "created": False}
 
     # session 不存在，按 person 信息重建
-    bazi_chart = calculate_bazi(
-        birth_date=person.birth_date,
-        birth_time=person.birth_time,
-        longitude=person.birth_lng,
-        gender=person.gender,
-    )
+    # 优先从 Person 读取已持久化的排盘数据
+    if person.bazi_data_json:
+        bazi_data = person.bazi_data_json
+    else:
+        # 兜底：如果 Person 中没有排盘数据，则生成并持久化
+        bazi_data = generate_full_analysis(
+            birth_date=person.birth_date,
+            birth_time=person.birth_time,
+            longitude=person.birth_lng,
+            latitude=person.birth_lat,
+            gender=person.gender,
+            location=person.birth_location,
+        )
+        person.bazi_data_json = bazi_data
+        await db.commit()
+    
     astro_chart = calculate_astrology(
         birth_date=person.birth_date,
         birth_time=person.birth_time,
@@ -296,7 +367,7 @@ async def ensure_session(
 
     session = ChatSession(
         person_id=person.id,
-        bazi_data_json=bazi_chart.model_dump(),
+        bazi_data_json=bazi_data,
         astro_data_json=astro_chart.model_dump(),
         title=f"{person.name}的命盘",
     )

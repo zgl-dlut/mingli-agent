@@ -19,6 +19,8 @@ from app.api.payment import router as payment_router
 from app.api.user import router as user_router
 from app.api.monitor import router as monitor_router
 from app.api.legal import router as legal_router
+from app.api.admin import router as admin_router
+from app.api.eval import router as eval_router
 
 
 @asynccontextmanager
@@ -66,6 +68,8 @@ app.include_router(payment_router)
 app.include_router(user_router)
 app.include_router(monitor_router)
 app.include_router(legal_router)
+app.include_router(admin_router)
+app.include_router(eval_router)
 
 
 @app.get("/api/skills")

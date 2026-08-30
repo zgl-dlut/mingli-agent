@@ -4,8 +4,10 @@
 """
 from typing import Dict, Optional, List
 from datetime import datetime
+import re
 
 from app.services.chart_validator import MISSING_MARKER
+from app.skills.divination.dayun_liunian_skill import TIANGAN, DIZHI
 
 
 # ============================================================
@@ -1035,12 +1037,13 @@ def _format_wuxing_fenbu(wuxing_fenbu) -> str:
     return str(wuxing_fenbu)
 
 
-def _format_key_liunian(key_liunian, include_liuyue: bool = False) -> str:
+def _format_key_liunian(key_liunian, include_liuyue: bool = False, birth_year: int = None) -> str:
     """格式化重点流年。
 
     Args:
         key_liunian: 重点流年列表
         include_liuyue: 是否包含流月数据（默认False，流月通过function calling获取）
+        birth_year: 出生年份，用于标注每个流年对应的年龄（防止LLM自己算错）
     """
     if isinstance(key_liunian, list):
         lines = []
@@ -1050,8 +1053,12 @@ def _format_key_liunian(key_liunian, include_liuyue: bool = False) -> str:
                 ganzhi = ly.get('ganzhi', '')
                 judge = ly.get('judge', '')
                 reason = ly.get('reason', '')
+                # 标注该流年对应的年龄，防止LLM自行计算出错
+                age_hint = ""
+                if birth_year and isinstance(year, int):
+                    age_hint = f"，{year - birth_year}岁"
                 lines.append(
-                    f"  - {year}年 {ganzhi}：{judge}（{reason}）"
+                    f"  - {year}年 {ganzhi}：{judge}（{reason}）{age_hint}"
                 )
                 # 流月数据通过 function calling 获取，不再写入 prompt
                 if include_liuyue:
@@ -1072,6 +1079,201 @@ def _format_key_liunian(key_liunian, include_liuyue: bool = False) -> str:
     return str(key_liunian)
 
 
+def _extract_question_years(user_question: str, start_year: int, end_year: int) -> List[int]:
+    """从用户问题提取涉及的年份，支持三种写法：2027年/2027、27年、丁未年。
+
+    Args:
+        user_question: 用户问题
+        start_year/end_year: 命盘流年计算范围，两位数年份和干支年只在该范围内匹配
+    """
+    years = set()
+    if not user_question:
+        return []
+    # 四位数年份：2027年 / 2027
+    for m in re.finditer(r'20\d{2}', user_question):
+        y = int(m.group())
+        if start_year <= y <= end_year:
+            years.add(y)
+    # 两位数年份：27年（指当前世纪），避免吃到"90年"等出生年以外的误报——出生年一般在范围外会被过滤
+    for m in re.finditer(r'(?<!\d)(\d{2})\s*年', user_question):
+        y = 2000 + int(m.group(1))
+        if start_year <= y <= end_year:
+            years.add(y)
+    # 干支年：丁未年 → 反查范围内匹配的年份
+    ganzhi_to_year = {}
+    for y in range(start_year, end_year + 1):
+        ganzhi_to_year[TIANGAN[(y - 4) % 10] + DIZHI[(y - 4) % 12]] = y
+    for m in re.finditer(r'[甲乙丙丁戊己庚辛壬癸]{2}(?=\s*年)', user_question):
+        if m.group() in ganzhi_to_year:
+            years.add(ganzhi_to_year[m.group()])
+    return sorted(years)
+
+
+def _format_question_year_block(key_liunian, user_question: str, birth_year: int, yongshen: str = "", jishen: str = "") -> str:
+    """构建"问题涉及年份"的流年+流月明细区块（含命盘数据边界声明）。
+
+    排盘已算好范围内全部年份的流年和流月，但 prompt 只展示前5个重点流年；
+    用户问题涉及的年份若不在前5，模型会因缺数据而编造。此函数把涉及年份的
+    完整数据直接注入 prompt，从源头消除编造动机。
+
+    新增 yongshen/jishen 字段用于把「天干/地支（用神/忌神）」标注在每月明细里，
+    避免模型自己推演十神时写错。
+    """
+    yongshen_str = str(yongshen or "")
+    jishen_str = str(jishen or "")
+    if not isinstance(key_liunian, list) or not key_liunian:
+        return ""
+    valid_years = [ly.get('year') for ly in key_liunian if isinstance(ly, dict) and isinstance(ly.get('year'), int)]
+    if not valid_years:
+        return ""
+    start_year, end_year = min(valid_years), max(valid_years)
+    question_years = _extract_question_years(user_question, start_year, end_year)
+
+    lines = []
+    ly_by_year = {ly.get('year'): ly for ly in key_liunian if isinstance(ly, dict)}
+    for y in question_years:
+        ly = ly_by_year.get(y)
+        if not ly:
+            continue
+        age_hint = f"，{y - birth_year}岁" if birth_year and isinstance(birth_year, int) else ""
+        lines.append(
+            f"  - {y}年 {ly.get('ganzhi', '')}：{ly.get('judge', '')}（{ly.get('reason', '')}）{age_hint} ★用户问题涉及年份"
+        )
+        liuyue_list = ly.get('liuyue', [])
+        if isinstance(liuyue_list, list) and liuyue_list:
+            # ── 详细流月：逐行列出，十神/月干支/用忌神/吉凶全部算好直接给 ──
+            # 十神是按日主生克规则直接查表得出，不让LLM自己推防止写错名
+            detail_lines = []
+            for lm in liuyue_list:
+                if not isinstance(lm, dict):
+                    continue
+                m = lm.get('solar_month', '')
+                mg = lm.get('month_ganzhi', '')
+                mj = lm.get('judge', '')
+                tw = lm.get('tian_wuxing', '')
+                dw = lm.get('di_wuxing', '')
+                iy = lm.get('is_yongshen', False)
+                ij = lm.get('is_jishen', False)
+                st = lm.get('shishen_tian', '')
+                sd = lm.get('shishen_di', '')
+                wuxing_tag_parts = []
+                if tw:
+                    tag = f"天干{tw}"
+                    if iy and (tw in yongshen_str):
+                        tag += "（用神）"
+                    elif ij and (tw in jishen_str):
+                        tag += "（忌神）"
+                    # 十神名标在天干后（优先按十神引用而非五行干支）
+                    if st:
+                        tag += f"·{st}"
+                    wuxing_tag_parts.append(tag)
+                if dw:
+                    tag = f"地支{dw}"
+                    if iy and (dw in yongshen_str):
+                        tag += "（用神）"
+                    elif ij and (dw in jishen_str):
+                        tag += "（忌神）"
+                    if sd:
+                        tag += f"·{sd}"
+                    wuxing_tag_parts.append(tag)
+                reason = lm.get('reason', '')
+                interactions = "；".join(lm.get('interactions', []) or [])
+                line = f"      {m}月({mg})【{mj}】{' / '.join(wuxing_tag_parts)}"
+                if reason:
+                    line += f" | 原因：{reason}"
+                if interactions:
+                    line += f" | 冲合：{interactions}"
+                detail_lines.append(line)
+            if detail_lines:
+                lines.append(
+                    "    流月明细（十神/月干支/吉凶/用忌神全部算好给出，必须严格使用本行内给出的名称，"
+                    "禁止自行配对月干支或推演十神）："
+                )
+                lines.extend(detail_lines)
+
+    if not lines:
+        return ""
+    boundary = (
+        "\n  【命盘数据边界——必须严格遵守】\n"
+        f"  - 命盘流年数据覆盖范围：{start_year}-{end_year}年\n"
+        "  - 标注★的年份是用户问题直接涉及的年份，其流年+流月明细已完整给出，可直接引用\n"
+        "  - 其他年份如需流月细节，必须先调用 get_liuyue_detail 工具获取，禁止凭空推断\n"
+        "  - 工具返回\"暂无\"或年份超出范围的：必须明确声明\"命盘未提供该年份数据\"，只可做定性提示，"
+        "禁止给出具体月份断语、吉凶等级或十神冲克细节\n"
+        "\n  【严格禁止事项（违反即编造）】\n"
+        "  1. 月干支：严格使用上方流月明细行中给出的月干支（如\"9月(庚戌月)\"），禁止自行配对月名称与月干支，禁止依据年份重推五虎遁\n"
+        "  2. 十神名称：严格使用流月明细行中「天干·十神名」「地支·十神名」标注（如\"天干金·正财\"\"地支土·食神\"），禁止自行推演或改写十神名称（劫财/比肩/正印/偏印/伤官/食神/正官/七杀/正财/偏财均只能引用明细行给的，不得自行根据五行推）\n"
+        "  3. 月份具体建议：只能基于【吉凶】等级 + 原因 + 冲合 + 十神名 四类字段展开，禁止自行添加剧中定性（如\"求职吉窗口\"\"安全稳妥入职\"\"最佳时机\"\"黄金期\"\"谈离职窗口\"等——数据里没写就是编造，不得臆造）\n"
+        "  4. 时间线：若用户问题涉及离职/offer/入职，必须遵守：离职≤offer≤入职，禁止时间倒挂；只能以月份为单位给建议，禁止指定\"X月底至Y月初\"等更细粒度\n"
+    )
+    return "【用户问题涉及年份的详细数据（优先级高于下方重点流年）】\n" + "\n".join(lines) + boundary
+
+
+def build_authoritative_chart_basis(
+    analysis_data: Dict,
+    user_question: str,
+    birth_year: int,
+) -> str:
+    """构建一份报告生成者/评测者共用的「命盘权威精简基准」。
+
+    设计目的：彻底消除"编造误报"——之前编造检测只用 chart_data 前 2000 字当基准，
+    经常不含重点流年，导致"报告里用到但基准没写 → 误判编造"。
+    现改为：生成报告的 prompt 注入区块 + 编造检测基准 用同一个函数构建，
+    双方看到的「覆盖年份/流月明细/边界声明」完全一致。
+
+    基准内容（控制在 ~2KB，保证精简不超LLM上下文）：
+      ① 四柱/日主/旺衰/用忌神/当前大运（定性骨架，不可缺）
+      ② 25年流年干支列表（只有年+干支+吉凶标签，不展开原因，占 25*15=375 字）
+      ③ 用户问题涉及年份的完整流年+12流月明细（带★标注，供具体断月依据）
+      ④ 边界声明（越界必须声明）
+    """
+    if not isinstance(analysis_data, dict):
+        return ""
+    key_liunian = analysis_data.get("重点流年", []) if isinstance(analysis_data, dict) else []
+    valid_years = sorted({ly.get('year') for ly in key_liunian if isinstance(ly, dict) and isinstance(ly.get('year'), int)})
+    start_year = valid_years[0] if valid_years else 2021
+    end_year = valid_years[-1] if valid_years else 2045
+    question_years = _extract_question_years(user_question, start_year, end_year)
+    ly_by_year = {ly.get('year'): ly for ly in key_liunian if isinstance(ly, dict)}
+    by = int(birth_year) if birth_year and isinstance(birth_year, (int, str)) and str(birth_year).isdigit() else 0
+
+    lines = []
+    lines.append("【命盘骨架】")
+    lines.append(f"  四柱: {analysis_data.get('四柱', '')}")
+    lines.append(f"  日主: {analysis_data.get('日主', '')}；旺衰: {analysis_data.get('旺衰结论', '')}")
+    lines.append(f"  用神: {analysis_data.get('用神', '')}；忌神: {analysis_data.get('忌神', '')}")
+    lines.append(f"  当前大运: {analysis_data.get('当前大运', '')}")
+    lines.append("")
+    lines.append(f"【流年覆盖范围 {start_year}-{end_year} 全量干支（用于对照报告是否越界）】")
+    chunk = []
+    for y in range(start_year, end_year + 1):
+        ly = ly_by_year.get(y, {})
+        gz = ly.get('ganzhi', TIANGAN[(y - 4) % 10] + DIZHI[(y - 4) % 12])
+        judge = ly.get('judge', '')
+        chunk.append(f"{y}{gz}{judge}")
+        if len(chunk) == 5:
+            lines.append("  " + "  ".join(chunk))
+            chunk = []
+    if chunk:
+        lines.append("  " + "  ".join(chunk))
+    lines.append("")
+
+    question_block = _format_question_year_block(
+        key_liunian, user_question, by,
+        yongshen=analysis_data.get("用神", ""),
+        jishen=analysis_data.get("忌神", ""),
+    )
+    if question_block:
+        # _format_question_year_block 已自带边界声明
+        lines.append(question_block)
+    else:
+        lines.append("【命盘数据边界——必须严格遵守】")
+        lines.append(f"  - 命盘流年数据覆盖范围：{start_year}-{end_year}年")
+        lines.append(f"  - 以上 {end_year - start_year + 1} 年的干支吉凶为已知，其他年份禁止推断")
+        lines.append("  - 具体月份建议必须基于该年12流月数据，工具拿不到时必须声明命盘未提供，禁止自行判断")
+    return "\n".join(lines)
+
+
 def _extract_liuyue_data(key_liunian) -> dict:
     """从重点流年提取流月数据，供 function calling 工具使用。
 
@@ -1080,7 +1282,8 @@ def _extract_liuyue_data(key_liunian) -> dict:
     """
     liuyue_data = {}
     if isinstance(key_liunian, list):
-        for ly in key_liunian[:5]:
+        # 提取所有流年的流月数据，不限制数量
+        for ly in key_liunian:
             if isinstance(ly, dict):
                 year = ly.get('year')
                 liuyue = ly.get('liuyue', [])
@@ -1145,6 +1348,9 @@ _CORE_RELEVANT_KEYWORDS = [
     "跳槽", "升职", "加薪", "创业", "副业", "姻缘", "桃花",
     # 生意/经营类（含修饰语的合理财运问题）
     "生意", "经营", "开店", "老板", "客户", "订单",
+    # 支出/房产类（财运细分）
+    "支出", "购房", "买房", "花钱", "破财", "房产", "房贷", "车贷",
+    "大额", "开销", "花费", "存款", "理财",
 ]
 
 # 黑名单豁免词：如果黑名单关键词后面紧跟这些词，视为合理的命理问题
@@ -1197,7 +1403,8 @@ def validate_user_question(user_question: str) -> tuple[bool, str]:
     # 2. 检查是否包含疑问词（表明有明确的问题需求）
     question_words = ["吗", "呢", "什么", "怎么", "如何", "是否", "能不能", "会不会", 
                       "何时", "哪里", "谁", "几", "多少", "多久", "可以", "应该",
-                      "适合", "推荐", "建议", "帮忙", "分析", "解读", "看看", "预测"]
+                      "适合", "推荐", "建议", "帮忙", "分析", "解读", "看看", "预测",
+                      "是不是", "对吧", "对吗", "没错吧", "是这样吗"]
     
     has_question_word = any(word in question for word in question_words)
     
@@ -1267,14 +1474,30 @@ def _build_context_vars(
     wuxing_fenbu = analysis_data.get("五行分布", {})
     wuxing_str = _format_wuxing_fenbu(wuxing_fenbu)
 
-    # 重点流年格式化
-    key_liunian = analysis_data.get("重点流年", [])
-    key_liunian_str = _format_key_liunian(key_liunian)
-
-    # 计算年龄和年龄阶段
+    # 计算年龄和年龄阶段（先算 birth_year，供重点流年标注年龄使用）
     birth_year = int(birth_date.split('-')[0]) if birth_date and '-' in birth_date else 2000
     current_year = datetime.now().year
     age = current_year - birth_year
+
+    # 重点流年格式化（传入 birth_year，在每个流年后标注对应年龄，防止LLM自己算错）
+    key_liunian = analysis_data.get("重点流年", [])
+    key_liunian_str = _format_key_liunian(key_liunian, birth_year=birth_year)
+
+    # 用户问题涉及年份的流年+流月明细注入（重点流年只展示前5个，问题涉及的
+    # 年份若不在其中会导致模型缺数据而编造——把该年完整数据直接注入消除编造动机）
+    question_year_block = _format_question_year_block(
+        key_liunian, user_question, birth_year,
+        yongshen=analysis_data.get("用神", ""),
+        jishen=analysis_data.get("忌神", ""),
+    )
+    if question_year_block:
+        key_liunian_str = f"{key_liunian_str}\n\n{question_year_block}"
+
+    # ── 命盘权威基准：生成者与评测者共用同一份（含25年干支表+问题年份12流月+边界），
+    #    防止编造检测因"基准里没写报告里用了的年份"而误报。
+    authoritative_basis = build_authoritative_chart_basis(analysis_data, user_question, birth_year)
+    if authoritative_basis:
+        key_liunian_str = f"{authoritative_basis}\n\n【重点流年精选（吉凶最高的前5条）】\n{key_liunian_str}"
     
     # 确定年龄阶段
     if age <= 12:
@@ -1310,6 +1533,7 @@ def _build_context_vars(
         "user_question": user_question,
         "age": age,
         "age_stage": age_stage,
+        "birth_year": birth_year,
     }
 
     return context

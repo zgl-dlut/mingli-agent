@@ -74,6 +74,8 @@ def build_commercial_prompt(
     nayin = analysis_data.get("纳音", {})
     current_dayun = analysis_data.get("当前大运", "")
     dayun_jiedu = analysis_data.get("大运解读", "")
+    dayun_list_data = analysis_data.get("大运列表", [])
+    start_age = analysis_data.get("起运年龄")
     key_liunian = analysis_data.get("重点流年", [])
     wuxing_app = analysis_data.get("五行应用", {})
     zodiac = analysis_data.get("生肖", "")
@@ -92,11 +94,17 @@ def build_commercial_prompt(
     
     # 十神分布
     shishen_fenbu = analysis_data.get("十神分布", "")
-    
-    # 重点流年格式化
+
+    # 计算年龄（先算 birth_year，供重点流年标注年龄使用）
+    birth_year = int(birth_date.split('-')[0]) if birth_date else 2000
+    current_year = datetime.now().year
+    age = current_year - birth_year
+
+    # 重点流年格式化（标注每个流年对应的年龄，防止LLM自己算错）
     liunian_str = ""
     for ly in key_liunian[:5]:  # 取前5个最重要的
-        liunian_str += f"  - {ly['year']}年 {ly['ganzhi']}：{ly['judge']}（{ly['reason']}）\n"
+        _age_hint = f"，{ly['year'] - birth_year}岁" if birth_year and isinstance(ly.get('year'), int) else ""
+        liunian_str += f"  - {ly['year']}年 {ly['ganzhi']}：{ly['judge']}（{ly['reason']}）{_age_hint}\n"
     
     # 五行应用格式化
     wuxing_app_str = ""
@@ -150,6 +158,25 @@ def build_commercial_prompt(
     dayun_gz = dayun_parts[0] if len(dayun_parts) > 0 else ""
     dayun_years = dayun_parts[1] if len(dayun_parts) > 1 else ""
 
+    # 大运排列（完整10步大运，LLM 引用大运的唯一合法依据）与未起运标注
+    dayun_layout_str = "、".join(
+        f"{d.get('ganzhi', '')} {d.get('start_year', '')}-{d.get('end_year', '')}"
+        for d in (dayun_list_data or [])
+        if isinstance(d, dict) and d.get('ganzhi')
+    )
+    if dayun_gz:
+        dayun_current_display = f"{dayun_gz} {dayun_years}".strip()
+    else:
+        first_dy = next((d for d in (dayun_list_data or []) if isinstance(d, dict) and d.get('ganzhi')), None)
+        if first_dy:
+            _sa = start_age if start_age is not None else "?"
+            dayun_current_display = (
+                f"未上运（命主尚未进入大运，约{_sa}岁起运，"
+                f"第一步大运{first_dy.get('ganzhi', '')}自{first_dy.get('start_year', '')}年起）"
+            )
+        else:
+            dayun_current_display = "未上运"
+
     # 流年表格数据
     liunian_table_rows = ""
     for ly in key_liunian[:5]:
@@ -160,12 +187,7 @@ def build_commercial_prompt(
     for key, val in wuxing_app.items():
         wuxing_app_detail += f"  【{key}】行业：{val.get('行业', '')} | 色彩：{val.get('色彩', '')} | 方位：{val.get('方向', '')} | 健康：{val.get('健康', '')}\n"
 
-    # 计算年龄和年龄阶段
-    birth_year = int(birth_date.split('-')[0]) if birth_date else 2000
-    current_year = datetime.now().year
-    age = current_year - birth_year
-    
-    # 确定年龄阶段
+    # 确定年龄阶段（birth_year/age 已在上方计算）
     if age <= 12:
         age_stage = "儿童期（0-12岁）"
     elif age <= 17:
@@ -202,7 +224,8 @@ def build_commercial_prompt(
 # 用户输入数据（保留完整数据源）
 【四柱八字】：{year_gz} {month_gz} {day_gz} {hour_gz}
 【日主五行】：{rizhu}
-【当前大运】：{dayun_gz} {dayun_years}
+【当前大运】：{dayun_current_display}
+【大运排列】：{dayun_layout_str or '未提供'}
 【其他信息】：性别{gender}，出生地{location}
 【当前年龄】：{age}岁（出生于{birth_year}年）
 【年龄阶段】：{age_stage}
@@ -400,6 +423,8 @@ def build_first_reading_structured_prompt(
     nayin = analysis_data.get("纳音", {})
     current_dayun = analysis_data.get("当前大运") or MISSING_MARKER
     dayun_jiedu = analysis_data.get("大运解读", "")
+    dayun_list_data = analysis_data.get("大运列表", [])
+    start_age = analysis_data.get("起运年龄")
     key_liunian = analysis_data.get("重点流年", [])
     wuxing_app = analysis_data.get("五行应用", {})
     astro = analysis_data.get("占星数据", {})
@@ -411,10 +436,16 @@ def build_first_reading_structured_prompt(
     ws_dedi = ws_detail.get("得地", {}).get("detail", "")
     ws_deshi = ws_detail.get("得势", {}).get("detail", "")
 
-    # 重点流年格式化
+    # 计算年龄（先算 birth_year，供重点流年标注年龄使用）
+    birth_year = int(birth_date.split('-')[0]) if birth_date else 2000
+    current_year = datetime.now().year
+    age = current_year - birth_year
+
+    # 重点流年格式化（标注每个流年对应的年龄，防止LLM自己算错）
     liunian_str = ""
     for ly in key_liunian[:5]:
-        liunian_str += f"  - {ly['year']}年 {ly['ganzhi']}：{ly['judge']}（{ly['reason']}）\n"
+        _age_hint = f"，{ly['year'] - birth_year}岁" if birth_year and isinstance(ly.get('year'), int) else ""
+        liunian_str += f"  - {ly['year']}年 {ly['ganzhi']}：{ly['judge']}（{ly['reason']}）{_age_hint}\n"
     if not liunian_str:
         liunian_str = MISSING_MARKER
 
@@ -440,11 +471,26 @@ def build_first_reading_structured_prompt(
     dayun_gz = dayun_parts[0] if len(dayun_parts) > 0 else ""
     dayun_years = dayun_parts[1] if len(dayun_parts) > 1 else ""
 
-    # 计算年龄和年龄阶段
-    birth_year = int(birth_date.split('-')[0]) if birth_date else 2000
-    current_year = datetime.now().year
-    age = current_year - birth_year
+    # 大运排列（完整10步大运，LLM 引用大运的唯一合法依据）与未起运标注
+    dayun_layout_str = "、".join(
+        f"{d.get('ganzhi', '')} {d.get('start_year', '')}-{d.get('end_year', '')}"
+        for d in (dayun_list_data or [])
+        if isinstance(d, dict) and d.get('ganzhi')
+    )
+    if dayun_gz:
+        dayun_current_display = f"{dayun_gz} {dayun_years}".strip()
+    else:
+        first_dy = next((d for d in (dayun_list_data or []) if isinstance(d, dict) and d.get('ganzhi')), None)
+        if first_dy:
+            _sa = start_age if start_age is not None else "?"
+            dayun_current_display = (
+                f"未上运（命主尚未进入大运，约{_sa}岁起运，"
+                f"第一步大运{first_dy.get('ganzhi', '')}自{first_dy.get('start_year', '')}年起）"
+            )
+        else:
+            dayun_current_display = MISSING_MARKER
 
+    # 年龄阶段（birth_year/age 已在上方计算）
     if age <= 12:
         age_stage = "儿童期（0-12岁）"
     elif age <= 17:
@@ -514,29 +560,6 @@ def build_first_reading_structured_prompt(
 # 核心任务
 根据用户完整八字排盘数据，撰写一份零基础友好、痛点精准、落地性强、氛围感足的全套命理人生画像报告。不空谈格局、不堆砌术语、不写模板套话，所有命理推演100%对应用户现实性格、职场、财运、感情、健康、运势，做到看得懂、有共鸣、用得上。
 
-# 用户输入数据
-【四柱八字】：{year_gz} {month_gz} {day_gz} {hour_gz}
-【日主五行】：{rizhu}
-【当前大运】：{dayun_gz} {dayun_years}
-【其他信息】：性别{gender}，出生地{location}
-【当前年龄】：{age}岁（出生于{birth_year}年）
-【年龄阶段】：{age_stage}
-
-【排盘原始数据（供你推演参考）】
-月令：{yueling}
-旺衰结论：{wangshuai}（{ws_deling}、{ws_dedi}、{ws_deshi}）
-格局：{geju}
-调候：{tiaohou_desc}
-十神分布：{shishen_fenbu}
-五行分布：金{wuxing_fenbu.get('金', 0)} 木{wuxing_fenbu.get('木', 0)} 水{wuxing_fenbu.get('水', 0)} 火{wuxing_fenbu.get('火', 0)} 土{wuxing_fenbu.get('土', 0)}
-地支作用：{dizhi_zuoyong}
-纳音：年柱{nayin.get('年', '')}、月柱{nayin.get('月', '')}、日柱{nayin.get('日', '')}、时柱{nayin.get('时', '')}
-大运解读：{dayun_jiedu}
-重点流年：
-{liunian_str}
-五行开运参考：
-{wuxing_app_detail}{astro_str}
-
 # 输出格式（必须输出纯JSON，不要用```json代码块包裹，直接输出JSON文本）
 
 输出 FollowupReport JSON 结构，包含 opening + 6个固定 subtopics + summary。结构如下（人类可读模板，按此结构填充真实内容，不要输出本模板原文）：
@@ -552,7 +575,7 @@ def build_first_reading_structured_prompt(
         {{"type": "keyword", "keyword": "你的天性画像", "narrative": "用日常生活画面比喻你的日主（如田园之土、参天大树），描述这种特质在性格中的具体表现，2-3句，可内联**加粗**"}},
         {{"type": "keyword", "keyword": "五行能量分布", "narrative": "用季节+自然画面描述五行强弱，关键术语加粗并紧跟括号解释，2-3句"}},
         {{"type": "keyword", "keyword": "格局类型", "narrative": "用通俗比方解释格局意味着什么，链接人生处境，2-3句"}},
-        {{"type": "keyword", "keyword": "用神与忌神", "narrative": "明确标注用神（{yongshen}）和忌神（{jishen}），用方向感描述人生方向，指引性短语**加粗**，2-3句"}},
+        {{"type": "keyword", "keyword": "用神与忌神", "narrative": "明确标注用神和忌神（具体取值见文末"用户输入数据"），用方向感描述人生方向，指引性短语**加粗**，2-3句"}},
         {{"type": "keyword", "keyword": "根据下方比喻提炼的叙事化概括，如'小陶灯式命局''柔光恒久的底色'，禁止用'收尾点睛/总结/收尾'这类描述功能的元标签", "narrative": "用一个生动的人生比喻总结命局核心逻辑，链接情感，2-3句"}}
       ]
     }},
@@ -644,6 +667,30 @@ def build_first_reading_structured_prompt(
 - 若用户未提供完整信息，请基于子平法合理补全推演，不得虚构极端格局
 - 严格遵守科学理性原则，不涉及封建迷信、恐吓营销或违背公序良俗的内容
 - 保持中立客观，尊重多元价值观，所有建议均以"提升个体能动性"为核心
+
+# 用户输入数据
+【四柱八字】：{year_gz} {month_gz} {day_gz} {hour_gz}
+【日主五行】：{rizhu}
+【当前大运】：{dayun_current_display}
+【大运排列】：{dayun_layout_str or '未提供'}
+【其他信息】：性别{gender}，出生地{location}
+【当前年龄】：{age}岁（出生于{birth_year}年）
+【年龄阶段】：{age_stage}
+
+【排盘原始数据（供你推演参考）】
+月令：{yueling}
+旺衰结论：{wangshuai}（{ws_deling}、{ws_dedi}、{ws_deshi}）
+格局：{geju}
+调候：{tiaohou_desc}
+十神分布：{shishen_fenbu}
+五行分布：金{wuxing_fenbu.get('金', 0)} 木{wuxing_fenbu.get('木', 0)} 水{wuxing_fenbu.get('水', 0)} 火{wuxing_fenbu.get('火', 0)} 土{wuxing_fenbu.get('土', 0)}
+地支作用：{dizhi_zuoyong}
+纳音：年柱{nayin.get('年', '')}、月柱{nayin.get('月', '')}、日柱{nayin.get('日', '')}、时柱{nayin.get('时', '')}
+大运解读：{dayun_jiedu}
+重点流年：
+{liunian_str}
+五行开运参考：
+{wuxing_app_detail}{astro_str}
 """
     return prompt
 

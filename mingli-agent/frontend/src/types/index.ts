@@ -22,6 +22,7 @@ export interface Person {
   latitude?: number
   bazi: BaziResult | null
   astrology: AstrologyResult | null
+  bazi_data?: Record<string, unknown>
   created_at: string
   updated_at: string
 }

@@ -40,7 +40,7 @@ export default function LegalPage({ type }: LegalPageProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f2f0ed' }}>
         <div className="text-gray-500">加载中...</div>
       </div>
     )
@@ -48,7 +48,7 @@ export default function LegalPage({ type }: LegalPageProps) {
 
   if (!doc) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f2f0ed' }}>
         <div className="text-center">
           <p className="text-gray-500 mb-4">加载失败</p>
           <button
@@ -63,7 +63,7 @@ export default function LegalPage({ type }: LegalPageProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-50">
+    <div className="min-h-screen" style={{ backgroundColor: '#f2f0ed' }}>
       {/* Header */}
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-100">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">

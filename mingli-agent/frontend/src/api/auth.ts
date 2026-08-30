@@ -43,4 +43,8 @@ export const authApi = {
   /** 获取用户信息 */
   getUserInfo: () =>
     apiClient.get<UserInfo>('/user/profile'),
+
+  /** 修改昵称 */
+  updateProfile: (name: string) =>
+    apiClient.put<UserInfo>('/user/profile', { name }),
 }

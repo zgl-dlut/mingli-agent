@@ -90,9 +90,9 @@ class TestPromptConsistencyRules:
         assert "以命盘为准" in prompt
 
     def test_prompt_forbids_blind_follow(self):
-        """不盲从前轮判断"""
+        """不盲从惯性判断（禁止复用前轮式断语）"""
         prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
-        assert "不盲从前轮判断" in prompt
+        assert "不盲从惯性判断" in prompt
 
     def test_prompt_forbids_fabrication(self):
         """严禁编造命理依据"""
@@ -105,15 +105,16 @@ class TestPromptConsistencyRules:
         assert "必须与历史摘要保持一致，禁止自相矛盾" not in prompt
 
     def test_prompt_injects_history_when_present(self):
-        """有历史摘要时，摘要内容注入 prompt"""
+        """有历史摘要时，摘要区块注入 prompt（新：只含用户问题，不含AI断语）"""
         prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
-        assert "历史对话摘要" in prompt
-        assert "事业爆发期" in prompt  # 摘要原文进 prompt
+        assert "此前对话话题" in prompt
+        # WRONG_HISTORY 是模拟摘要文本（外部传入），区块本身不携带结论性规则
+        assert "没有任何历史结论" in prompt
 
     def test_prompt_no_history_section_when_empty(self):
         """空历史时不应出现历史摘要区块"""
         prompt = build_structured_prompt(FIXED_CONTEXT, "")
-        assert "历史对话摘要" not in prompt
+        assert "此前对话话题" not in prompt
 
     def test_prompt_keeps_bazi_data(self):
         """命盘数据完整注入（以命盘为准的前提）"""
@@ -129,62 +130,49 @@ class TestPromptConsistencyRules:
 # ============================================================
 
 class TestHistorySummaryExtraction:
-    """验证 _build_history_summary 的提取行为"""
+    """验证 _build_history_summary 的新行为：只含用户问题，绝不携带AI断语"""
 
-    def test_extracts_verdict_from_json_history(self):
-        """从 JSON 历史 assistant 消息提取 opening.verdict"""
+    def test_excludes_assistant_verdict(self):
+        """assistant 结论（verdict/title/items）一律不进摘要——根治编造传染"""
         history = [{"role": "assistant", "content": json.dumps({
             "opening": {"verdict": "2027年不宜创业"},
-            "subtopics": [],
-            "summary": {"title": "总结"},
-        }, ensure_ascii=False)}]
-        summary = _build_history_summary(history)
-        assert "2027年不宜创业" in summary
-
-    def test_skips_markdown_first_reading(self):
-        """Markdown 首次报告被跳过（不进摘要）—— 这是已知设计，防止首次报告错误传染"""
-        history = [{"role": "assistant", "content": "# 你的命理全局解读\n\n壬水日主偏弱，2027年适合创业扩张..."}]
-        summary = _build_history_summary(history)
-        assert summary == ""
-        assert "适合创业扩张" not in summary  # 关键：Markdown 结论不进摘要
-
-    def test_extracts_subtopic_titles(self):
-        """提取子问题标题"""
-        history = [{"role": "assistant", "content": json.dumps({
-            "opening": {},
             "subtopics": [{"title": "财务时间线"}, {"title": "离职时机"}],
-            "summary": {"title": "总结"},
-        }, ensure_ascii=False)}]
-        summary = _build_history_summary(history)
-        assert "财务时间线" in summary
-        assert "离职时机" in summary
-
-    def test_extracts_summary_items(self):
-        """提取 summary.items 行动建议"""
-        history = [{"role": "assistant", "content": json.dumps({
-            "opening": {},
-            "subtopics": [],
             "summary": {"title": "总结", "items": [
                 {"keyword": "9月", "text": "打磨作品集"},
-                {"keyword": "10月", "text": "入职新公司"},
             ]},
         }, ensure_ascii=False)}]
         summary = _build_history_summary(history)
-        assert "打磨作品集" in summary
-        assert "入职新公司" in summary
+        assert summary == ""
+        assert "2027年不宜创业" not in summary
+        assert "财务时间线" not in summary
+        assert "打磨作品集" not in summary
+
+    def test_extracts_user_questions(self):
+        """用户历史问题进摘要（天然无编造）"""
+        history = [{"role": "user", "content": "27年适合跳槽吗？"}]
+        summary = _build_history_summary(history)
+        assert "27年适合跳槽吗" in summary
+        assert "不含任何结论" in summary
+
+    def test_skips_markdown_first_reading(self):
+        """Markdown 首次报告不进摘要（同旧行为，防错误传染）"""
+        history = [{"role": "assistant", "content": "# 你的命理全局解读\n\n壬水日主偏弱，2027年适合创业扩张..."}]
+        summary = _build_history_summary(history)
+        assert summary == ""
+        assert "适合创业扩张" not in summary
 
     def test_skips_user_messages(self):
-        """只处理 assistant 消息，跳过 user"""
+        """改为：user 消息正是摘要来源，assistant 断语被跳过"""
         history = [
             {"role": "user", "content": "用户原始问题"},
             {"role": "assistant", "content": json.dumps({
-                "opening": {"verdict": "结论"},
+                "opening": {"verdict": "虚构断语XYZ"},
                 "subtopics": [], "summary": {"title": "s"},
             }, ensure_ascii=False)},
         ]
         summary = _build_history_summary(history)
-        assert "结论" in summary
-        assert "用户原始问题" not in summary
+        assert "用户原始问题" in summary
+        assert "虚构断语XYZ" not in summary
 
     def test_empty_history_returns_empty(self):
         """空历史返回空字符串"""
@@ -194,6 +182,13 @@ class TestHistorySummaryExtraction:
         """无效 JSON 的 assistant 消息被跳过（不抛异常）"""
         history = [{"role": "assistant", "content": "这不是JSON"}]
         assert _build_history_summary(history) == ""
+
+    def test_long_question_truncated(self):
+        """超长用户问题截断到80字"""
+        history = [{"role": "user", "content": "长" * 200}]
+        summary = _build_history_summary(history)
+        assert "…" in summary
+        assert len(summary) < 200
 
 
 # ============================================================

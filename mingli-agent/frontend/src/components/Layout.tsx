@@ -23,7 +23,24 @@ export default function Layout() {
     }
     checkDesktop()
     window.addEventListener('resize', checkDesktop)
-    return () => window.removeEventListener('resize', checkDesktop)
+    // 页面重新可见或获得焦点时同步后端数据（处理后端直接删除等场景）
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchPersons()
+        fetchUserInfo()
+      }
+    }
+    const handleFocus = () => {
+      fetchPersons()
+      fetchUserInfo()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      window.removeEventListener('resize', checkDesktop)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
+    }
   }, [])
   
   const handleToggleHistory = () => {
@@ -44,7 +61,7 @@ export default function Layout() {
   }
   
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 ${isDesktop ? 'flex flex-col' : ''}`}>
+    <div className={`min-h-screen ${isDesktop ? 'flex flex-col' : ''}`} style={{ backgroundColor: '#f2f0ed' }}>
       {/* 通用Header - 固定在顶部 */}
       <Header 
         onToggleHistory={handleToggleHistory}

@@ -6,7 +6,6 @@
  */
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
-import React from 'react'
 import { renderBold, isStructuredReport } from '../components/FollowupReportView'
 
 /** 将 renderBold 的返回值渲染为 HTML，方便查询 DOM */

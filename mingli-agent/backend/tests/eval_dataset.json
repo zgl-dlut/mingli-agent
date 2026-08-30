@@ -1,0 +1,262 @@
+[
+  {
+    "id": "eval_001",
+    "category": "结构检查",
+    "description": "正常结构-合格报告",
+    "user_question": "我今年能换工作吗，新公司是大平台还是小平台",
+    "report": {
+      "subtopics": [
+        {
+          "title": "今年换工作的可能性",
+          "blocks": [
+            {"type": "keyword", "keyword": "换工作时机", "narrative": "今年整体运势平稳，**9月前后**是最佳窗口，提前行动容易踩坑，延后则错过金九银十。"},
+            {"type": "keyword", "keyword": "公司平台选择", "narrative": "命盘显示适合**中型平台**，大平台竞争激烈容易内耗，小平台资源不足发展受限。"}
+          ]
+        },
+        {
+          "title": "新公司平台大小分析",
+          "blocks": [
+            {"type": "keyword", "keyword": "大平台利弊", "narrative": "大平台制度完善但晋升慢，**适合求稳阶段**，不适合快速成长期。"},
+            {"type": "keyword", "keyword": "小平台利弊", "narrative": "小平台机会多但风险大，**适合冒险阶段**，当前命局不建议。"}
+          ]
+        }
+      ],
+      "summary": {
+        "title": "总结",
+        "items": [
+          {"keyword": "9月换工作窗口", "text": "抓住金九银十，提前准备简历"},
+          {"keyword": "中型平台优先", "text": "平衡稳定性和成长性"}
+        ]
+      }
+    },
+    "chart_data": {
+      "四柱": "庚午 丁亥 己卯 戊辰",
+      "日主": "己土",
+      "用神": "水",
+      "忌神": "火",
+      "当前大运": "癸未",
+      "重点流年": ["2026年丙午：吉"]
+    },
+    "expected_pass": true,
+    "expected_violations": []
+  },
+  {
+    "id": "eval_002",
+    "category": "结构检查",
+    "description": "子问题漏答",
+    "user_question": "我今年能换工作吗，新公司是大平台还是小平台，薪资能涨多少",
+    "report": {
+      "subtopics": [
+        {
+          "title": "今年换工作的可能性",
+          "blocks": [
+            {"type": "keyword", "keyword": "换工作时机", "narrative": "今年整体运势平稳，9月前后是最佳窗口。"}
+          ]
+        }
+      ],
+      "summary": {"title": "总结", "items": []}
+    },
+    "chart_data": {
+      "四柱": "庚午 丁亥 己卯 戊辰",
+      "日主": "己土",
+      "用神": "水",
+      "忌神": "火",
+      "当前大运": "癸未",
+      "重点流年": ["2026年丙午：吉"]
+    },
+    "expected_pass": false,
+    "expected_violations": ["子问题漏答", "block数量异常"]
+  },
+  {
+    "id": "eval_003",
+    "category": "叙事检查",
+    "description": "keyword含术语",
+    "user_question": "我今年运势怎么样",
+    "report": {
+      "subtopics": [
+        {
+          "title": "今年运势分析",
+          "blocks": [
+            {"type": "keyword", "keyword": "七杀当令", "narrative": "今年七杀当令，压力较大，需要注意身体健康。"}
+          ]
+        }
+      ],
+      "summary": {"title": "总结", "items": []}
+    },
+    "chart_data": {
+      "四柱": "庚午 丁亥 己卯 戊辰",
+      "日主": "己土",
+      "用神": "水",
+      "忌神": "火",
+      "当前大运": "未",
+      "重点流年": ["2026年丙午：吉"]
+    },
+    "expected_pass": false,
+    "expected_violations": ["keyword含术语", "block数量异常"]
+  },
+  {
+    "id": "eval_004",
+    "category": "叙事检查",
+    "description": "narrative过短",
+    "user_question": "我今年运势怎么样",
+    "report": {
+      "subtopics": [
+        {
+          "title": "今年运势分析",
+          "blocks": [
+            {"type": "keyword", "keyword": "整体运势", "narrative": "运势好。"},
+            {"type": "keyword", "keyword": "事业运", "narrative": "事业发展顺利，有晋升机会，建议把握9月窗口期。"}
+          ]
+        }
+      ],
+      "summary": {"title": "总结", "items": []}
+    },
+    "chart_data": {
+      "四柱": "庚午 丁亥 己卯 戊辰",
+      "日主": "己土",
+      "用神": "水",
+      "忌神": "火",
+      "当前大运": "癸未",
+      "重点流年": ["2026年丙午：吉"]
+    },
+    "expected_pass": false,
+    "expected_violations": ["narrative过短"]
+  },
+  {
+    "id": "eval_005",
+    "category": "命盘使用检查",
+    "description": "编造大运",
+    "user_question": "我未来几年运势如何",
+    "report": {
+      "subtopics": [
+        {
+          "title": "未来几年运势",
+          "blocks": [
+            {"type": "keyword", "keyword": "2027年运势", "narrative": "2027年进入甲申大运，事业有新突破，财运上升。"},
+            {"type": "keyword", "keyword": "2028年运势", "narrative": "2028年运势平稳，适合守成，不宜冒险投资。"}
+          ]
+        }
+      ],
+      "summary": {"title": "总结", "items": []}
+    },
+    "chart_data": {
+      "四柱": "庚午 丁亥 己卯 戊辰",
+      "日主": "己土",
+      "用神": "水",
+      "忌神": "火",
+      "当前大运": "癸未",
+      "重点流年": ["2026年丙午：吉", "2027年丁未：平", "2028年戊申：吉"]
+    },
+    "expected_pass": false,
+    "expected_violations": ["编造大运"]
+  },
+  {
+    "id": "eval_006",
+    "category": "叙事检查",
+    "description": "summary关键词泛泛",
+    "user_question": "我今年运势怎么样",
+    "report": {
+      "subtopics": [
+        {
+          "title": "今年运势分析",
+          "blocks": [
+            {"type": "keyword", "keyword": "整体运势", "narrative": "今年整体运势平稳，9月前后有转机，提前准备能抓住机会，延后则错过窗口。"},
+            {"type": "keyword", "keyword": "事业运", "narrative": "事业有晋升机会，建议把握9月窗口期，提前准备材料。"}
+          ]
+        }
+      ],
+      "summary": {
+        "title": "总结",
+        "items": [
+          {"keyword": "蛰伏期", "text": "上半年需要耐心等待"},
+          {"keyword": "9月转机", "text": "抓住窗口期行动"}
+        ]
+      }
+    },
+    "chart_data": {
+      "四柱": "庚午 丁亥 己卯 戊辰",
+      "日主": "己土",
+      "用神": "水",
+      "忌神": "火",
+      "当前大运": "癸未",
+      "重点流年": ["2026年丙午：吉"]
+    },
+    "expected_pass": false,
+    "expected_violations": ["summary关键词泛泛"]
+  },
+  {
+    "id": "eval_007",
+    "category": "命盘使用检查",
+    "description": "排盘正确性-四柱错误",
+    "birth": "1990-11-10",
+    "birth_time": "08:00",
+    "gender": "女",
+    "location": "山西省晋中市",
+    "generated_chart": {
+      "四柱": "庚午 丁亥 己卯 戊辰",
+      "日主": "己土",
+      "十神分布": {
+        "年干": "伤官",
+        "月干": "偏印",
+        "时干": "劫财"
+      },
+      "大运方向": "顺",
+      "起运年龄": 0.8,
+      "大运列表": [
+        {"ganzhi": "丙戌", "start_age": 2},
+        {"ganzhi": "乙酉", "start_age": 12},
+        {"ganzhi": "甲申", "start_age": 22},
+        {"ganzhi": "癸未", "start_age": 32}
+      ],
+      "重点流年": [
+        {"year": 2026, "ganzhi": "丙午"},
+        {"year": 2027, "ganzhi": "丁未"}
+      ]
+    },
+    "expected_chart": {
+      "四柱": "庚午 丁亥 己卯 戊辰",
+      "日主天干": "己",
+      "十神": {
+        "年干": "伤官",
+        "月干": "偏印",
+        "时干": "劫财"
+      },
+      "大运方向": "顺",
+      "起运年龄": 0.8,
+      "大运列表": ["丙戌", "乙酉", "甲申", "癸未"],
+      "流年": {"2026": "丙午", "2027": "丁未"}
+    },
+    "expected_pass": true,
+    "expected_violations": []
+  },
+  {
+    "id": "qval_001",
+    "description": "流年支出确认（购房）- 应通过",
+    "user_question": "2032年大额支出是不是就是因为我购房了",
+    "expected_pass": true
+  },
+  {
+    "id": "qval_002",
+    "description": "确认类疑问（是不是）- 应通过",
+    "user_question": "我明年财运是不是会好转",
+    "expected_pass": true
+  },
+  {
+    "id": "qval_003",
+    "description": "纯闲聊无命理需求 - 应拒绝",
+    "user_question": "今天天气真好",
+    "expected_pass": false
+  },
+  {
+    "id": "qval_004",
+    "description": "购房相关追问 - 应通过",
+    "user_question": "买房的话什么时候最合适",
+    "expected_pass": true
+  },
+  {
+    "id": "qval_005",
+    "description": "支出/破财类问题 - 应通过",
+    "user_question": "今年会不会有大额破财",
+    "expected_pass": true
+  }
+]

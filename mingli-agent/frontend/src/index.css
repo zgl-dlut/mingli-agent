@@ -7,10 +7,37 @@
 }
 
 :root {
-  --font-body: Inter, "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
-  --font-display: Inter, "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
-  --text: #496570;
-  --text-strong: #1f3239;
+  --font-body: "思源黑体圆角", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --font-display: "思源黑体圆角", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  /* 文字色阶（暖炭灰系） */
+  --text: #44403d;              /* 正文普通文字 */
+  --text-strong: #363330;       /* 板块加粗标题 */
+  --text-muted: #615c59;        /* 次要说明小字 */
+  /* 背景色阶（低饱和灰褐棕，由浅至深） */
+  --brand-bg: #f2f0ed;          /* 首页底层背景 / 历史条目卡片 */
+  --brand-bg-input: #F3EFEA;    /* 输入框底色 */
+  --brand-bg-card: #eceae6;     /* 对话框/结果卡片背景（不带棕） */
+  --brand-bg-history: #e9e7e3;  /* 历史页整体底层背景 */
+  /* 导航与按钮（吸取Cursor导航灰褐棕） */
+  --brand-nav: #8b6f5a;         /* 顶部导航栏底色 / 按钮按下色 */
+  --brand-cream: #f4f2f0;       /* 导航栏文字 / 暖灰白 */
+  --brand-button: #a7876f;      /* 按钮默认常态 */
+  --brand-button-hover: #997c63;/* 按钮悬浮 */
+  --brand-button-active: #8b6f5a;/* 按钮按下 */
+  --brand-button-text: #f4f2f0; /* 按钮文字 */
+  /* 装饰与边框 */
+  --brand-gold: #C9B5A1;        /* 星星装饰图标 / 哑光驼色 */
+  --brand-input-border: #d8d4d0;/* 分割线/输入框边框 / 浅冷灰 */
+  --brand-close-btn: #645952;   /* 弹窗关闭按钮 */
+  --brand-overlay: rgba(45, 42, 39, 0.22); /* 弹窗遮罩 */
+  /* 兼容旧引用 */
+  --brand-dark: #8b6f5a;
+  --brand-light: #f2f0ed;
+  --brand-brown: #44403d;
+  --brand-brown-strong: #363330;
+  --brand-gold-hover: #997c63;
+  --brand-muted: #615c59;
+  --brand-warn: #a86c50;
 }
 
 /* 垂直文字 */
@@ -23,7 +50,9 @@ body {
   margin: 0;
   padding: 0;
   font-family: var(--font-body);
-  background-color: #fdf8f6;
+  background-color: #f2f0ed;
+  color: #44403d;
+  line-height: 1.6;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -37,12 +66,147 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d2bab0;
+  background: #C9B5A1;
   border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #bfa094;
+  background: #B8A692;
+}
+
+/* ===== 品牌Logo ===== */
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-decoration: none;
+}
+
+.header-logo img {
+  width: 50px;
+  height: 50px;
+  object-fit: contain;
+  object-position: center;
+}
+
+/* 小尺寸（对话头像等） */
+.header-logo.logo-sm img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  object-position: center;
+}
+
+.logo-text {
+  font-family: "思源黑体圆角", "PingFang SC", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 28px;
+  letter-spacing: 3px;
+  color: #f4f2f0;
+}
+
+/* 后置英文品牌名 Quscan */
+.logo-en {
+  font-size: 60%;
+  font-weight: 400;
+  opacity: 0.68;
+  margin-left: 10px;
+  letter-spacing: 0.5px;
+}
+
+/* 移动端 Logo 文字 */
+@media (max-width: 600px) {
+  .header-logo img {
+    width: 36px;
+    height: 36px;
+  }
+  .logo-text {
+    font-size: 20px;
+  }
+}
+
+/* 浅色背景（侧边栏等）：深色图标 + 深色文字 */
+.light-nav .header-logo img {
+  content: url("/logo-light.png?v=12");
+}
+
+.light-nav .logo-text {
+  color: #44403d;
+}
+
+/* ===== 全局品牌控件样式 ===== */
+
+/* 主按钮：三状态交互（常态→悬浮→按下） */
+.btn-primary {
+  background-color: #a7876f;
+  color: #f4f2f0;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-weight: bold;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.btn-primary:hover {
+  background-color: #997c63;
+}
+.btn-primary:active {
+  background-color: #8b6f5a;
+  transform: scale(0.98);
+}
+
+/* 次要边框按钮：浅冷灰边框 + 灰褐棕文字 */
+.btn-secondary {
+  background-color: transparent;
+  color: #8b6f5a;
+  border: 1px solid #d8d4d0;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-weight: bold;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+.btn-secondary:hover {
+  border-color: #C9B5A1;
+  color: #C9B5A1;
+}
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+/* 输入框：浅冷灰边框，激活哑光驼色 */
+.input-brand {
+  border: 1px solid #d8d4d0;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-family: var(--font-body);
+  color: #44403d;
+  background-color: #F3EFEA;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+.input-brand:focus {
+  border-color: #C9B5A1;
+}
+.input-brand::placeholder {
+  color: #615c59;
+}
+
+/* 内容卡片：对话框/结果卡片背景（不带棕） */
+.card-brand {
+  background-color: #eceae6;
+  border-radius: 10px;
+  padding: 24px;
+}
+
+/* 分割线：浅冷灰细线条 */
+.divider-brand {
+  border: none;
+  height: 1px;
+  background-color: #d8d4d0;
+  opacity: 0.6;
 }
 
 /* ===== 命格翻牌卡片动画 ===== */
@@ -70,7 +234,7 @@ body {
 
 /* 背面：初始可见，翻牌后隐藏 */
 .bazi-card-back {
-  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%);
+  background: #8b6f5a;
   z-index: 2;
   transform: rotateY(0deg);
   transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -82,7 +246,7 @@ body {
 
 /* 正面：初始隐藏，翻牌后显示 */
 .bazi-card-front {
-  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%);
+  background: #8b6f5a;
   transform: rotateY(180deg);
   transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1) 0.1s;
   z-index: 1;
@@ -212,7 +376,7 @@ body {
 .history-panel-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(45, 42, 39, 0.22);
   z-index: 50;
   animation: fadeIn 0.2s ease-out;
 }
@@ -224,7 +388,7 @@ body {
   bottom: 0;
   width: 320px;
   max-width: 85vw;
-  background: white;
+  background: #e9e7e3;
   z-index: 51;
   animation: slideInLeft 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   display: flex;
@@ -268,7 +432,7 @@ body {
 .recharge-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(45, 42, 39, 0.22);
   z-index: 60;
   display: flex;
   align-items: flex-end;
@@ -385,8 +549,8 @@ body {
 /* 段落总结关键词样式 */
 .report-content strong:contains("段落总结") {
   font-weight: 700;
-  color: #8b5cf6;
-  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  color: #8b6f5a;
+  background: #eceae6;
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;
   font-size: 0.9em;
@@ -406,6 +570,12 @@ body {
   position: relative;
 }
 
+/* 嵌套 ul 也去掉默认圆点 */
+.report-content ul ul {
+  list-style: none;
+  padding-left: 1.5rem;
+}
+
 /* 有序列表样式 */
 .report-content ol {
   margin-top: 0.5rem;
@@ -421,18 +591,27 @@ body {
   margin-top: 0.6rem;
   margin-bottom: 0.6rem;
   line-height: 2.0;
-  padding-left: 0.8rem;
+  padding-left: 1.2rem;
   position: relative;
+  list-style-type: none;
 }
 
-/* 自定义 • 标记，对齐标题文字 */
-.report-content ul > li::before {
+/* 覆盖 tailwind typography 的默认 marker */
+.report-content ul li::marker {
+  content: '' !important;
+  font-size: 0;
+}
+
+/* 自定义 • 标记，所有层级统一大小和位置 */
+.report-content ul li::before {
   content: '•';
   position: absolute;
   left: 0;
-  color: #bfa094;
-  font-size: 1rem;
+  top: 0.15rem;
+  color: #C9B5A1;
+  font-size: 1.8rem;
   font-weight: 400;
+  line-height: 1;
 }
 
 /* hr分隔线样式 - 精致细线条 */
@@ -464,12 +643,12 @@ body {
 }
 
 .report-content th {
-  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
-  color: #5b21b6;
+  background: #eceae6;
+  color: #44403d;
   font-weight: 600;
   text-align: left;
   padding: 0.5rem 0.75rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #d8d4d0;
 }
 
 .report-content td {
@@ -485,7 +664,7 @@ body {
 /* 复选框样式 - 用于行动清单 */
 .report-content input[type="checkbox"] {
   margin-right: 0.5rem;
-  accent-color: #6366f1;
+  accent-color: #8b6f5a;
 }
 
 /* 不换行文本（用于日期时间等） */
@@ -495,8 +674,8 @@ body {
 
 /* 代码块样式 - 用于行动口诀等 */
 .report-content code {
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
-  color: #92400e;
+  background: #eceae6;
+  color: #8b6f5a;
   padding: 0.15rem 0.4rem;
   border-radius: 0.25rem;
   font-size: 0.88em;
@@ -539,12 +718,12 @@ body {
 }
 /* blocks 前的实心圆点序号，暖色系与背景一致 */
 .followup-report .block-bullet {
-  color: #bfa094;
+  color: #C9B5A1;
   margin-right: 0.25rem;
 }
 /* summary 列表项默认圆点，同色系 */
 .followup-report ul li::marker {
-  color: #bfa094;
+  color: #C9B5A1;
 }
 .followup-report .subtopic-blocks p:first-child {
   margin-top: 0;

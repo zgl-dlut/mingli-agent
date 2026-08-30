@@ -1,66 +1,68 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: mingli-postgres
+  mysql:
+    image: mysql:8.0
+    container_name: mingli-mysql
     ports:
-      - "5432:5432"
+      - "3306:3306"
     environment:
-      POSTGRES_DB: mingli
-      POSTGRES_USER: mingli
-      POSTGRES_PASSWORD: mingli123
+      MYSQL_ROOT_PASSWORD: mingli123
+      MYSQL_DATABASE: mingli
+      MYSQL_USER: mingli
+      MYSQL_PASSWORD: mingli123
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+      - ./mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+    command: --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mingli"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: mingli-agent-backend:latest
     container_name: mingli-backend
-    # 注意：后端不再直接暴露给公网，只暴露给内部网络
-    # ports: - "8000:8000"  # 删除此端口暴露
+    # 直接注入 backend/.env 的所有变量（镜像内不含 .env，靠这里传入）
+    # 注意：下方 environment 里的同名变量优先级更高（如 DATABASE_URL 指向容器内 mysql）
+    env_file:
+      - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://mingli:mingli123@postgres:5432/mingli
-      SECRET_KEY: mingli-agent-production-secret-key-2026-shisuansuan
+      DATABASE_URL: mysql+aiomysql://mingli:mingli123@mysql:3306/mingli
+      SECRET_KEY: mingli-agent-production-secret-key-2026-qusuansuan
       ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 30
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-your-api-key}
-      AI_MODEL: qwen3.6-flash
-      AI_BASE_URL: https://ws-ekdxihtd67l14sw6.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-      AI_MODELS: qwen3.6-flash,qwen-2.5-7b,qwen2-7b-chat
+      ACCESS_TOKEN_EXPIRE_MINUTES: 43200
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      AI_MODEL: ${AI_MODEL:-qwen3.8-max}
+      AI_BASE_URL: ${AI_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      AI_MODELS: ${AI_MODELS:-qwen3.8-max}
       # 短信服务配置
-      SMS_ACCESS_KEY_ID: ${SMS_ACCESS_KEY_ID:-your-access-key-id}
-      SMS_ACCESS_KEY_SECRET: ${SMS_ACCESS_KEY_SECRET:-your-access-key-secret}
-      SMS_SIGN_NAME: ${SMS_SIGN_NAME:-趣算算}
-      SMS_TEMPLATE_CODE: ${SMS_TEMPLATE_CODE:-SMS_46543210}
-      SMS_MOCK_MODE: ${SMS_MOCK_MODE:-true}
-      WECHAT_APP_ID: your-wechat-app-id
-      WECHAT_MCH_ID: your-wechat-mch-id
-      WECHAT_API_KEY: your-wechat-api-key-v3
-      WECHAT_NOTIFY_URL: https://shisuansuan.com/api/payment/wechat/callback
-      ALIPAY_APP_ID: your-alipay-app-id
-      ALIPAY_PRIVATE_KEY: your-alipay-private-key
-      ALIPAY_PUBLIC_KEY: your-alipay-public-key
-      # Gunicorn 配置 (可选，用于后端性能优化)
-      WORKERS_CLASS: sync
-      WORKERS: 2
-      TIMEOUT: 300
+      SMS_ACCESS_KEY_ID: ${SMS_ACCESS_KEY_ID}
+      SMS_ACCESS_KEY_SECRET: ${SMS_ACCESS_KEY_SECRET}
+      SMS_SIGN_NAME: ${SMS_SIGN_NAME:-北京维梦文化}
+      SMS_TEMPLATE_CODE: ${SMS_TEMPLATE_CODE:-SMS_337485609}
+      SMS_MOCK_MODE: ${SMS_MOCK_MODE:-false}
+      WECHAT_APP_ID: ${WECHAT_APP_ID:-your-wechat-app-id}
+      WECHAT_MCH_ID: ${WECHAT_MCH_ID}
+      WECHAT_API_KEY: ${WECHAT_API_KEY}
+      WECHAT_CERT_PATH: /app/certs/apiclient_cert.pem
+      WECHAT_KEY_PATH: /app/certs/apiclient_key.pem
+      WECHAT_SERIAL_NO: ${WECHAT_SERIAL_NO}
+      WECHAT_NOTIFY_URL: https://www.qusuansuan.com/api/payment/wechat/callback
+      WECHAT_OAUTH_REDIRECT_URI: ${WECHAT_OAUTH_REDIRECT_URI:-https://www.qusuansuan.com/api/auth/wechat-callback}
+      WECHAT_PUBLIC_KEY_ID: ${WECHAT_PUBLIC_KEY_ID}
+      WECHAT_PUBLIC_KEY_PATH: /app/certs/wechat_public_key.pem
+      BONUS_PHONE_LIST: ${BONUS_PHONE_LIST:-}
+      BONUS_POINTS: ${BONUS_POINTS:-1000}
+    volumes:
+      - ./backend/certs:/app/certs:ro
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
-    restart: always
-
-  frontend:
-    build: ./frontend
-    container_name: mingli-frontend
-    # 注意：前端不再直接暴露给公网
-    # ports: - "3000:80"  # 删除此端口暴露
-    depends_on:
-      - backend
     restart: always
 
   nginx:
@@ -68,21 +70,19 @@ services:
     container_name: mingli-nginx
     ports:
       - "80:80"
-      # 如果配置了 SSL，还需要暴露 443 端口
-      # - "443:443"
+      - "443:443"
     volumes:
-      # 挂载前端构建产物 (假设已构建在 frontend/dist 目录下，且 docker build 时已 COPY 进去，
-      # 这里我们需要直接挂载 frontend 容器的文件系统或者本地的 dist 目录)
-      # 方案 A：直接从本地 dist 目录挂载（最简单，但需手动 build 前端）
+      # 前端构建产物（本地已 build 好的 dist）
       - ./frontend/dist:/usr/share/nginx/html:ro
-      # 挂载 Nginx 配置文件
+      # Nginx 配置
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      # 挂载密码认证文件（在服务器上生成后，需要确保此文件存在）
+      # 后台管理密码文件
       - ./.htpasswd:/etc/nginx/.htpasswd:ro
+      # SSL 证书
+      - ./certs/ssl:/etc/nginx/ssl:ro
     depends_on:
-      - frontend
       - backend
     restart: always
 
 volumes:
-  postgres_data:
+  mysql_data:

@@ -7,16 +7,18 @@ LLM 输出 JSON（response_format=json_object），后端容错+校验，
 与首次报告解读链路完全隔离，互不影响。
 """
 import json
+import re
 import time
 import logging
-from typing import AsyncGenerator, Dict, List
+from datetime import datetime
+from typing import AsyncGenerator, Dict, List, Optional
 
 from pydantic import ValidationError
 
 from app.schemas.report_schema import FollowupReport
 from app.services.report_styles import pick_styles
-from app.services.skill_prompts import _build_context_vars, _extract_liuyue_data
-from app.services.ai_service import model_pool, get_client, build_llm_extra_body
+from app.services.skill_prompts import _build_context_vars, _extract_liuyue_data, _format_question_year_block
+from app.services.ai_service import model_pool, get_client, build_llm_extra_body, build_cache_control_messages
 
 logger = logging.getLogger(__name__)
 # 确保 logger.info 能输出到 stdout（uvicorn 默认不配置 app 子 logger 的 handler）
@@ -37,6 +39,49 @@ if not logger.handlers:
 
 
 # ============================================================
+# 动态规则注入：从数据库读取已审核提炼的规则
+# ============================================================
+
+async def _get_injected_rules() -> List[Dict[str, str]]:
+    """从数据库读取已审核注入的规则（reviewed=2 或 reviewed=3）。
+
+    规则按 category 分组返回，供 build_structured_prompt 注入到 prompt 模板中。
+    注入失败不影响报告生成（降级为空列表）。
+    """
+    try:
+        from app.db.session import async_session
+        from app.models.badcase import BadCase
+        from sqlalchemy import select
+
+        logger.info("[动态规则注入] 开始从数据库读取已审核规则...")
+        async with async_session() as db:
+            rows = await db.execute(
+                select(BadCase.extracted_rule, BadCase.rule_category)
+                .where(
+                    BadCase.reviewed.in_([2, 3]),
+                    BadCase.extracted_rule.isnot(None),
+                    BadCase.extracted_rule != "",
+                )
+                .order_by(BadCase.id)
+            )
+            rules = [
+                {"category": r.rule_category or "其他", "rule": r.extracted_rule}
+                for r in rows
+                if r.extracted_rule and r.extracted_rule.strip()
+            ]
+            logger.info(f"[动态规则注入] 成功读取 {len(rules)} 条规则")
+            if rules:
+                # 按分类统计
+                from collections import Counter
+                category_counts = Counter(r["category"] for r in rules)
+                logger.info(f"[动态规则注入] 规则分类统计: {dict(category_counts)}")
+            return rules
+    except Exception as e:
+        logger.warning(f"[动态规则注入] 读取失败（降级为空列表）: {e}")
+        return []
+
+
+# ============================================================
 # Function Calling 工具定义：流月数据按需获取
 # ============================================================
 
@@ -44,7 +89,7 @@ LIUYUE_TOOL_DEFINITION = {
     "type": "function",
     "function": {
         "name": "get_liuyue_detail",
-        "description": "获取指定年份的流月吉凶数据。当需要给出具体月份建议（如几月适合行动、几月有风险）时调用此工具。",
+        "description": "获取指定年份的流月明细（含吉凶等级、十神名称、用忌神、原因、冲合）。当需要给出具体月份建议（如几月适合行动、几月有风险）时调用此工具。返回的十神名称必须直接引用，禁止自行根据五行推演。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -59,85 +104,104 @@ LIUYUE_TOOL_DEFINITION = {
 }
 
 
-def _format_liuyue_result(year: int, liuyue_list: list) -> str:
-    """格式化流月数据为工具返回文本"""
+def _format_liuyue_result(year: int, liuyue_list: list, yongshen_str: str = "", jishen_str: str = "") -> str:
+    """格式化流月数据为工具返回文本。
+
+    与首次报告流月明细行（skill_prompts._format_question_year_block）同构：
+    十神/用忌神/原因/冲合全部算好直接给，防止LLM自行推十神写错名（编造高发点）。
+    评测端编造检测基准（build_authoritative_chart_basis）含这些字段，
+    生成端必须看到同等信息，否则"生成缺数据→LLM脑补→评测判编造"。
+    """
     if not liuyue_list:
         return f"{year}年暂无流月数据"
-    month_parts = []
+    yongshen_str = str(yongshen_str or "")
+    jishen_str = str(jishen_str or "")
+    lines = [f"{year}年流月明细（十神/月干支/吉凶/用忌神已算好，必须严格引用本行给出的名称，禁止自行推演）："]
     for lm in liuyue_list:
-        if isinstance(lm, dict):
-            m = lm.get('solar_month', '')
-            mg = lm.get('month_ganzhi', '')
-            mj = lm.get('judge', '')
-            month_parts.append(f"{m}月({mg}){mj}")
-    return f"{year}年流月吉凶：{' '.join(month_parts)}"
+        if not isinstance(lm, dict):
+            continue
+        m = lm.get('solar_month', '')
+        mg = lm.get('month_ganzhi', '')
+        mj = lm.get('judge', '')
+        tw = lm.get('tian_wuxing', '')
+        dw = lm.get('di_wuxing', '')
+        iy = lm.get('is_yongshen', False)
+        ij = lm.get('is_jishen', False)
+        st = lm.get('shishen_tian', '')
+        sd = lm.get('shishen_di', '')
+        tag_parts = []
+        if tw:
+            tag = f"天干{tw}"
+            if iy and (tw in yongshen_str):
+                tag += "（用神）"
+            elif ij and (tw in jishen_str):
+                tag += "（忌神）"
+            if st:
+                tag += f"·{st}"
+            tag_parts.append(tag)
+        if dw:
+            tag = f"地支{dw}"
+            if iy and (dw in yongshen_str):
+                tag += "（用神）"
+            elif ij and (dw in jishen_str):
+                tag += "（忌神）"
+            if sd:
+                tag += f"·{sd}"
+            tag_parts.append(tag)
+        line = f"  {m}月({mg})【{mj}】{' / '.join(tag_parts)}"
+        reason = lm.get('reason', '')
+        if reason:
+            line += f" | 原因：{reason}"
+        interactions = "；".join(lm.get('interactions', []) or [])
+        if interactions:
+            line += f" | 冲合：{interactions}"
+        lines.append(line)
+    lines.append(
+        "\n【数据边界——必须严格遵守】\n"
+        "1. 十神名称只能引用上方明细行给出的（如\"天干土·劫财\"），禁止根据五行自行推演或改写；明细行没给十神名的位置就不写十神\n"
+        "2. 月份建议只能基于【吉凶】等级+原因+冲合+十神名四类字段展开，禁止自行添加数据里没有的定性词（如\"黄金窗口\"\"最佳时机\"\"安全稳妥\"\"谈离职窗口\"等）\n"
+        "3. 命盘未提供的人事变动细节（领导是否更换、团队是否调整）、赔偿金性质/金额/方式、行业属性、公司规模等信息一律禁止编造\n"
+        "4. 明细行吉凶为【大凶】的月份，禁止给出该月的正面行动建议（如入职、签约、跳槽）\n"
+    )
+    return "\n".join(lines)
 
 
 # ============================================================
-# 历史消息压缩：从历史 assistant 消息（JSON）提取关键结论
+# 历史消息压缩：仅提取用户历史问题做话题回顾（绝不携带历史AI结论）
 # ============================================================
 
 def _build_history_summary(history: list, max_rounds: int = 5) -> str:
-    """从历史 assistant 消息提取关键结论，构建历史摘要文本。
+    """构建历史话题回顾（仅用户问题，不含任何AI结论）。
 
-    只保留最近 max_rounds 轮历史，避免 prompt 过长。
-
-    每份历史报告提取：
-    - opening.verdict（核心结论）
-    - subtopics[].title（各子问题结论标题）
-    - summary.items 或 summary.narrative（行动清单/总结）
-
-    开头/总结风格轮换已由后端 pick_styles 代码保证，不再在摘要中提示。
-
-    返回摘要文本，约200-400字/份。提取失败的历史消息跳过。
+    高频事故教训：此前从历史 assistant 报告提取 verdict/title/items 原文做摘要，
+    前轮编造结论（如"10月劫财帮身是谈离职黄金窗口"）会随摘要进入后续所有轮次，
+    LLM 直接照抄旧结论导致编造代代传染（实测 qwen3.8-max 在摘要含现成结论时
+    工具调用=0次、无视命盘权威数据，坚持复述摘要）。
+    现改为只列用户历史问题：天然无编造，LLM 知道聊过什么话题但没有现成结论可抄，
+    结论必须基于本轮注入的命盘权威数据重新生成。
     """
-    # 只取最近 max_rounds 轮 assistant 消息
-    assistant_msgs = [msg for msg in history if msg.get("role") == "assistant"]
-    recent_msgs = assistant_msgs[-max_rounds:] if len(assistant_msgs) > max_rounds else assistant_msgs
+    user_msgs = [msg for msg in history if msg.get("role") == "user"]
+    recent_msgs = user_msgs[-max_rounds:] if len(user_msgs) > max_rounds else user_msgs
 
-    summaries = []
+    lines = []
     for i, msg in enumerate(recent_msgs):
-        content = msg.get("content") or ""
-        try:
-            data = json.loads(content)
-        except (json.JSONDecodeError, TypeError):
-            continue  # 非 JSON（首次报告是 Markdown），跳过
+        q = str(msg.get("content") or "").strip().replace("\n", " ")
+        if not q:
+            continue
+        if len(q) > 80:
+            q = q[:80] + "…"
+        lines.append(f"第{i + 1}轮问：「{q}」")
 
-        parts = []
-        # 提取核心结论
-        opening = data.get("opening") or {}
-        verdict = opening.get("verdict")
-        if verdict:
-            parts.append(f"核心结论：{verdict}")
-
-        # 提取各子问题结论标题
-        subtopics = data.get("subtopics") or []
-        titles = [st.get("title", "") for st in subtopics if st.get("title")]
-        if titles:
-            parts.append("已回答：" + "；".join(titles))
-
-        # 提取行动清单
-        summary = data.get("summary") or {}
-        items = summary.get("items") or []
-        if items:
-            item_texts = [f"{it.get('keyword', '')}({it.get('text', '')[:40]})" for it in items[:5]]
-            parts.append("行动建议：" + "；".join(item_texts))
-        elif summary.get("narrative"):
-            parts.append(f"总结：{summary['narrative'][:80]}")
-
-        if parts:
-            summaries.append(f"第{len(summaries) + 1}轮回答：" + " | ".join(parts))
-
-    if not summaries:
+    if not lines:
         return ""
-    return "\n".join(summaries)
+    return "用户此前的问题（仅了解上下文，问题里不含任何结论）：\n" + "\n".join(lines)
 
 
 # ============================================================
 # 精简 prompt（只含命理逻辑 + JSON 结构示例，不含任何格式规则）
 # ============================================================
 
-def build_structured_prompt(
+async def build_structured_prompt(
     context: dict,
     history_summary: str = "",
     opening_style: tuple = None,
@@ -147,27 +211,60 @@ def build_structured_prompt(
 
     opening_style/summary_style 为 (风格名, 描述) 二元组，由后端 pick_styles
     选定后注入；未传时从风格库随机兜底（仅测试/直接调用场景）。
+
+    动态规则注入：从数据库读取已审核提炼的规则（reviewed=2/3），
+    注入到"## 输出前自检"之前。注入失败不影响报告生成（降级为空）。
     """
     if opening_style is None or summary_style is None:
         _o, _s = pick_styles([])
         opening_style = opening_style or _o
         summary_style = summary_style or _s
-    # 历史摘要区块：有摘要时插入，仅供话题承接，结论以命盘为准
+    # 历史摘要区块：只含用户历史问题（话题承接），绝不携带历史AI结论
     if history_summary:
         history_section = f"""
-## 历史对话摘要（话题承接参考，结论以命盘为准）
+## 此前对话话题（仅上下文参考）
 {history_summary}
-- 历史摘要仅供话题承接，不得作为结论依据；历史结论与命盘冲突时，以命盘为准，可在开篇说明"结合命盘重新看"
+- 此处只有用户问过什么，没有任何历史结论；所有结论必须基于本轮命盘数据全新生成
+- 若用户本轮追问与此前话题重叠的问题：同样基于命盘数据重新推导，禁止凭惯性复用任何前轮式断语（如"XX月是黄金窗口""不换组不换领导"这类记忆中的结论）
+- 若用户引用此前内容（如"你上轮说的还算数吗"）：基于命盘数据重新推导该话题后自然作答，可表述为"结合命盘再看一次"，禁止虚构"我上次说过"的具体措辞
 """
     else:
         history_section = ""
-    return f"""# 角色
-职场人生顾问，以命盘当作参考依据，全程像真人给朋友出主意，优先讲故事、讲现实走向、给到落地行动方案。全程面向零基础小白，语言口语通俗、故事感充足；大白话叙事是主干（占90%以上），必要命理术语只作"命理出处标签"以括号形式点缀（如"外部压力较大（七杀）"），括号里只放术语名不解释意思，永远先抛出结论、预判现实遭遇、给到可执行做法，保留精准流年流月时间推演。
 
+    # 动态规则注入：从数据库读取已审核提炼的规则
+    injected_rules = await _get_injected_rules()
+    if injected_rules:
+        logger.info(f"[动态规则注入] 开始注入 {len(injected_rules)} 条规则到 prompt...")
+        rules_section = "\n## 动态注入规则（来自人工审核，与上方规则同等效力）\n\n"
+        from itertools import groupby
+        sorted_rules = sorted(injected_rules, key=lambda r: r["category"])
+        for category, group in groupby(sorted_rules, key=lambda r: r["category"]):
+            rules_section += f"### {category}\n"
+            for item in group:
+                rules_section += f"- {item['rule']}\n"
+            rules_section += "\n"
+        logger.info(f"[动态规则注入] 规则注入完成，rules_section 长度={len(rules_section)}")
+    else:
+        logger.info("[动态规则注入] 无规则可注入（数据库为空或读取失败）")
+        rules_section = ""
+    return f"""# 角色
+职场人生顾问，以命盘当作参考依据，全程像真人给朋友出主意，优先讲故事、讲现实走向、给到落地行动方案。全程面向零基础小白，语言口语通俗、故事感充足；大白话叙事是主干（占90%以上），必要命理术语融入句子主干，术语后紧跟大白话解释（如"七杀当值，外部压力明显，不是你自己出了问题，是公司层面在调整架构"），永远先抛出结论、预判现实遭遇、给到可执行做法，保留精准流年流月时间推演。
+{rules_section}
 # 命盘权威与方向锁定（最高优先级，无论有无历史摘要都生效）
 - 命盘数据是最高推演依据，所有结论必须以命盘为准，不得臆造命盘未提供的大运、流月、十神
-- 不盲从前轮判断：命盘与历史结论冲突时以命盘为准，可在开篇说明"结合命盘重新看"
-- 严禁编造命理依据：narrative/reason 只能引用本提示词末尾"命盘数据"栏已给出的信息
+- 不盲从惯性判断：即使本轮问题与此前话题重复，也必须基于命盘数据重新推导结论，禁止复用记忆中的前轮式断语
+- **严禁编造命理依据（最高优先级硬约束，违反即不合格）**：
+  - narrative/reason **只能引用本提示词末尾"命盘数据"栏已给出的信息**
+  - **禁止编造以下任何命盘未提供的数据**：大运干支、流年干支、流月干支、十神名称、用神/忌神五行、格局名称、纳音、神煞、地势（十二长生）
+  - **禁止自行推算年龄/年份对应关系**：涉及流年年龄时，必须以命盘数据中标注的年龄或出生年份为准（如命盘标注"2034年，8岁"，不得写成"18岁"）
+  - **禁止编造具体数字**：金额（多少钱）、倍数（涨2倍）、具体日期（几号入职）——命理算不了，只能给趋势判断
+  - **禁止编造流月吉凶**：具体月份建议必须调用 `get_liuyue_detail` 工具获取真实数据，禁止自行推测"X月是吉月/凶月"
+  - **禁止编造具体人物关系和事件（高频违规点）**：命盘无法显示"亲戚借钱""朋友背叛"等具体事件，只能给趋势判断（如"人情往来增多""注意合作风险"）。禁止编造具体场景：
+    - ❌ "表哥找你借钱不还""闺蜜背后说坏话""叔叔介绍工作"
+    - ✅ "人情往来支出增多，注意借贷风险""社交圈有摩擦，保持距离""贵人运体现在职场而非私人关系"
+    - 用户问"人情是亲戚还是朋友"时，回答应从命盘的宫位/十神趋势出发（如"比劫旺说明同辈朋友间互动多""印星代表长辈关照"），禁止编造命盘没有的具体人物故事
+  - **输出前强制自检**：逐条核对 narrative 中提到的每个命理实体（大运/流年/十神/用神）是否在命盘数据中存在，不存在则删除或改写
+- 用神/忌神以命盘数据栏"用神""忌神"为准，禁止自行判定五行喜忌（如命盘说用神是火，禁止说成"用神是水"）
 - 禁止自相矛盾（硬约束，最大硬伤，高频违规点，务必执行）：
   - **opening.verdict 必须从 subtopic 的实际细节中提炼**。生成顺序：先把每个子问题的细节走向想清楚写进 subtopic，再据此提炼 opening.verdict。禁止开篇另起炉灶给一个与正文细节打架的定论
   - **典型违规（出现即不合格）**：开篇说"不换组"，正文却讲"分到新组、换新领导"；开篇说"拿不到裁员大礼包"，正文却说"苟住能拿赔偿金"。开篇定论与正文细节字面冲突，会让用户彻底失去信任
@@ -192,14 +289,42 @@ def build_structured_prompt(
     - 破财：小额花销（日常消费/人情）vs 大额亏损（投资失败/被骗）
     - 和好：争吵内耗后缓和 vs 彻底分手后复合
     - 赚钱：有进账（副业有小钱）vs 实质收益（覆盖主业/可持续）
+    - 人情：表面人情（节日问候/礼尚往来）vs 深度人情（借钱担保/合伙投资）
+    - 健康：小毛病（失眠疲劳/换季感冒）vs 实质疾病（需就医/长期调理）
+    - 亲戚：核心家庭（父母/配偶/子女）vs 扩展亲戚（叔伯姑舅/堂表亲）
+    - 朋友：密友（知心/常联系）vs 泛泛之交（同事/点头之交）
     - 禁止模糊词双面解读制造"前面说没有、后面又出现"的割裂
 - 时间建议必须给因果依据（硬约束，三段闭环）：给出"X月是最佳时机/危险期/窗口期""适合/不适合X月"时，必须配套三段闭环解释：①**为什么这个时间最优/最危险**（基于流月吉凶/命盘喜忌/现实博弈节奏）；②**提前操作会有什么代价**（时机未到强动=踩坑/筹码不够/白费力气）；③**延后会错失什么/加重什么**（机会关闭/难度上升/需等下一窗口）。禁止只抛时间点不给依据，看似直白实则经不起追问；如"11月是谈离职黄金期"要讲清"11月进入吉月、公司年底裁员名额释放、此时谈筹码最大；提前到9月谈则名额未释放筹码不够；延后到次年3月则名额收紧、且错过吉月窗口"。**时间表达用公历月份窗口（如"11月上旬"），禁止用节气当行动节点**（如"立冬后""立秋后"），节气小白无感且无流月数据支撑
 - **时间建议必须是未来时间（硬约束，高频违规点）**：所有行动建议的时间点必须**晚于咨询时间**（见命盘数据栏"咨询时间"）。用户8月问"几月拿offer"，说明当前还没拿到，建议必须是9月/10月/11月等未来月份，**禁止建议已过去的月份**（如"6月拿offer""5月准备"）。若流月数据显示过去的月份是吉月，只能作为"复盘参考"（如"6月确实是窗口但已过，现在要抓住下一个窗口"），不能作为行动建议。**命盘结果优先**：修正时必须从剩余月份的流月数据中找到下一个吉月作为建议，禁止随意改成未来月份——必须说清"为什么是这个月"（流月数据显示该月是吉月）。违反此规则=给用户一个无法执行的"穿越式建议"，严重损害可信度
+- **时间线事件顺序必须逻辑自洽（硬约束，最高优先级违规点）**：当回答涉及多个时间相关事件（离职、收offer、入职新公司等）时，所有事件的时间安排必须符合现实逻辑顺序，禁止时间倒挂：
+  - **离职→offer→入职顺序（铁律）**：用户问"几月离职、几月收offer、几月入职"时，必须保证：**离职时间 ≤ offer时间 ≤ 入职时间**。这是现实逻辑铁律——你必须先离开当前公司，才能去新公司入职
+  - **典型违规示例（出现即不合格）**：
+    - ❌ "9月起陆续收offer，10月底前入职，10月中下旬离职" → 时间倒挂！还没离职就入职了
+    - ❌ "9-10月离职，但6月收offer、8月入职" → 时间倒挂！还没离职就收offer入职了
+    - ❌ "10月入职新公司，10月中下旬才离职" → 时间倒挂！入职和离职时间冲突
+  - **正确逻辑示例**：
+    - ✅ "10月中下旬离职→11月集中面试收offer→12月或次年1月入职新公司"
+    - ✅ "9月谈离职→10月收offer→11月入职"
+    - ✅ "先离职（X月），再面试（Y月），最后入职（Z月），确保X≤Y≤Z"
+  - **写完所有时间点后强制回查（必须执行）**：逐条列出每个事件的时间，检查是否符合"离职≤offer≤入职"。发现时间倒挂时，必须调整offer和入职时间到离职之后，确保时间线逻辑自洽。这是最高优先级检查，违反则整段回答不合格
+- **年份聚焦约束（硬约束，高频违规点）**：当用户明确询问某一年份（如"27年""2027年"）时，回答必须严格聚焦于该年份，禁止混入其他年份的内容：
+  - **禁止年份错乱**：用户问"27年找工作费劲吗"，回答必须只讲2027年的情况，禁止出现"2026年丙午大吉的余温""2026年5-6月黄金窗口"等26年内容——这是典型的年份错乱，会让用户困惑"到底在说哪一年"
+  - **禁止用过去年份做铺垫**：不能以"2026年运势好/差"作为27年分析的开头铺垫。若需对比，必须明确说清"26年已过，现在看27年"，且对比内容只能1句话带过，主体必须聚焦27年
+  - **禁止混入过去年份的月份建议**：用户问27年，回答中出现"2026年9月-10月是最佳窗口"——这是严重错乱，26年的月份对27年问题毫无意义
+  - **写完回答后强制回查年份**：逐条核对所有出现的年份是否与用户询问的年份一致。发现混入其他年份时，必须删除或改写，确保回答严格聚焦于用户问的那一年
+  - **若用户问题涉及多年份**（如"26-27年"），则按年份分别展开，每年份独立成段，禁止年份内容交叉混杂
+  - **用户问某一年时必须明确回答该年**：用户问"27年会离职吗"，不能只回答26年的情况。必须明确回答27年的判断，如"27年X月是离职窗口"。若26年底也有机会，需分开说明："26年底（X月）是第一个窗口，若错过则27年X月是下一个窗口"，禁止用26年替代27年回答
+  - **跨年问题必须分别说明**：当回答涉及跨年（如26年底到27年初），必须分别说明每年的情况：①26年适合离职的时间（基于26年流月吉凶）；②若26年没走，27年适合什么时间离职（基于27年流月吉凶）。禁止只讲一年而忽略另一年
 - 结论与建议必须因果衔接，禁止断裂（硬约束，高频违规点）：开篇结论与行动建议之间必须有完整因果链，不能让用户产生"既然A为什么还要B"的困惑。**典型场景——离开公司与赔偿**：当结论是"拿不到裁员大礼包/赔偿金"且建议是"离开/离场"时，必须讲清：
   - ①"拿不到赔偿"具体指哪种情况：是纯主动离职（无赔偿）？还是协商也谈不拢？还是不会被裁所以等不到N+1？必须明确边界，禁止含糊
   - ②"离开"是哪种走法：纯主动走（无赔偿）还是协商走（可谈补偿）？若建议离开且能谈到钱，那是协商离职（公司同意给钱让你走，属赔偿性质），必须讲清"协商离职≠纯主动走"
   - ③既然拿不到赔偿还要走，主动走的理由是什么（避开28凶年/公司环境恶化/早走早占新坑），给出命盘依据
   - **禁止把"拿不到裁员大礼包"和"主动离场"简单并列而不解释为什么拿不到还要走**；更禁止"拿不到裁员大礼包但能谈出补偿金"这种同义词对立（裁员大礼包=补偿金，见上条同义词等价规则）
+  - **吉凶年份与行动建议的因果关系（硬约束）**：当建议用户在某年份采取重大行动（离职/跳槽/创业等）时，必须解释**为什么在这个年份做这个决定**：
+    - 若该年是**吉年**：说明吉年做这件事的**优势和时机**（如"27年火土帮身，外部压力小，跳槽容易拿到好offer"）
+    - 若该年是**凶年**：说明**为什么即使凶年也要做**（如"28年大凶必须避开，所以27年虽然平年也要提前走"），或说明**凶年中哪些月份相对可做**
+    - **禁止只说"X年是好年份"然后建议离职，却不解释为什么好年份要离职**——用户会困惑"既然好年份为什么还要走"
+    - **因果闭环示例**：✅"27年火土帮身、外部压力小（吉年优势），此时跳槽容易拿到好offer（行动优势），且能避开28年大凶（提前规避）"；❌"27年是主动求变的好年份，建议离职"（缺少因果解释）
 - 流年吉凶方向锁定（硬约束，禁止违背）：
   - 吉年（吉/大吉）→ 才能说"适合启动/推进/起色/有转机/可行动"
   - 凶年（凶/大凶）→ 只能说"慎入/避开/不宜启动/防守为主/缓一缓"
@@ -208,7 +333,23 @@ def build_structured_prompt(
   - 吉凶标签不可颠倒：凶年（凶/大凶）必须如实标注凶/大凶，禁止贴"小吉/回暖/向好/起色/回升/压力渐松/缓步回暖/逐步回暖"等正向标签；回暖只能从首个吉/平年开始算，禁止把凶年说成回暖起点
   - **段落级正向标签禁止（高频违规点，务必执行）**：当 subtopic 标题或narrative覆盖一段年份范围（如"2031-2036年"），只要范围内含任何一个凶年（凶/大凶），整段就禁止命名为"回暖期/缓步期/复苏期/蓄力期/回升期/回暖升温/缓步回升"等正向段落标签。多年份段落必须如实反映其中凶年状态，标题用"凶+吉"复合表述（如"2031-2033连凶、2035起转吉"），禁止用单一正向标签覆盖整段
   - 回暖/转吉的起点年份必须是吉/平年，禁止从凶年开始算（如2031辛亥是凶年，禁止说"2031起回暖"）
-  - 具体月份建议必须基于流月吉凶数据，禁止自行推测月份
+  - **月份建议必须引用流月干支+十神（硬约束，违反即不合格）**：当给出具体月份建议（如"9月离职""10月入职""几月拿offer"）时，narrative 中必须同时出现该月份的**流月干支**和**十神关系**作为依据。
+    - ✅正确："**9月（庚戌月，伤官当值）**是最佳离职窗口，伤官代表主动求变、打破现状，此时提出离职谈判最有利"
+    - ❌错误："9月是最佳离职窗口"（只有月份没有命理依据，LLM自行编造）
+    - ❌错误："庚戌月伤官当值，9月适合离职"（有干支但没转公历，违反干支纪时规则）
+    - **正确写法**：公历月份 + 流月干支（括号标注）+ 十神关系 + 因果解释，四要素缺一不可
+    - 禁止只说"X月是吉月/凶月/最佳窗口"而不给出流月干支和十神依据
+  - **关键结论必须附带排盘依据（硬约束，违反即不合格）**：所有涉及时间判断、吉凶判断、用神/忌神、大运/流年影响的结论，narrative中必须自然融入命盘数据作为依据，禁止只抛结论不给命盘来源。
+    - ✅正确："你现在走的**丁丑大运**，天干丁壬相合（合身），就像公司主动把资源和职位绑到你手上"
+    - ❌错误："大运把机会绑到你身上"（没提哪个大运、什么关系）
+    - ✅正确："今年**丙午流年火旺**，外部压力明显加大，新岗位带来的不是轻松红利而是更密集的考核"
+    - ❌错误："今年压力很大"（没提流年干支和五行）
+    - **必须引用的场景**：
+      - 流年吉凶判断 → 必须提流年干支+五行（如"丙午流年火旺"）
+      - 大运影响 → 必须提大运干支+与日主关系（如"丁丑大运，丁壬合身"）
+      - 用神/忌神 → 必须提具体五行（如"火是用神，火旺帮身"）
+      - 月份建议 → 必须提流月干支+十神（已有规则）
+    - **融入方式**：命盘数据自然融入大白话主干，不要括号堆砌。如"今年丙午火旺，外部压力明显"而非"今年（丙午流年，火旺为忌神）外部压力明显"
 - 用神逻辑一致性（硬约束，禁止违背）：
   - 用神五行当令的吉年=帮身（如用神为火，火旺流年帮身利启动），禁止说成"X旺反耗/反激化耗损/太旺耗身/旺而耗身"等与用神冲突的逻辑；用神旺是帮扶不是消耗
   - 忌神五行当令的凶年=耗身，才能说耗损/消耗
@@ -249,7 +390,7 @@ def build_structured_prompt(
 - **subtopics 必须一一对应用户问题中的子问题（硬约束，高频违规点）**：用户问了几个子问题，就生成几个 subtopic，禁止自行添加用户没问的子问题。例如用户问"几月拿offer、几月入职、新公司发展如何、涨薪如何"，就生成4个 subtopic 分别回答这4个问题，**禁止**额外添加"完整行动路线""从现在到入职"等用户没问的总结性子问题。行动路线/时间线/步骤清单属于 summary 的内容，不属于 subtopic
 - opening的lead和verdict都可选，至少填一个
 - blocks里每个subtopic放置2-4个block，每个block只讲一个现实维度（现实走向/应对办法/时间窗口/心态宽慰四选一）；严禁把剧本预测和应对策略塞进同一段narrative
-- 单个keyword的narrative≤3句、不超过120字，超出立即拆成多个keyword block
+- 单个keyword的narrative≤3句、不超过130字，超出立即拆成多个keyword block
 - **同一subtopic内所有block必须统一用type=keyword**；禁止group块、禁止type=narrative纯叙事块、禁止空关键词当标题再挂下属段落。每个block必须keyword+narrative齐全，禁止出现"一段有keyword、另一段是光秃秃叙事"的定位不一致
 - summary的items和narrative二选一
 - keyword字段绝对禁止添加**号或任何Markdown符号（前端组件自动加粗）；keyword必须是叙事化概括（如"被动换组反而是好事""9月返岗坑位变动""签字拿赔偿金时机"），禁止使用"补充提示""补充说明""其他提示""额外建议""现实剧本预测"这类空洞无信息或过于宽泛的词，必须根据本段narrative内容提炼出具体现实结论
@@ -274,7 +415,7 @@ def build_structured_prompt(
 拆解逻辑（这是逻辑对应，不是数数）：
    - **逐点对应**：用户问题里有几个独立关切点，就必须有对应的几个 subtopic 一一回应。每一个用户提出的独立问题都要有专门一块分析，禁止漏答、禁止把两个独立关切合并成一块带过。例如用户问"是否换组""是否裁员""何时离职""何时入职新公司"四件事，就要有四块分别回应，不能把"入职新公司"塞进"离职"里一笔带过
    - **判断"独立关切点"的方法**：看用户问的是不是两件不同的事（换组 vs 裁员 vs 离职 vs 入职），而不是看句子数量。同一件事的延伸追问（"何时离职"和"怎么离职"）可合并；两件不同的事必须分开
-   - 拆完用户关切点后，可额外补充风险提示、时间路线、实操对策作为加餐 subtopic
+   - **风险提示、时间路线、实操对策等补充内容必须融入已有 subtopic 的 blocks 中，不得单独成 subtopic**（高频违规点）。例如用户问"有没有钱+来源"，可以在回答资金来源的 subtopic 里加一个 block 讲"怎么拿稳这笔钱"，但禁止单独开一个"拿到这笔钱的关键前置动作" subtopic。补充内容必须挂在最相关的已有 subtopic 下，不得自行扩展用户没问的独立话题（如求职策略、入职规划、新领导画像等）
    - **长跨度时间问题按时间段拆分**：当用户问题涉及较长时间跨度（如"未来10年""未来5年""今后事业"），优先按时间段拆分 subtopic（如2026-2027、2028-2029、2030-2032...），每个 subtopic 聚焦该时间段的事业走向+收入+行动建议，禁止把整个时间跨度塞进一个 subtopic 长篇叙事；标题用时间段+核心结论（如"2026-2027：返岗稳住期"）
    - 标题只讲现实结论，禁止八字、五行类标题；禁止写"长线剧情"字样
 >示例：用户询问"26年9月返岗是否换组、27年是否裁员大礼包、最佳离职时间、最快入职新公司" → 用户提了四件不同的事，就有四个 subtopic 一一对应：
@@ -300,22 +441,23 @@ opening.lead / verdict第一时间给出大白话最终答案，用户三秒之�
 - **绝对禁止的固定开头模板**（出现即不合格）：'直接说结论：''直接回答你：''直接给你结论：''直接给你一个不加任何粉饰的结论：''结论是：''答案很明确：'以及任何以'直接+动词'开头的模板化句式
 - **仍禁止时间节点/节气/大运交替式开头**：如'站在X月的节点''距离立秋只有几个小时''命运齿轮咬合'等
 
-4. **术语管控 + 故事叙事（大白话主干 + 括号术语标签点缀）**
-> 整体配比：大白话叙事是主干（占90%以上），命理术语只作"命理出处标签"以括号形式点缀（不超过10%）。术语带出形式：大白话现象在前，括号里只放术语名（如"外部压力较大（七杀）"），不在括号里解释术语意思，因为主干大白话已说清现象。小白读主干就懂，括号术语是给懂行的人看的出处，可跳过
-- 术语密度约束：**一整段narrative最多1-2个术语标签**，每个以"大白话现象（术语名）"形式带出；禁止连续堆砌多个术语打断叙事
+4. **术语管控 + 融合式叙事（术语融入主干，自然过渡到大白话）**
+> 整体配比：叙事是主干，术语是推演的起点而非标签。每个术语出现后必须紧跟大白话解释（不是括号，是自然过渡），让小白能读懂、老用户觉得专业。术语带出形式：术语在前→逗号/破折号→大白话解释（如"七杀当值，外部压力明显"、"正官有根，说明你在公司还有立足之地"）。
+- 术语密度约束：**一整段narrative最多1-2个术语**，每个术语后必须紧跟大白话解释；禁止连续堆砌多个术语不给解释
 - **术语带出形式规则（务必参照）**：
-  - ✅ 正确：大白话现象+括号术语标签——"外部压力较大（七杀）"、"你表达欲强适合做内容（日主丙火）"、"今年合作运旺（流年丙午）"、"适合内容/教育行业（命盘喜火土）"
-  - ❌ 错误：术语在前+括号解释意思——"偏官（七杀，代表外部压力）"、"丙火（代表表达传播）"；这种形式术语打断主干，小白要先读括号才懂
-  - ❌ 错误：术语裸用不带括号——"七杀旺"、"流年丙午吉"；术语直接出现小白看不懂
-  - 判断标准：主干大白话是否能让小白读懂现象？是→括号补术语标签即可；否→纯大白话，不加术语
+  - ✅ 正确（融合式）：术语+自然过渡到大白话——"七杀当值，外部压力明显，不是你自己出了问题，是公司层面在调整架构"、"正官有根，说明你在公司还有立足之地，不是被动等裁"、"流年丙午，合作运旺，今年适合通过人脉资源推进事情"、"命盘喜火土，适合内容/教育行业方向"
+  - ❌ 禁止（括号标签式）：大白话+括号术语——"外部压力较大（七杀）"、"适合内容/教育行业（命盘喜火土）"；括号标签打断叙事节奏，不合格
+  - ❌ 错误：术语裸用不给解释——"七杀旺，正官被冲，用神火受克，所以事业有变动"；术语堆砌小白看不懂
+  -  错误：术语在前+括号解释意思——"偏官（七杀，代表外部压力）"；括号解释打断节奏
+  - 判断标准：术语出现后，小白能否不看括号就读懂？能→合格；不能→必须补大白话解释
 - **术语使用边界（允许 vs 禁止）**：
-  - 允许以括号标签带出：十神名（七杀/正官/偏印等）、日主五行（日主丙火）、流年干支（流年丙午）、命盘喜忌（命盘喜火土）
-  - 禁止出现（即使括号也不行）：干支纪时写法（丁酉月/丁未流年→改公历"2026年9月8日-10月8日""2027年"）、排盘术语（月令/宫位/日支/原局/命局/用神/忌神/流月）、玄学话术（火土余温/水气太重/水旺耗身/金气暗动）、作用关系堆砌短语（卯酉相冲/卯辰相害/相害/相刑/杀印相生/伤官见官/寅午半合火局/寅午半合/半合火局/六合绊/三会木局/天干透出/地支联动/X气暗动→改大白话"秋季岗位变动""有外部支持化解压力""暗中有人帮你"）
+  - 允许融入主干的术语：十神名（七杀/正官/偏印等）、日主五行（日主丙火）、流年干支（流年丙午）、命盘喜忌（命盘喜火土）
+  - 禁止出现（即使融入主干也不行）：干支纪时写法（丁酉月/丁未流年→改公历"2026年9月8日-10月8日""2027年"）、排盘术语（月令/宫位/日支/原局/命局/用神/忌神/流月）、玄学话术（火土余温/水气太重/水旺耗身/金气暗动）、作用关系堆砌短语（卯酉相冲/卯辰相害/相害/相刑/杀印相生/伤官见官/寅午半合火局/寅午半合/半合火局/六合绊/三会木局/天干透出/地支联动/X气暗动→改大白话"秋季岗位变动""有外部支持化解压力""暗中有人帮你"）
   - **高频违规术语黑名单（出现即不合格，必须替换成大白话）**：杀印相生、寅午半合火局、寅午半合、半合火局、六合绊用神、三会木局克身、天干透出X、地支X与X联动、X气暗动、X相冲、X相害、X相刑、X相生、X破印、伤官见官、卯酉相冲、卯辰相害；这些作用关系短语小白完全看不懂，必须改成"秋季有岗位变动""有外部资源化解压力""暗中有人帮你"等大白话
 - 优先讲故事、剧本化描写：多描写当事人的情绪状态、公司管理层的套路手段、同事关系环境、利弊得失；多用生活化词汇：坑位、苟住、摸鱼、公司施压、拿到补偿、悄悄筹备副业
 - **how维度（必须）**：对关键问题除了when（何时）和what（是什么），还要说清楚how（怎么发生、怎么做才稳）。当用户问题明确指向未来结果（如"何时入职新公司""能否找到新工作"），必须按上方第1.5条"未来剧本"独立成 subtopic 并展开四层维度，禁止缩成一句话时间点。依托排盘数据确保不乱推测，术语带出与整体术语管控一致
-- 命理原因能省则省，需要提及时以"大白话现象（术语标签）"形式一句话带过立刻转回现实剧情；禁止逐层拆解五行作用、十神联动这类分析
-- 术语不单独拿出来讲解，顺势以括号标签形式嵌进句子
+- 命理原因能省则省，需要提及时以"术语+大白话解释"形式一句话带过立刻转回现实剧情；禁止逐层拆解五行作用、十神联动这类分析
+- 术语不单独拿出来讲解，顺势融入叙事中，每个术语后紧跟大白话落地
 
 5. **subtopic标题必须是现实结论**
 只写人事、时机、利弊判断；禁止"财运解析、事业格局、七杀解读"这类抽象标题。
@@ -324,15 +466,17 @@ opening.lead / verdict第一时间给出大白话最终答案，用户三秒之�
 6. **keyword关键词全部为生活化词语**
 绝对不可使用任何八字专业名词；可用关键词示例：现实剧本预判、关键时间节点、自保对策、安心定心提示、风险高发阶段、最佳行动窗口期。关键词必须和本段叙事内容保持一致，不能凭空新增信息。
 
-7. **月份时间参考**
+7. **月份时间参考（硬约束）**
 所有月份判断依托给到的排盘参数，不要自行脑补流月信息。
 当需要具体月份的吉凶数据时，调用 `get_liuyue_detail` 工具获取（传入年份即可）。
+**给出具体月份建议时，narrative 必须同时包含：公历月份 + 流月干支（括号标注）+ 十神关系 + 因果解释。四要素缺一不可。**
+**数据引用硬约束（违反即编造）：工具返回的流月明细行已给出每月的十神名称（如"天干土·劫财"）、吉凶等级、原因、冲合——十神只能引用明细行写明的名称，禁止根据五行自行推演（明细没给十神名的位置就不写十神）；只能基于【吉凶】+原因+冲合+十神名四类字段展开，禁止添加数据里没有的定性词（如"黄金窗口""最佳时机""安全稳妥"）；命盘未提供的人事变动细节、赔偿金性质/金额、行业属性一律禁止编造；明细标注【大凶】的月份禁止给出该月正面行动建议。**
 
 8. **文字加粗规则**
 narrative内的年月节点、关键行动、重要收益进行**加粗**；每一段最少一处加粗，不要整段文字加粗。
 
 9. **篇幅控制**
-单个keyword对应的narrative保持2-3句话、≤120字，语言紧凑，减少多余命理推演。
+单个keyword对应的narrative保持2-3句话、≤130字，语言紧凑，减少多余命理推演。
 
 10. **总结部分风格（强制，违反即不合格）**
 - **总结风格以后方"本次会话信息 > 本轮风格要求"为准**，summary 必须严格按指定风格组织，禁止套用其他总结风格；items关键词全部采用生活化阶段名称
@@ -347,9 +491,9 @@ narrative内的年月节点、关键行动、重要收益进行**加粗**；每�
 - narrative聚焦单一维度、2-3句、≤120字，禁止空洞简短也禁止堆砌；收尾感悟可单独一个keyword block（keyword写"定心提示"之类，narrative写宽慰话）
 
 ## 禁止清单（严格规避以下问题）
-❌ 禁止术语裸用不带括号（如"七杀旺""流年丙午吉""火土耗身"），术语必须以"大白话现象（术语名）"形式带出
-❌ 禁止"术语在前+括号解释意思"的形式（如"偏官（七杀，代表外部压力）""丙火（代表表达传播）"），必须改为"大白话现象（术语名）"
-❌ 禁止一整段narrative出现2个以上术语标签，打断大白话主干叙事
+❌ 禁止术语裸用不给解释（如"七杀旺，正官被冲，用神火受克，所以事业有变动"），术语堆砌小白看不懂。术语出现后必须紧跟大白话解释（逗号/破折号过渡）
+ 禁止"术语在前+括号解释意思"的形式（如"偏官（七杀，代表外部压力）""丙火（代表表达传播）"），括号解释打断叙事节奏
+❌ 禁止一整段narrative出现2个以上术语，无论哪种形式都打断叙事
 ❌ 禁止大篇幅解析五行生克、格局原理
 ❌ 禁止抽象玄学比喻代替现实描述
 ❌ 禁止关键词采用命理术语
@@ -365,11 +509,12 @@ narrative内的年月节点、关键行动、重要收益进行**加粗**；每�
 以上所有规则——开篇正文一致性、单段内部逻辑自洽、模糊预判术语定义边界、通用模糊词二分定义、同义词等价识别、时间因果三段闭环、结论与建议因果衔接、术语管控与黑名单、禁止用节气当行动节点、标题答非所问——**全报告统一适用，opening / subtopic / summary 三部分都必须遵守，summary 不设任何豁免域**。summary 的 title/lead/items.keyword/items.text/narrative/closing 都要接受同样的一致性校验、术语管控、同义词对立检测，不得在总结部分出现与 opening/subtopic 矛盾的结论、不得使用黑名单术语、不得出现同义词对立。
 
 ## 输出前自检（强制兜底，输出JSON前逐项核对，任何一项不过则改到过为止）
-1. **无结论矛盾**：opening.verdict、subtopic narrative、summary 三部分字面一致，无"开篇说不换组、正文讲换新领导、总结又说稳住没动"这类跨部分冲突；单段内无"换领导又配汇报线没动"的自相矛盾；**summary.items 不得与 subtopic 结论打架**
-2. **无概念模糊**：裁员大礼包/赔偿金/补偿金等同义词未拆成对立（含 summary）；机会/变动/破财/和好/赚钱等模糊词已做二分定义
-3. **无无根判断**：所有时间建议有三段闭环（为什么最优/提前代价/延后错失）；所有结论有命盘数据支撑，未臆造大运流月十神
-4. **无因果缺失**：结论与建议之间有完整因果链（如"拿不到赔偿还建议走"已讲清为什么）；结论与建议不割裂
-5. **无术语堆砌**：opening/subtopic/summary 全部文本大白话主干占90%以上，术语以括号标签带出；无相冲/相害/相刑/破印等黑名单术语；无干支纪时（丁酉月→改公历）
+1. **无编造命理数据（最高优先级）**：逐条核对 narrative 中提到的每个命理实体（大运干支/流年干支/十神/用神/忌神/格局/纳音/神煞）是否在命盘数据中存在，不存在则删除或改写。**这是最严重的违规，违反即不合格**
+2. **无结论矛盾**：opening.verdict、subtopic narrative、summary 三部分字面一致，无"开篇说不换组、正文讲换新领导、总结又说稳住没动"这类跨部分冲突；单段内无"换领导又配汇报线没动"的自相矛盾；**summary.items 不得与 subtopic 结论打架**
+3. **无概念模糊**：裁员大礼包/赔偿金/补偿金等同义词未拆成对立（含 summary）；机会/变动/破财/和好/赚钱等模糊词已做二分定义
+4. **无无根判断**：所有时间建议有三段闭环（为什么最优/提前代价/延后错失）；所有结论有命盘数据支撑，未臆造大运流月十神
+5. **无因果缺失**：结论与建议之间有完整因果链（如"拿不到赔偿还建议走"已讲清为什么）；结论与建议不割裂
+6. **无术语堆砌**：opening/subtopic/summary 全部文本大白话主干占90%以上，术语以括号标签带出；无相冲/相害/相刑/破印等黑名单术语；无干支纪时（丁酉月→改公历）
 
 ## 对照示例（务必参照执行）
 
@@ -439,7 +584,7 @@ closing="稳住节奏，换组不换心。谁先急谁就输，你稳住就是�
 当前大运：{context['current_dayun']}
 大运解读：{context['dayun_jiedu']}
 重点流年：{context['key_liunian']}
-年龄：{context['age']}岁，{context['age_stage']}
+年龄：{context['age']}岁（{context['birth_year']}年出生），{context['age_stage']}
 {history_section}
 ## 本轮风格要求
 开头风格：**{opening_style[0]}**（{opening_style[1]}）；总结风格：**{summary_style[0]}**（{summary_style[1]}）。必须分别严格按指定风格执行开篇与总结。
@@ -469,6 +614,12 @@ def _normalize_report_data(data):
             continue
         if not sub.get("title"):
             sub["title"] = sub.get("name") or sub.get("heading") or ""
+        # qwen-max 偶发把 blocks 输出为 JSON 字符串而非数组，需二次解析
+        if isinstance(sub.get("blocks"), str):
+            try:
+                sub["blocks"] = json.loads(sub["blocks"])
+            except (json.JSONDecodeError, TypeError):
+                sub["blocks"] = []
         for blk in sub.get("blocks") or []:
             if not isinstance(blk, dict):
                 continue
@@ -561,6 +712,12 @@ def _normalize_report_data(data):
         # 从已有内容动态提取标题，避免写死"总结"
         if not summary.get("title"):
             summary["title"] = _extract_summary_title(summary)
+        # qwen-max 偶发把 items 输出为 JSON 字符串而非数组，需二次解析
+        if isinstance(summary.get("items"), str):
+            try:
+                summary["items"] = json.loads(summary["items"])
+            except (json.JSONDecodeError, TypeError):
+                summary["items"] = []
         for item in summary.get("items") or []:
             if not isinstance(item, dict):
                 continue
@@ -588,12 +745,15 @@ def _normalize_report_data(data):
 
 
 def _extract_summary_title(summary: dict) -> str:
-    """LLM 漏 summary.title 时，从已有内容动态提取标题，避免写死"总结"。
+    """LLM 漏 summary.title 时的兜底处理。
 
-    提取优先级：
-    1. items 非空：取首个 item 的 keyword 作为标题基础
-    2. narrative 非空：取首句（第一个句号/感叹号/问号/换行前），去加粗标记，截断到16字
-    3. 都没有：降级"总结"
+    注意：此函数仅在 LLM 完全未输出 title 字段时调用。
+    对于首次报告，prompt 模板已明确指定 title（如"总结"、"教育培养与成长展望"等），
+    LLM 应直接输出该值，不应从 narrative 提取。
+
+    兜底策略：
+    1. items 非空：取首个 item 的 keyword 作为标题基础（仅限追问报告）
+    2. 都没有：降级返回"总结"（禁止从 narrative 提取，避免把叙事当标题）
     """
     items = summary.get("items") or []
     if items and isinstance(items[0], dict):
@@ -601,22 +761,8 @@ def _extract_summary_title(summary: dict) -> str:
         if kw:
             return kw
 
-    narrative = (summary.get("narrative") or "").strip()
-    if narrative:
-        # 取首句
-        first_sent = narrative
-        for sep in ("。", "！", "？", "\n"):
-            idx = first_sent.find(sep)
-            if 0 <= idx < len(first_sent):
-                first_sent = first_sent[:idx]
-        # 去加粗标记和首尾空白
-        first_sent = first_sent.replace("**", "").strip()
-        # 截断到 16 字，过长加省略号
-        if len(first_sent) > 16:
-            first_sent = first_sent[:16] + "…"
-        if first_sent:
-            return first_sent
-
+    # 禁止从 narrative 提取标题！narrative 是正文内容，不是标题
+    # 直接返回默认值
     return "总结"
 
 
@@ -1224,17 +1370,48 @@ def _detect_forbidden_terms(data: dict) -> list:
     return violations
 
 
-# 干支纪时正则：天干+地支+(月|流年)，如 丁酉月、丁未流年
+# 干支纪时正则：覆盖多种干支纪时格式
+# 【修复v3】先匹配所有 Ganzhi 时间模式，再过滤掉年份前缀的情况（避免误报）
+# 排盘数据中干支纪时的组合格式：
+# 1. 干支+月/流年/年：丁酉月、丁未流年、丁未年
+# 2. 月份+干支：9月丁酉、10月戊戌
+# 3. 干支+运：丁未运（大运）
+# 4. 干支+年（数字）：2027丁未、27年丁未
+# 5. 干支+大运/流年：丁未大运、丁未流年
+# 6. 干支+流月：丁酉流月
+# 7. 干支+岁：丁未岁（年龄/年份）
+#
+# 【排除规则】以下情况不算违规（LLM正确做法）：
+# - 公历月份后括号内补充流月干支：9月（己酉月，食神当值）✅
+# - 年份+干支作为背景引用：2026丙午大吉年、27年丁未流年 ✅
+#
+# 【仍算违规的情况】：
+# - 直接用干支纪时表示时间：己酉月适合离职 ❌
+# - 月份+干支无括号：12月壬子大凶 ❌
+
+# 核心检测正则：匹配所有 Ganzhi 时间模式
 _GANZHI_TIME_PATTERN = _re.compile(
-    r"[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥](月|流年)"
+    r"(?:"
+    # 1. 干支+时间单位（排除括号内的情况）
+    r"(?<!\（)[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥](?:月|流年|年|运|大运|流年|流月|岁)(?!\）)"
+    r"|"
+    # 2. 月份+干支（排除括号内的情况）
+    r"(?<!\（)\d{1,2}月[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥](?!\）)"
+    r")"
 )
+
+# 年份前缀正则：用于过滤掉年份+干支的组合（这些是背景引用，不算违规）
+_YEAR_GANZHI_PREFIX = _re.compile(r"\d{1,4}年?[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]")
 
 
 def _detect_ganzhi_time_notation(data: dict) -> list:
-    """检测干支纪时写法：narrative 出现 丁酉月/丁未流年 = 违规。
+    """检测干支纪时写法：narrative 出现 丁酉月/丁未流年/9月丁酉 = 违规。
 
-    prompt 要求干支纪时改公历（丁酉月→2026年9月8日-10月8日，丁未流年→2027年），
-    LLM 常直接搬用命盘数据栏的干支记法。零误伤：天干+地支+月/流年 的组合只用于纪时。
+    prompt 要求干支纪时改公历（丁酉月→2026年9月8日-10月8日，丁未流年→2027年，9月丁酉→9月），
+    LLM 常直接搬用命盘数据栏的干支记法。零误伤：只检测明确的纪时格式。
+
+    【修复v3】先匹配所有 Ganzhi 时间模式，再过滤掉年份前缀的情况（如2026丙午、27年丁未），
+    这些是背景引用不算违规。
     """
     violations = []
     texts = _collect_report_texts(data)
@@ -1242,6 +1419,13 @@ def _detect_ganzhi_time_notation(data: dict) -> list:
         for m in _GANZHI_TIME_PATTERN.finditer(text):
             matched = m.group(0)
             idx = m.start()
+            
+            # 检查是否是年份前缀的一部分（如果是，跳过不算违规）
+            # 查找匹配位置附近是否有年份模式
+            context_before = text[max(0, idx - 10):idx]
+            if _YEAR_GANZHI_PREFIX.search(context_before + matched[:4]):
+                continue  # 这是年份+干支的组合，不算违规
+            
             snippet = text[max(0, idx - 8):idx + len(matched) + 8]
             violations.append(f"{path}: 干支纪时'{matched}' (原文:...{snippet}...)")
     if violations:
@@ -1310,6 +1494,140 @@ def _detect_synonym_contradiction(data: dict) -> list:
         logger.info(f"[StructuredFollowup][同义词对立检测] 违规={len(violations)}项")
         for v in violations[:5]:
             logger.info(f"  [同义词对立] {v}")
+    return violations
+
+
+# ===== 流月吉凶篡改检测：凶月被淡化成"平月"以支撑行动建议 =====
+
+def _detect_liuyue_jixiong_falsify(data: dict, liuyue_data: dict) -> list:
+    """流月吉凶篡改检测：凶/大凶月份被报告淡化成"平月/不算凶/无大凶"。
+
+    高频违规场景（实测）：明细标注11月(辛亥)【凶】/12月(壬子)【大凶】，
+    报告为支持"11月底至12月初入职"改口"11月虽平月但无大凶"——篡改吉凶等级
+    比漏写更恶劣（直接与数据矛盾），prompt约束已验证多轮失效，需代码兜底拦截。
+    """
+    violations = []
+    if not liuyue_data:
+        return violations
+    # 构建 (年, 月) → judge 映射（跨年份）
+    month_judge = {}
+    for year, lm_list in (liuyue_data or {}).items():
+        try:
+            y = int(year)
+        except (TypeError, ValueError):
+            continue
+        for lm in lm_list or []:
+            if isinstance(lm, dict) and lm.get("solar_month") and lm.get("judge"):
+                try:
+                    month_judge[(y, int(lm["solar_month"]))] = str(lm["judge"])
+                except (TypeError, ValueError):
+                    continue
+    if not month_judge:
+        return violations
+
+    # 淡化词：把凶/大凶说成平/不凶（比照"吉"更隐蔽的篡改方式）
+    downplay_words = ("平月", "平稳", "不算凶", "无大凶", "并不凶", "不算差",
+                      "无大碍", "并不大凶", "不算太差", "并非大凶", "无凶", "谈不上凶")
+
+    # 凶月正面行动词：与"凶"直接矛盾（实测：12月(壬子)【大凶】被建议"最快27年12月入职"）
+    action_words = ("入职", "跳槽", "提离职", "谈离职", "签约", "收offer", "拿offer",
+                    "拿下", "面试通过", "上岸", "放心做", "大胆")
+
+    # 否定前缀：行动词前8字内出现则不算违规（"避免入职""不宜签约"是正确表述）
+    negation_words = ("不宜", "避免", "避开", "别", "不要", "禁止", "暂缓", "慎", "别急", "忌")
+
+    texts = _collect_report_texts(data)
+    for path, text, _ctx in texts:
+        if not text:
+            continue
+        for m in re.finditer(r'(\d{1,2})月', text):
+            try:
+                month_num = int(m.group(1))
+            except ValueError:
+                continue
+            if not (1 <= month_num <= 12):
+                continue
+            # 前20字窗口找归属年份（26年/2026年），找不到则跳过（宁漏勿误）
+            pre = text[max(0, m.start() - 20): m.start()]
+            ym = re.search(r'(20\d{2}|\d{2})年', pre)
+            if not ym:
+                continue
+            year_num = int(ym.group(1))
+            if year_num < 100:
+                year_num += 2000
+            judge = month_judge.get((year_num, month_num))
+            if judge not in ("凶", "大凶"):
+                continue
+            # 该月±30字窗口找淡化词 / 凶月正面行动词
+            window = text[max(0, m.start() - 30): m.end() + 30]
+            hit = [w for w in downplay_words if w in window]
+            if hit:
+                snippet = window.replace("\n", "")
+                violations.append(
+                    f"{path}: 流月吉凶篡改——{year_num}年{month_num}月排盘明确标注【{judge}】，"
+                    f"报告却用'{hit[0]}'淡化风险(原文:...{snippet}...)。"
+                    f"凶月吉凶必须如实标注，严禁改口淡化来支撑行动建议"
+                )
+                continue
+            # 凶月 + 正面行动建议 = 直接与吉凶数据矛盾
+            for aw in action_words:
+                for am in re.finditer(re.escape(aw), window):
+                    # 否定窗口取18字：覆盖"既避开2027年12月壬子大凶月的入职"（17字间隔）这类长否定
+                    pre_ctx = window[max(0, am.start() - 18): am.start()]
+                    if any(n in pre_ctx for n in negation_words):
+                        continue  # 否定语境（"避免入职"），正确表述
+                    snippet = window.replace("\n", "")
+                    violations.append(
+                        f"{path}: 凶月行动建议矛盾——{year_num}年{month_num}月排盘明确标注【{judge}】，"
+                        f"报告却在此时段建议'{aw}'(原文:...{snippet}...)。"
+                        f"【{judge}】月只能给防守型建议（谨慎/观望/收尾），正面行动建议"
+                        f"（入职/跳槽/签约/拿offer）必须放在【吉】或【平】的月份"
+                    )
+                    break
+                else:
+                    continue
+                break
+    if violations:
+        logger.info(f"[StructuredFollowup][流月吉凶篡改检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [流月吉凶篡改] {v}")
+    return violations
+
+
+# ===== 命盘绝无领域的数字/画像编造检测 =====
+
+def _detect_fabricated_life_details(data: dict) -> list:
+    """薪资倍数/融资轮次/涨幅百分比等命盘永不可能提供的细节编造检测。
+
+    高频违规场景（实测）："谈薪1.3倍起谈""B轮以上成长型团队"——命盘永远
+    不会包含薪资议价倍数或公司融资阶段，出现即编造，prompt约束失效需代码兜底。
+    """
+    violations = []
+    patterns = [
+        (r'(?:薪资|工资|谈薪|薪水|月薪|年薪|offer|薪酬|议价)[^。；，]{0,24}\d+(?:\.\d+)?\s*倍', "薪资倍数"),
+        (r'\d+(?:\.\d+)?\s*倍[^。；，]{0,12}(?:薪资|工资|薪水|月薪|年薪|薪酬)', "薪资倍数"),
+        (r'(?:天使轮|Pre-?A轮|[AB]\+?轮|[CDE]轮)', "融资轮次"),
+        (r'涨(?:薪|幅)[^。；，]{0,8}\d+\s*%', "涨幅百分比"),
+        # 公司规模/管理风格：命盘绝无（实测：AI每轮按喜用神联想出相同画像"扁平化管理、话语权大、中小团队"）
+        (r'(?:扁平化管理|扁平化团队|话语权|中小团队|小型团队|中型团队|大厂螺丝钉|成长型团队|创业团队|管理风格|汇报扁平)', "公司规模/管理风格画像"),
+    ]
+    texts = _collect_report_texts(data)
+    for path, text, _ctx in texts:
+        if not text:
+            continue
+        for pat, label in patterns:
+            for m in re.finditer(pat, text, re.IGNORECASE):
+                snippet = text[max(0, m.start() - 12): m.end() + 20].replace("\n", "")
+                violations.append(
+                    f"{path}: {label}编造——命盘不包含任何{label}信息"
+                    f"(原文:...{snippet}...)。这类现实细节命盘永远无法提供，"
+                    f"请删除具体数字/画像，改为基于命盘吉凶的原则性建议"
+                )
+                break  # 每个文本每种类型只报一次，避免重复刷屏
+    if violations:
+        logger.info(f"[StructuredFollowup][命盘外细节编造检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [命盘外细节编造] {v}")
     return violations
 
 
@@ -1418,6 +1736,182 @@ def _detect_summary_duplication(data: dict) -> list:
     return violations
 
 
+# ===== 时间线倒挂检测 =====
+# 事件间有明确的先后关系：
+# - offer → 入职（offer一定早于入职）
+# - 离职 → 入职（入职一定晚于离职）
+# - 怀孕 → 生产（怀孕一定早于生产）
+# 但以下关系**没有严格顺序**：
+# - 离职和offer（可以边工作边找offer，也可以先离职再找）
+# - 结婚/离婚与怀孕/生产（没有明确先后顺序）
+
+# 事件关键词定义
+_TIMELINE_LEAVE_WORDS = ["离职", "离开", "走人", "签字", "谈离职"]
+_TIMELINE_OFFER_WORDS = ["收offer", "拿到offer", "offer到手", "offer"]
+_TIMELINE_ONBOARD_WORDS = ["入职", "到新公司", "入职新公司"]
+_TIMELINE_PREGNANT_WORDS = ["怀孕", "备孕", "怀上", "有喜"]
+_TIMELINE_BIRTH_WORDS = ["生产", "生娃", "生孩子", "分娩", "生宝宝"]
+
+
+def _extract_month_from_text(text: str, keywords: list) -> list:
+    """从文本中提取关键词附近的月份（公历月份，1-12月）"""
+    import re
+    months = []
+    for kw in keywords:
+        idx = text.find(kw)
+        if idx == -1:
+            continue
+        # 在关键词前后20字范围内查找月份
+        window = text[max(0, idx - 20):idx + len(kw) + 20]
+        # 匹配"X月"格式（1-12月）
+        month_matches = re.findall(r'(\d{1,2})月', window)
+        for m in month_matches:
+            month = int(m)
+            if 1 <= month <= 12:
+                months.append(month)
+    return months
+
+
+def _detect_timeline_inversion(data: dict) -> list:
+    """时间线倒挂检测：只检测有明确先后关系的事件对。
+
+    有明确先后关系的事件对：
+    - offer → 入职（offer一定早于入职）
+    - 离职 → 入职（入职一定晚于离职）
+    - 怀孕 → 生产（怀孕一定早于生产）
+
+    没有严格顺序的事件对（不检测）：
+    - 离职和offer（可以边工作边找offer，也可以先离职再找）
+    - 结婚/离婚与怀孕/生产（没有明确先后顺序）
+
+    高频违规场景：
+    - "9月起陆续收offer，10月底前入职，10月中下旬离职" → 入职早于离职，违规
+    - "8月怀孕，6月生产" → 生产早于怀孕，违规
+    """
+    violations = []
+    texts = _collect_report_texts(data)
+    
+    for path, text, _ctx in texts:
+        if not text:
+            continue
+        
+        # 提取各事件的月份
+        leave_months = _extract_month_from_text(text, _TIMELINE_LEAVE_WORDS)
+        offer_months = _extract_month_from_text(text, _TIMELINE_OFFER_WORDS)
+        onboard_months = _extract_month_from_text(text, _TIMELINE_ONBOARD_WORDS)
+        pregnant_months = _extract_month_from_text(text, _TIMELINE_PREGNANT_WORDS)
+        birth_months = _extract_month_from_text(text, _TIMELINE_BIRTH_WORDS)
+        
+        # 检测有明确先后关系的事件对
+        
+        # 1. offer → 入职（offer早于入职）
+        if offer_months and onboard_months:
+            min_offer = min(offer_months)
+            min_onboard = min(onboard_months)
+            if min_offer > min_onboard:
+                violations.append(
+                    f"{path}: 时间线倒挂——offer时间({min_offer}月)晚于入职时间({min_onboard}月)，"
+                    f"还没收offer就入职了。必须保证：offer时间 ≤ 入职时间"
+                )
+        
+        # 2. 离职 → 入职（离职早于入职）
+        if leave_months and onboard_months:
+            min_leave = min(leave_months)
+            min_onboard = min(onboard_months)
+            if min_leave > min_onboard:
+                violations.append(
+                    f"{path}: 时间线倒挂——离职时间({min_leave}月)晚于入职时间({min_onboard}月)，"
+                    f"还没离职就入职了。必须保证：离职时间 ≤ 入职时间"
+                )
+        
+        # 3. 怀孕 → 生产（怀孕早于生产）
+        if pregnant_months and birth_months:
+            min_pregnant = min(pregnant_months)
+            min_birth = min(birth_months)
+            if min_pregnant > min_birth:
+                violations.append(
+                    f"{path}: 时间线倒挂——怀孕时间({min_pregnant}月)晚于生产时间({min_birth}月)，"
+                    f"还没怀孕就生产了。必须保证：怀孕时间 ≤ 生产时间"
+                )
+        
+        # 注意：不检测离职和offer之间的关系（没有严格顺序）
+    
+    if violations:
+        logger.info(f"[StructuredFollowup][时间线倒挂检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [时间线倒挂] {v}")
+    return violations
+
+
+
+# ===== 年份错乱检测 =====
+# 用户问"27年"时，回答必须严格聚焦2027年，禁止混入2026年内容
+# 如：用户问"27年找工作费劲吗"，回答出现"2026年丙午大吉的余温"
+
+
+def _detect_year_confusion(data: dict, user_question: str) -> list:
+    """年份错乱检测：用户问某一年时，回答必须严格聚焦该年份。
+
+    高频违规场景：用户问"27年找工作费劲吗"，
+    LLM 回答"2026年丙午大吉的余温还在"——年份错乱，用户困惑"到底在说哪一年"。
+
+    检测逻辑：
+    1. 从用户问题中提取目标年份（如"27年"→2027）
+    2. 检查回答中是否出现其他年份（如2026、2028）且不是对比/过渡语境
+    """
+    import re
+    violations = []
+    
+    # 从用户问题中提取目标年份
+    target_year = None
+    year_match = re.search(r'(20)?(\d{2})年', user_question)
+    if year_match:
+        year_short = int(year_match.group(2))
+        target_year = 2000 + year_short if year_short < 100 else year_short
+    
+    if not target_year:
+        return violations  # 用户没问具体年份，不检测
+    
+    texts = _collect_report_texts(data)
+    
+    for path, text, _ctx in texts:
+        if not text:
+            continue
+        
+        # 查找所有年份（2020-2039范围）
+        years_in_text = re.findall(r'20(\d{2})年', text)
+        years_in_text = [2000 + int(y) for y in years_in_text]
+        
+        # 检查是否有非目标年份
+        other_years = [y for y in years_in_text if y != target_year]
+        
+        if other_years:
+            # 检查是否在对比/过渡语境中（允许"若26年没走，27年..."这种）
+            # 简单启发式：如果其他年份附近有"若""如果""假设"等词，可能是对比语境
+            for other_year in set(other_years):
+                year_str = f"{other_year}年"
+                idx = text.find(year_str)
+                if idx == -1:
+                    continue
+                
+                # 检查前后15字是否有对比词
+                window = text[max(0, idx - 15):idx + len(year_str) + 15]
+                contrast_words = ["若", "如果", "假设", "假如", "要是", "要么", "或者"]
+                has_contrast = any(cw in window for cw in contrast_words)
+                
+                if not has_contrast:
+                    violations.append(
+                        f"{path}: 年份错乱——用户问{target_year}年，但回答混入{other_year}年内容。"
+                        f"必须严格聚焦{target_year}年，禁止混入其他年份（除非明确对比：'若{other_year}年没走，{target_year}年...'）"
+                    )
+    
+    if violations:
+        logger.info(f"[StructuredFollowup][年份错乱检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [年份错乱] {v}")
+    return violations
+
+
 def _detect_past_month_suggestions(data: dict, current_month: int) -> list:
     """过去月份建议检测：行动建议的时间点不得早于咨询月份。
 
@@ -1478,11 +1972,857 @@ def _detect_past_month_suggestions(data: dict, current_month: int) -> list:
     return violations
 
 
+def _detect_month_without_liuyue_basis(data: dict, liuyue_data: dict) -> list:
+    """月份建议无流月依据检测：给出具体月份建议时，narrative 必须包含流月干支+十神。
+
+    高频违规场景：报告说"9月是最佳离职窗口"，但没有引用9月的流月干支（庚戌）和十神（伤官），
+    属于 LLM 自行编造月份建议，没有命盘数据支撑。
+
+    检测逻辑：
+    1. 提取所有 narrative 文本
+    2. 查找含具体月份建议的句子（如"X月离职""X月入职""X月拿offer"）
+    3. 检查该句子是否同时包含：流月干支（如"庚戌月"）+ 十神（如"伤官"）
+    4. 若只有月份没有干支+十神，则违规
+    """
+    violations = []
+    if not liuyue_data:
+        return violations  # 无流月数据时不检测
+
+    # 月份建议关键词（表示"建议在某月做某事"）
+    MONTH_ACTION_PATTERNS = [
+        r'(\d{1,2})月[^\n]{0,30}(?:离职|跳槽|入职|拿.?offer|面试|谈.?判|签.?字|启动|开始|行动)',
+        r'(?:离职|跳槽|入职|拿.?offer|面试|谈.?判|签.?字|启动|开始|行动)[^\n]{0,30}(\d{1,2})月',
+        r'(\d{1,2})月[^\n]{0,20}(?:最佳|适合|有利|窗口|时机)',
+        r'(?:最佳|适合|有利|窗口|时机)[^\n]{0,20}(\d{1,2})月',
+    ]
+
+    # 流月干支模式（如"庚戌月""丁酉月"）
+    GANZHI_MONTH_PATTERN = r'[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]月'
+
+    # 十神关键词
+    SHISHEN_KEYWORDS = [
+        "正官", "七杀", "正印", "偏印", "比肩", "劫财",
+        "食神", "伤官", "正财", "偏财", "当值", "当令"
+    ]
+
+    def check_narrative(text: str, location: str):
+        """检查 narrative 中月份建议是否有流月依据"""
+        if not text:
+            return
+
+        # 查找所有月份建议
+        for pattern in MONTH_ACTION_PATTERNS:
+            matches = re.finditer(pattern, text)
+            for match in matches:
+                month = match.group(1)
+                # 提取该句子（前后50字）
+                start = max(0, match.start() - 50)
+                end = min(len(text), match.end() + 50)
+                sentence = text[start:end]
+
+                # 检查是否有流月干支
+                has_ganzhi = re.search(GANZHI_MONTH_PATTERN, sentence)
+
+                # 检查是否有十神
+                has_shishen = any(kw in sentence for kw in SHISHEN_KEYWORDS)
+
+                # 若只有月份没有干支+十神，则违规
+                if not (has_ganzhi and has_shishen):
+                    violations.append(
+                        f"{location}: 提到'{month}月'的行动建议，但未引用流月干支和十神依据。"
+                        f"必须补充该月份的流月干支（如'庚戌月'）和十神关系（如'伤官当值'），"
+                        f"禁止只说'{month}月是最佳窗口'而不给命理依据"
+                    )
+                    return  # 每个 narrative 只报一次
+
+    # 检查 subtopic blocks
+    for i, sub in enumerate(data.get("subtopics") or []):
+        if not isinstance(sub, dict):
+            continue
+        for j, b in enumerate(sub.get("blocks") or []):
+            if isinstance(b, dict):
+                check_narrative(b.get("narrative", ""), f"subtopic[{i}].block[{j}]")
+
+    # 检查 summary items
+    summary = data.get("summary") or {}
+    for j, item in enumerate(summary.get("items") or []):
+        if isinstance(item, dict):
+            check_narrative(item.get("text", ""), f"summary.items[{j}]")
+
+    if violations:
+        logger.info(f"[StructuredFollowup][月份无依据检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [月份无依据] {v}")
+    return violations
+
+
+def _detect_liuyue_ganzhi_mismatch(data: dict, liuyue_data: dict) -> list:
+    """流月干支一致性检测：报告中提到的流月干支必须与传入的数据一致。
+
+    高频违规场景：报告说"9月（丁酉月）"，但实际传入的2027年9月是"庚戌月"，
+    LLM 把2026年（丙午年）的流月套用到2027年（丁未年）了。
+
+    检测逻辑：
+    1. 从 liuyue_data 构建 {月份: 正确干支} 映射
+    2. 提取报告中所有"X月（干支月）"的引用
+    3. 检查引用的干支是否与传入数据一致
+    4. 若不一致，则违规
+    """
+    violations = []
+    if not liuyue_data:
+        return violations  # 无流月数据时不检测
+
+    # 构建 {公历月份: 正确干支} 映射（取最近一年的流月数据）
+    correct_ganzhi = {}
+    for year, liuyue_list in liuyue_data.items():
+        if isinstance(liuyue_list, list):
+            for lm in liuyue_list:
+                if isinstance(lm, dict):
+                    solar_month = lm.get('solar_month')
+                    month_ganzhi = lm.get('month_ganzhi')
+                    if solar_month and month_ganzhi:
+                        correct_ganzhi[solar_month] = month_ganzhi
+
+    if not correct_ganzhi:
+        return violations
+
+    # 匹配"X月（干支月）"的模式
+    MONTH_GANZHI_PATTERN = r'(\d{1,2})月[（(]([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])月[）)]'
+
+    def check_narrative(text: str, location: str):
+        """检查 narrative 中流月干支是否正确"""
+        if not text:
+            return
+
+        matches = re.finditer(MONTH_GANZHI_PATTERN, text)
+        for match in matches:
+            month = int(match.group(1))
+            mentioned_ganzhi = match.group(2)
+
+            # 检查是否有正确的干支
+            if month in correct_ganzhi:
+                expected_ganzhi = correct_ganzhi[month]
+                if mentioned_ganzhi != expected_ganzhi:
+                    violations.append(
+                        f"{location}: {month}月的流月干支错误——报告中写'{mentioned_ganzhi}月'，"
+                        f"但实际传入数据是'{expected_ganzhi}月'。"
+                        f"禁止编造流月干支，必须使用传入的真实数据"
+                    )
+
+    # 检查 subtopic blocks
+    for i, sub in enumerate(data.get("subtopics") or []):
+        if not isinstance(sub, dict):
+            continue
+        for j, b in enumerate(sub.get("blocks") or []):
+            if isinstance(b, dict):
+                check_narrative(b.get("narrative", ""), f"subtopic[{i}].block[{j}]")
+
+    # 检查 summary items
+    summary = data.get("summary") or {}
+    for j, item in enumerate(summary.get("items") or []):
+        if isinstance(item, dict):
+            check_narrative(item.get("text", ""), f"summary.items[{j}]")
+
+    if violations:
+        logger.info(f"[StructuredFollowup][流月干支错误检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [流月干支错误] {v}")
+    return violations
+
+
+def _detect_conclusion_without_bazi_basis(data: dict, analysis_data: dict) -> list:
+    """关键结论无排盘依据检测：涉及时间/吉凶/用神/大运的结论，必须自然融入命盘数据。
+
+    高频违规场景：报告说"今年压力很大""大运把机会绑到你身上"，
+    但没有引用流年干支（丙午）、大运干支（丁丑）、用神五行等命盘数据，
+    用户无法判断结论是LLM编造还是命盘真实推演。
+
+    检测逻辑（宽松模式）：
+    1. 提取所有 narrative 文本
+    2. 查找含结论性语句（流年吉凶/大运影响/用神忌神/五行旺衰）
+    3. 检查**整个 narrative 段落**是否包含命盘数据关键词
+    4. 若整个段落都没有命盘数据，则违规
+    5. 允许"首句结论+后句依据"的结构，只要整个段落有依据即可
+    """
+    violations = []
+
+    # 流年判断模式（含年份+吉凶词）
+    LIUNIAN_PATTERNS = [
+        r'(?:今年|\d{2}年|\d{4}年)[^\n]{0,50}(?:吉|凶|旺|压力|助力|帮身|耗身|利好|不利|好运|坏运)',
+        r'(?:吉|凶|旺|压力|助力|帮身|耗身|利好|不利|好运|坏运)[^\n]{0,50}(?:今年|\d{2}年|\d{4}年)',
+    ]
+
+    # 大运影响模式
+    DAYUN_PATTERNS = [
+        r'(?:大运|这步运|当前运)[^\n]{0,50}(?:合|冲|帮|耗|利|弊|影响|带来|给你|送你)',
+        r'(?:合|冲|帮|耗|利|弊|影响|带来|给你|送你)[^\n]{0,50}(?:大运|这步运|当前运)',
+    ]
+
+    # 用神/忌神模式
+    YONGSHEN_PATTERNS = [
+        r'(?:用神|忌神|喜用|喜|忌)[^\n]{0,50}(?:火|土|金|水|木|旺|弱|帮|耗)',
+        r'(?:火|土|金|水|木)[^\n]{0,30}(?:用神|忌神|喜|忌|帮身|耗身)',
+    ]
+
+    # 五行旺衰模式
+    WUXING_PATTERNS = [
+        r'(?:火旺|土重|金水|木旺|水旺|火土|金旺)[^\n]{0,30}(?:帮身|耗身|压力|助力|利好|不利)',
+        r'(?:帮身|耗身|泄身|克身)[^\n]{0,30}(?:火|土|金|水|木)',
+    ]
+
+    # 命盘数据关键词（必须出现至少一个）
+    BAZI_DATA_KEYWORDS = [
+        # 大运干支（60甲子）
+        "甲子", "乙丑", "丙寅", "丁卯", "戊辰", "己巳", "庚午", "辛未", "壬申", "癸酉",
+        "甲戌", "乙亥", "丙子", "丁丑", "戊寅", "己卯", "庚辰", "辛巳", "壬午", "癸未",
+        "甲申", "乙酉", "丙戌", "丁亥", "戊子", "己丑", "庚寅", "辛卯", "壬辰", "癸巳",
+        "甲午", "乙未", "丙申", "丁酉", "戊戌", "己亥", "庚子", "辛丑", "壬寅", "癸卯",
+        "甲辰", "乙巳", "丙午", "丁未", "戊申", "己酉", "庚戌", "辛亥", "壬子", "癸丑",
+        # 十神
+        "正官", "七杀", "正印", "偏印", "比肩", "劫财", "食神", "伤官", "正财", "偏财",
+        # 用神/忌神相关
+        "用神", "忌神", "喜用", "帮身", "耗身", "泄身", "克身",
+        # 五行+旺衰组合
+        "火旺", "土重", "金水", "木旺", "水旺", "火土", "金旺",
+    ]
+
+    def check_narrative(text: str, location: str):
+        """检查 narrative 中结论性语句是否有命盘数据依据（宽松模式）"""
+        if not text:
+            return
+
+        # 合并所有结论模式
+        all_patterns = LIUNIAN_PATTERNS + DAYUN_PATTERNS + YONGSHEN_PATTERNS + WUXING_PATTERNS
+
+        # 先检查整个段落是否包含命盘数据（宽松模式：允许首句结论+后句依据）
+        has_bazi_data_in_paragraph = any(kw in text for kw in BAZI_DATA_KEYWORDS)
+
+        # 如果整个段落有命盘数据，直接通过
+        if has_bazi_data_in_paragraph:
+            return
+
+        # 整个段落没有命盘数据，检查是否包含结论性语句
+        for pattern in all_patterns:
+            match = re.search(pattern, text)
+            if match:
+                violations.append(
+                    f"{location}: 提到结论性判断（'{match.group()[:30]}...'），"
+                    f"但整个段落未引用命盘数据（大运干支/流年干支/十神/用神忌神/五行旺衰）。"
+                    f"必须自然融入命盘数据作为依据，如'今年丙午火旺，外部压力明显'"
+                )
+                return  # 每个 narrative 只报一次
+
+    # 检查 subtopic blocks
+    for i, sub in enumerate(data.get("subtopics") or []):
+        if not isinstance(sub, dict):
+            continue
+        for j, b in enumerate(sub.get("blocks") or []):
+            if isinstance(b, dict):
+                check_narrative(b.get("narrative", ""), f"subtopic[{i}].block[{j}]")
+
+    # 检查 summary items
+    summary = data.get("summary") or {}
+    for j, item in enumerate(summary.get("items") or []):
+        if isinstance(item, dict):
+            check_narrative(item.get("text", ""), f"summary.items[{j}]")
+
+    # 检查 opening.verdict
+    opening = data.get("opening") or {}
+    verdict = opening.get("verdict", "")
+    if verdict:
+        check_narrative(verdict, "opening.verdict")
+
+    if violations:
+        logger.info(f"[StructuredFollowup][结论无依据检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [结论无依据] {v}")
+    return violations
+
+
 # ===== LLM 矛盾检测（语义层矛盾，枚举检测覆盖不了的场景） =====
 # 用 qwen-flash 做矛盾检测，覆盖：
 # 1. 开篇与正文矛盾（"不换组" vs "换了新领导"——相似度高但语义相反）
 # 2. 同义词对立（"拿不到A但能拿B"——需要领域知识理解A=B）
 _LLM_CHECK_MODEL = "qwen-flash"  # 轻量快模型，延迟约2-5秒
+
+
+def _detect_dayun_ganzhi_mismatch(data: dict, analysis_data: dict) -> list:
+    """大运干支一致性检测：报告中提到的大运干支必须与传入数据一致。
+
+    高频违规场景：报告说"你现在走壬午大运"，但实际传入数据是"癸未大运"，
+    LLM 凭记忆编造了大运干支。
+
+    检测逻辑：
+    1. 从 analysis_data 提取当前大运干支
+    2. 提取报告中所有"X大运"的引用
+    3. 检查引用的干支是否与传入数据一致
+    4. 若不一致，则违规
+    """
+    violations = []
+
+    # 提取当前大运干支
+    current_dayun = analysis_data.get("当前大运", "")
+    if not current_dayun:
+        return violations
+
+    # 从"癸未 2024-2033"格式中提取干支部分
+    dayun_ganzhi = current_dayun.split()[0] if " " in current_dayun else current_dayun
+    if not dayun_ganzhi or len(dayun_ganzhi) != 2:
+        return violations
+
+    # 匹配"X大运"的模式（X为两个汉字）
+    DAYUN_PATTERN = r'([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])大运'
+
+    def check_narrative(text: str, location: str):
+        """检查 narrative 中大运干支是否正确"""
+        if not text:
+            return
+
+        matches = re.finditer(DAYUN_PATTERN, text)
+        for match in matches:
+            mentioned_ganzhi = match.group(1)
+
+            # 检查是否与传入数据一致
+            if mentioned_ganzhi != dayun_ganzhi:
+                violations.append(
+                    f"{location}: 大运干支错误——报告中写'{mentioned_ganzhi}大运'，"
+                    f"但实际传入数据是'{dayun_ganzhi}大运'。"
+                    f"禁止编造大运干支，必须使用传入的真实数据"
+                )
+
+    # 检查所有 narrative 文本
+    for i, sub in enumerate(data.get("subtopics") or []):
+        if not isinstance(sub, dict):
+            continue
+        for j, b in enumerate(sub.get("blocks") or []):
+            if isinstance(b, dict):
+                check_narrative(b.get("narrative", ""), f"subtopic[{i}].block[{j}]")
+
+    # 检查 summary items
+    summary = data.get("summary") or {}
+    for j, item in enumerate(summary.get("items") or []):
+        if isinstance(item, dict):
+            check_narrative(item.get("text", ""), f"summary.items[{j}]")
+
+    # 检查 opening.verdict
+    opening = data.get("opening") or {}
+    verdict = opening.get("verdict", "")
+    if verdict:
+        check_narrative(verdict, "opening.verdict")
+
+    if violations:
+        logger.info(f"[StructuredFollowup][大运干支错误检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [大运干支错误] {v}")
+    return violations
+
+
+def _detect_liunian_ganzhi_mismatch(data: dict, analysis_data: dict) -> list:
+    """流年干支一致性检测：报告中提到的流年干支必须与传入数据一致。
+
+    高频违规场景：报告说"2027丙申年"，但实际传入数据是"2027丁未年"，
+    LLM 凭记忆编造了流年干支。
+
+    检测逻辑：
+    1. 从 analysis_data 提取重点流年列表，构建 {年份: 干支} 映射
+    2. 提取报告中所有"YYYY年X干支"的引用
+    3. 检查引用的干支是否与传入数据一致
+    4. 若不一致，则违规
+    """
+    violations = []
+
+    # 构建 {年份: 干支} 映射
+    key_liunian = analysis_data.get("重点流年", [])
+    year_ganzhi_map = {}
+    if isinstance(key_liunian, list):
+        for ly in key_liunian:
+            if isinstance(ly, dict):
+                year = ly.get('year')
+                ganzhi = ly.get('ganzhi', '')
+                if year and ganzhi:
+                    year_ganzhi_map[year] = ganzhi
+
+    if not year_ganzhi_map:
+        return violations
+
+    # 匹配"YYYY年X干支"的模式
+    LIUNIAN_PATTERN = r'(\d{4})年[^\d]{0,10}([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])'
+
+    def check_narrative(text: str, location: str):
+        """检查 narrative 中流年干支是否正确"""
+        if not text:
+            return
+
+        matches = re.finditer(LIUNIAN_PATTERN, text)
+        for match in matches:
+            year = int(match.group(1))
+            mentioned_ganzhi = match.group(2)
+
+            # 检查是否有正确的干支
+            if year in year_ganzhi_map:
+                expected_ganzhi = year_ganzhi_map[year]
+                if mentioned_ganzhi != expected_ganzhi:
+                    violations.append(
+                        f"{location}: {year}年流年干支错误——报告中写'{mentioned_ganzhi}年'，"
+                        f"但实际传入数据是'{expected_ganzhi}年'。"
+                        f"禁止编造流年干支，必须使用传入的真实数据"
+                    )
+
+    # 检查所有 narrative 文本
+    for i, sub in enumerate(data.get("subtopics") or []):
+        if not isinstance(sub, dict):
+            continue
+        for j, b in enumerate(sub.get("blocks") or []):
+            if isinstance(b, dict):
+                check_narrative(b.get("narrative", ""), f"subtopic[{i}].block[{j}]")
+
+    # 检查 summary items
+    summary = data.get("summary") or {}
+    for j, item in enumerate(summary.get("items") or []):
+        if isinstance(item, dict):
+            check_narrative(item.get("text", ""), f"summary.items[{j}]")
+
+    # 检查 opening.verdict
+    opening = data.get("opening") or {}
+    verdict = opening.get("verdict", "")
+    if verdict:
+        check_narrative(verdict, "opening.verdict")
+
+    if violations:
+        logger.info(f"[StructuredFollowup][流年干支错误检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [流年干支错误] {v}")
+    return violations
+
+
+def _detect_yongshen_wuxing_mismatch(data: dict, analysis_data: dict) -> list:
+    """用神五行一致性检测：报告中提到的用神五行必须与传入数据一致。
+
+    高频违规场景：报告说"火是用神"，但实际传入数据是用神是"金"，
+    LLM 凭记忆编造了用神五行。
+
+    检测逻辑：
+    1. 从 analysis_data 提取用神和忌神五行
+    2. 提取报告中所有"X是用神""X是忌神"的引用
+    3. 检查引用的五行是否与传入数据一致
+    4. 若不一致，则违规
+    """
+    violations = []
+
+    # 提取用神和忌神
+    yongshen = analysis_data.get("用神", "")
+    jishen = analysis_data.get("忌神", "")
+
+    if not yongshen and not jishen:
+        return violations
+
+    # 匹配"X是用神""X是忌神"的模式
+    YONGSHEN_PATTERN = r'(火|土|金|水|木)是?(?:你的|命主的)?(?:用神|喜神|喜用)'
+    JISHEN_PATTERN = r'(火|土|金|水|木)是?(?:你的|命主的)?(?:忌神|忌)'
+
+    def check_narrative(text: str, location: str):
+        """检查 narrative 中用神/忌神五行是否正确"""
+        if not text:
+            return
+
+        # 检查用神
+        if yongshen:
+            matches = re.finditer(YONGSHEN_PATTERN, text)
+            for match in matches:
+                mentioned_wuxing = match.group(1)
+                if mentioned_wuxing != yongshen:
+                    violations.append(
+                        f"{location}: 用神五行错误——报告中写'{mentioned_wuxing}是用神'，"
+                        f"但实际传入数据是用神是'{yongshen}'。"
+                        f"禁止编造用神五行，必须使用传入的真实数据"
+                    )
+
+        # 检查忌神
+        if jishen:
+            matches = re.finditer(JISHEN_PATTERN, text)
+            for match in matches:
+                mentioned_wuxing = match.group(1)
+                if mentioned_wuxing != jishen:
+                    violations.append(
+                        f"{location}: 忌神五行错误——报告中写'{mentioned_wuxing}是忌神'，"
+                        f"但实际传入数据是忌神是'{jishen}'。"
+                        f"禁止编造忌神五行，必须使用传入的真实数据"
+                    )
+
+    # 检查所有 narrative 文本
+    for i, sub in enumerate(data.get("subtopics") or []):
+        if not isinstance(sub, dict):
+            continue
+        for j, b in enumerate(sub.get("blocks") or []):
+            if isinstance(b, dict):
+                check_narrative(b.get("narrative", ""), f"subtopic[{i}].block[{j}]")
+
+    # 检查 summary items
+    summary = data.get("summary") or {}
+    for j, item in enumerate(summary.get("items") or []):
+        if isinstance(item, dict):
+            check_narrative(item.get("text", ""), f"summary.items[{j}]")
+
+    # 检查 opening.verdict
+    opening = data.get("opening") or {}
+    verdict = opening.get("verdict", "")
+    if verdict:
+        check_narrative(verdict, "opening.verdict")
+
+    if violations:
+        logger.info(f"[StructuredFollowup][用神五行错误检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [用神五行错误] {v}")
+    return violations
+
+
+def _detect_missing_tool_calls(data: dict, tool_calls: list) -> list:
+    """工具调用缺失检测：报告中提到流月干支但未调用 get_liuyue_detail 工具。
+
+    高频违规场景：报告中写了"9月（丁酉月）"，但没有调用 get_liuyue_detail 工具获取数据，
+    LLM 凭记忆编造了流月干支。
+
+    检测逻辑：
+    1. 检查报告中是否提到了具体月份的干支（如"9月（丁酉月）"）
+    2. 检查 tool_calls 中是否包含 get_liuyue_detail 调用
+    3. 如果提到了流月干支但没有调用工具，则违规
+    """
+    violations = []
+
+    # 匹配"X月（干支月）"的模式
+    MONTH_GANZHI_PATTERN = r'(\d{1,2})月[（(]([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])月[）)]'
+
+    # 检查报告中是否提到了流月干支
+    has_liuyue_mention = False
+    for sub in data.get("subtopics") or []:
+        if not isinstance(sub, dict):
+            continue
+        for block in sub.get("blocks") or []:
+            if isinstance(block, dict):
+                narrative = block.get("narrative", "")
+                if re.search(MONTH_GANZHI_PATTERN, narrative):
+                    has_liuyue_mention = True
+                    break
+        if has_liuyue_mention:
+            break
+
+    # 检查 summary items
+    if not has_liuyue_mention:
+        summary = data.get("summary") or {}
+        for item in summary.get("items") or []:
+            if isinstance(item, dict):
+                text = item.get("text", "")
+                if re.search(MONTH_GANZHI_PATTERN, text):
+                    has_liuyue_mention = True
+                    break
+
+    # 检查 opening.verdict
+    if not has_liuyue_mention:
+        opening = data.get("opening") or {}
+        verdict = opening.get("verdict", "")
+        if re.search(MONTH_GANZHI_PATTERN, verdict):
+            has_liuyue_mention = True
+
+    # 检查是否调用了 get_liuyue_detail 工具
+    has_tool_call = False
+    if tool_calls:
+        for call in tool_calls:
+            if isinstance(call, dict):
+                func = call.get("function", {})
+                if func.get("name") == "get_liuyue_detail":
+                    has_tool_call = True
+                    break
+            elif hasattr(call, "function"):
+                if call.function.name == "get_liuyue_detail":
+                    has_tool_call = True
+                    break
+
+    # 如果提到了流月干支但没有调用工具，则违规
+    if has_liuyue_mention and not has_tool_call:
+        violations.append(
+            "报告中提到了流月干支（如'9月（丁酉月）'），但未调用 get_liuyue_detail 工具获取数据。"
+            "禁止编造流月干支，必须通过工具调用获取真实数据。"
+            "示例：在给出具体月份建议前，先调用 get_liuyue_detail(year=2027) 获取2027年流月数据。"
+        )
+
+    if violations:
+        logger.info(f"[StructuredFollowup][工具调用缺失检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [工具调用缺失] {v}")
+    return violations
+
+
+# ===== 吉凶判断一致性检测 =====
+# 检测报告中对年份/流月的吉凶判断是否与排盘数据一致
+# 高频违规场景：排盘数据说2028年"平"，报告写成"转凶"
+
+# 吉凶关键词映射
+_JIXIONG_KEYWORDS = {
+    '大吉': ['大吉', '大好', '极好', '非常好', '极好', '大好年份', '大吉大利'],
+    '吉': ['吉', '好运', '顺利', '有利', '好', '不错', '利好', '上升', '旺'],
+    '平': ['平', '平稳', '一般', '普通', '平淡', '吉凶参半', '好坏参半', '中平'],
+    '凶': ['凶', '不好', '不利', '差', '下滑', '衰退', '转凶', '恶化', '糟糕', '凶险', '大凶'],
+    '大凶': ['大凶', '极凶', '非常凶', '大凶之年', '大凶年份', '凶险异常'],
+}
+
+# 吉凶等级（数值越大越吉）
+_JIXIONG_LEVEL = {'大凶': 0, '凶': 1, '平': 2, '吉': 3, '大吉': 4}
+
+
+def _get_jixiong_level(text: str) -> str | None:
+    """从文本中提取吉凶判断等级。
+    
+    按优先级匹配：大凶 > 凶 > 大吉 > 吉 > 平
+    """
+    # 先检查大凶（避免"凶"误匹配"大凶"）
+    for kw in _JIXIONG_KEYWORDS['大凶']:
+        if kw in text:
+            return '大凶'
+    for kw in _JIXIONG_KEYWORDS['凶']:
+        if kw in text:
+            return '凶'
+    for kw in _JIXIONG_KEYWORDS['大吉']:
+        if kw in text:
+            return '大吉'
+    for kw in _JIXIONG_KEYWORDS['吉']:
+        if kw in text:
+            return '吉'
+    for kw in _JIXIONG_KEYWORDS['平']:
+        if kw in text:
+            return '平'
+    return None
+
+
+def _detect_jixiong_mismatch(data: dict, analysis_data: dict) -> list:
+    """吉凶判断一致性检测：报告中对年份的吉凶判断必须与排盘数据一致。
+    
+    高频违规场景：排盘数据说2028年"平"，报告写成"转凶"或"大吉"。
+    
+    检测逻辑：
+    1. 从 analysis_data.重点流年 提取每个年份的 judge
+    2. 提取报告中所有"X年"相关的吉凶判断描述
+    3. 检查报告的吉凶判断是否与排盘数据一致
+    4. 允许±1级偏差（如排盘"吉"报告说"大吉"不算违规），但"平"说成"凶"或"吉"说成"凶"算违规
+    """
+    violations = []
+    
+    # 构建年份→judge映射
+    liunian_map = {}
+    for item in analysis_data.get("重点流年", []):
+        if isinstance(item, dict) and item.get("year") and item.get("judge"):
+            liunian_map[int(item["year"])] = item["judge"]
+    
+    if not liunian_map:
+        return violations
+    
+    def check_narrative(text: str, location: str):
+        if not text:
+            return
+        
+        # 匹配"X年"的吉凶判断（X为4位年份或2位年份如27年）
+        # 在年份前后30字内查找吉凶关键词
+        YEAR_JIXIONG_PATTERN = r'(20\d{2}|\d{2})年.{0,30}(大吉|大凶|转凶|凶|吉|大吉大利|大凶之年|平稳|吉凶参半|好坏参半|大好|极好|非常好|不利|不好|差|下滑|衰退|恶化|糟糕|凶险|凶险异常|好运|顺利|有利|利好|上升|旺|平淡|一般|普通)'
+        
+        for match in re.finditer(YEAR_JIXIONG_PATTERN, text):
+            year_str = match.group(1)
+            jixiong_text = match.group(2)
+            
+            # 解析年份
+            year = int(year_str) if len(year_str) == 4 else 2000 + int(year_str)
+            
+            if year not in liunian_map:
+                continue
+            
+            expected_judge = liunian_map[year]
+            reported_level = _get_jixiong_level(jixiong_text)
+            
+            if not reported_level:
+                continue
+            
+            expected_level = _JIXIONG_LEVEL.get(expected_judge, 2)
+            reported_num = _JIXIONG_LEVEL.get(reported_level, 2)
+            
+            # 允许±1级偏差（吉↔大吉不算违规），但跨级算违规
+            # 特别："平"说成"凶/大凶"或"吉/大吉"说成"凶/大凶"必须拦截
+            diff = abs(expected_level - reported_num)
+            if diff > 1:
+                violations.append(
+                    f"{location}: {year}年吉凶判断错误——排盘数据判断为'{expected_judge}'，"
+                    f"但报告中描述为'{reported_level}'（'{jixiong_text}'）。"
+                    f"禁止擅自更改排盘数据的吉凶判断。"
+                )
+            # 方向性错误：排盘说吉/大吉，报告说凶/大凶（或反之）
+            elif (expected_level >= 3 and reported_num <= 1) or (expected_level <= 1 and reported_num >= 3):
+                violations.append(
+                    f"{location}: {year}年吉凶方向性错误——排盘数据判断为'{expected_judge}'，"
+                    f"但报告中描述为'{reported_level}'（'{jixiong_text}'）。"
+                    f"吉凶方向完全相反，禁止擅自更改。"
+                )
+    
+    # 检查所有 narrative 文本
+    for i, sub in enumerate(data.get("subtopics") or []):
+        if not isinstance(sub, dict):
+            continue
+        for j, b in enumerate(sub.get("blocks") or []):
+            if isinstance(b, dict):
+                check_narrative(b.get("narrative", ""), f"subtopic[{i}].block[{j}]")
+    
+    # 检查 opening.verdict
+    opening = data.get("opening") or {}
+    verdict = opening.get("verdict", "")
+    if verdict:
+        check_narrative(verdict, "opening.verdict")
+    
+    # 检查 summary items
+    summary = data.get("summary") or {}
+    for j, item in enumerate(summary.get("items") or []):
+        if isinstance(item, dict):
+            check_narrative(item.get("text", ""), f"summary.items[{j}]")
+    
+    if violations:
+        logger.info(f"[StructuredFollowup][吉凶判断一致性检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [吉凶判断错误] {v}")
+    return violations
+
+
+# ===== 旺衰判断一致性检测 =====
+def _detect_wangshuai_mismatch(data: dict, analysis_data: dict) -> list:
+    """旺衰判断一致性检测：报告中提到的旺衰结论必须与排盘数据一致。
+    
+    高频违规场景：排盘说"身偏弱"，报告写成"身旺"或"身弱"。
+    """
+    violations = []
+    
+    wangshuai = analysis_data.get("旺衰结论", "")
+    if not wangshuai:
+        return violations
+    
+    # 旺衰关键词映射
+    WANGSHUAI_MAP = {
+        '身旺': ['身旺', '日主旺', '偏旺', '太旺', '极旺'],
+        '身弱': ['身弱', '日主弱', '偏弱', '太弱', '极弱'],
+        '身偏旺': ['身偏旺', '偏旺'],
+        '身偏弱': ['身偏弱', '偏弱'],
+        '中和': ['中和', '平衡', '不旺不弱'],
+    }
+    
+    # 反向映射：关键词→标准结论
+    KW_TO_STANDARD = {}
+    for standard, kws in WANGSHUAI_MAP.items():
+        for kw in kws:
+            KW_TO_STANDARD[kw] = standard
+    
+    # 允许的同义映射（身旺↔身偏旺 不算违规）
+    ALLOWED_SYNONYMS = {
+        '身旺': ['身偏旺'],
+        '身偏旺': ['身旺'],
+        '身弱': ['身偏弱'],
+        '身偏弱': ['身弱'],
+    }
+    
+    def check_narrative(text: str, location: str):
+        if not text:
+            return
+        
+        for kw, standard in KW_TO_STANDARD.items():
+            if kw in text:
+                # 检查是否与排盘数据一致
+                if standard != wangshuai:
+                    # 检查是否在允许的同义词范围内
+                    allowed = ALLOWED_SYNONYMS.get(wangshuai, [])
+                    if standard not in allowed:
+                        violations.append(
+                            f"{location}: 旺衰判断错误——排盘数据为'{wangshuai}'，"
+                            f"但报告中描述为'{standard}'（'{kw}'）。"
+                            f"禁止擅自更改旺衰结论。"
+                        )
+                break  # 只匹配第一个找到的关键词
+    
+    for i, sub in enumerate(data.get("subtopics") or []):
+        if not isinstance(sub, dict):
+            continue
+        for j, b in enumerate(sub.get("blocks") or []):
+            if isinstance(b, dict):
+                check_narrative(b.get("narrative", ""), f"subtopic[{i}].block[{j}]")
+    
+    opening = data.get("opening") or {}
+    verdict = opening.get("verdict", "")
+    if verdict:
+        check_narrative(verdict, "opening.verdict")
+    
+    summary = data.get("summary") or {}
+    for j, item in enumerate(summary.get("items") or []):
+        if isinstance(item, dict):
+            check_narrative(item.get("text", ""), f"summary.items[{j}]")
+    
+    if violations:
+        logger.info(f"[StructuredFollowup][旺衰判断一致性检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [旺衰判断错误] {v}")
+    return violations
+
+
+# ===== 大运周期一致性检测 =====
+def _detect_dayun_period_mismatch(data: dict, analysis_data: dict) -> list:
+    """大运周期一致性检测：报告中提到的大运起止年份必须与排盘数据一致。
+    
+    高频违规场景：排盘说当前大运"癸未 2021-2030"，报告写成"2021-2031"。
+    """
+    violations = []
+    
+    current_dayun = analysis_data.get("当前大运", "")
+    if not current_dayun:
+        return violations
+    
+    # 从"癸未 2021-2030"提取年份范围
+    period_match = re.search(r'(\d{4})\s*[-—～至到]\s*(\d{4})', current_dayun)
+    if not period_match:
+        return violations
+    
+    expected_start = int(period_match.group(1))
+    expected_end = int(period_match.group(2))
+    
+    def check_narrative(text: str, location: str):
+        if not text:
+            return
+        
+        # 匹配"X年-X年"或"X到X年"的大运周期描述
+        PERIOD_PATTERN = r'(20\d{2})\s*[-—～至到]\s*(20\d{2})\s*(?:年)?'
+        for match in re.finditer(PERIOD_PATTERN, text):
+            reported_start = int(match.group(1))
+            reported_end = int(match.group(2))
+            
+            # 检查是否在合理范围内（允许±1年误差）
+            if abs(reported_start - expected_start) > 1 or abs(reported_end - expected_end) > 1:
+                violations.append(
+                    f"{location}: 大运周期错误——排盘数据为'{expected_start}-{expected_end}年'，"
+                    f"但报告中写为'{reported_start}-{reported_end}年'。"
+                    f"禁止编造大运周期。"
+                )
+    
+    for i, sub in enumerate(data.get("subtopics") or []):
+        if not isinstance(sub, dict):
+            continue
+        for j, b in enumerate(sub.get("blocks") or []):
+            if isinstance(b, dict):
+                check_narrative(b.get("narrative", ""), f"subtopic[{i}].block[{j}]")
+    
+    opening = data.get("opening") or {}
+    verdict = opening.get("verdict", "")
+    if verdict:
+        check_narrative(verdict, "opening.verdict")
+    
+    summary = data.get("summary") or {}
+    for j, item in enumerate(summary.get("items") or []):
+        if isinstance(item, dict):
+            check_narrative(item.get("text", ""), f"summary.items[{j}]")
+    
+    if violations:
+        logger.info(f"[StructuredFollowup][大运周期一致性检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [大运周期错误] {v}")
+    return violations
 
 
 def _detect_llm_contradiction(data: dict) -> list:
@@ -1650,6 +2990,7 @@ async def generate_followup_structured(
     history: List[dict],
     longitude: float,
     latitude: float,
+    usage_holder: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     """
     结构化追问报告生成：
@@ -1659,6 +3000,9 @@ async def generate_followup_structured(
     4. yield JSON 字符串（一次性，非流式）
 
     返回的 JSON 字符串可直接存库，前端解析后用 React 组件渲染。
+
+    usage_holder: 可选 dict，LLM 调用成功后填充用量信息（供调用方落库 ai_usage_logs）；
+    未填充或无 success 键视为失败记录。
     """
     # 现场重算命盘（加异常兜底，排盘失败不崩溃）
     from app.skills.orchestrator import generate_full_analysis
@@ -1732,12 +3076,38 @@ async def generate_followup_structured(
     )
 
     # 3. 构建精简 prompt（含历史摘要区块 + 命盘权威与方向锁定 + 本轮选中风格）
-    system_prompt = build_structured_prompt(
+    system_prompt = await build_structured_prompt(
         context,
         history_summary=history_summary,
         opening_style=opening_style,
         summary_style=summary_style,
     )
+
+    # 3.5 用户问题涉及年份的流年+流月明细直接注入 system_prompt（关键修复）
+    # 实测依赖 LLM 主动调 get_liuyue_detail 不可靠：历史摘要里有前轮结论时，
+    # LLM 直接照抄旧结论、工具调用=0次，导致编造结论代代传染。
+    # 对齐首次报告链路：把涉及年份的完整数据直接喂给 LLM，从源头消除编造动机。
+    _by_raw = birth_date.split('-')[0] if birth_date and '-' in birth_date else ""
+    _birth_year_int = int(_by_raw) if _by_raw.isdigit() else 0
+    question_year_block = _format_question_year_block(
+        key_liunian_raw, user_question, _birth_year_int,
+        yongshen=str(context.get('yongshen', '') or ''),
+        jishen=str(context.get('jishen', '') or ''),
+    )
+    if question_year_block:
+        system_prompt += (
+            "\n\n【命盘流月权威数据——本轮报告的具体月份判断必须且只能基于本区块】\n"
+            + question_year_block +
+            "\n  【结论生成硬约束】本轮报告所有结论（包括与此前话题重复的部分）必须基于本区块"
+            "命盘数据全新推导；「此前对话话题」区块只有用户问题原文，不存在任何可复用的前轮"
+            "结论。写任何月份建议前必须先查本区块流月明细行：明细行没给的十神名不写、没给的"
+            "定性词不编、命盘没有的人事/赔偿/薪资细节不讲。\n"
+        )
+        logger.info(
+            f"[StructuredFollowup] 问题年份流月明细已注入prompt: 长度={len(question_year_block)}"
+        )
+    else:
+        logger.info("[StructuredFollowup] 问题未识别到涉及年份，未注入流月明细（依赖工具调用）")
 
     # 4. 构建 messages：history 已压缩为摘要注入 system_prompt，messages 只传当前问题
     # 不再传完整 history 到 messages 数组，避免上下文超限 + 输出雷同
@@ -1775,7 +3145,7 @@ async def generate_followup_structured(
         "守得住基本盘反例": "守得住基本盘" in system_prompt,
         "禁止清单closing项": "禁止closing复述" in system_prompt,
         "错误写法5反例": "错误写法5" in system_prompt,
-        "历史摘要区块": "历史对话摘要" in system_prompt,
+        "历史摘要区块": "此前对话话题" in system_prompt,
         "一致性要求": "一致性要求" in system_prompt,
     }
     logger.info(f"[StructuredFollowup][排查] prompt规则关键词存在性: {_rule_checks}")
@@ -1783,7 +3153,7 @@ async def generate_followup_structured(
     _consistency_checks = {
         "命盘权威": "命盘数据是最高推演依据" in system_prompt,
         "以命盘为准可修正": "以命盘为准" in system_prompt,
-        "不盲从前轮": "不盲从前轮判断" in system_prompt,
+        "不盲从前轮": "不盲从惯性判断" in system_prompt,
         "严禁编造命理依据": "严禁编造命理依据" in system_prompt,
     }
     logger.info(f"[StructuredFollowup][排查] 新一致性措辞存在性(修复错误传染): {_consistency_checks}")
@@ -1812,7 +3182,7 @@ async def generate_followup_structured(
     max_tool_rounds = 3  # 最多3轮工具调用，防止无限循环
 
     # Function Calling 循环：LLM 可调用 get_liuyue_detail 获取流月数据
-    all_messages = [{"role": "system", "content": system_prompt}] + messages
+    all_messages = build_cache_control_messages(system_prompt, messages)
     tools = [LIUYUE_TOOL_DEFINITION] if liuyue_data else None
 
     for round_num in range(max_tool_rounds + 1):
@@ -1854,7 +3224,11 @@ async def generate_followup_structured(
                         args = json.loads(tool_call.function.arguments)
                         year = args.get("year")
                         liuyue = liuyue_data.get(year, [])
-                        result = _format_liuyue_result(year, liuyue)
+                        result = _format_liuyue_result(
+                            year, liuyue,
+                            yongshen_str=str(context.get('yongshen', '') or ''),
+                            jishen_str=str(context.get('jishen', '') or ''),
+                        )
                         logger.info(f"[StructuredFollowup] 工具返回: {year}年流月数据，长度={len(result)}")
                     except Exception as e:
                         result = f"工具调用失败: {e}"
@@ -1873,18 +3247,28 @@ async def generate_followup_structured(
     elapsed = time.time() - start
 
     # token 用量统计
+    prompt_tokens = completion_tokens = total_tokens = cached_tokens = 0
     usage = getattr(response, "usage", None)
     if usage is not None:
         prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
         completion_tokens = getattr(usage, "completion_tokens", 0) or 0
         total_tokens = getattr(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens)
-        # 上下文缓存命中观测（兼容 OpenAI 格式 prompt_tokens_details.cached_tokens 与 DashScope 原生 cached_tokens）
-        cached_tokens = 0
+        # 上下文缓存命中观测
+        # 注意：OpenAI SDK 1.35.3 的 CompletionUsage 未定义 prompt_tokens_details 字段，
+        # 阿里云返回的 prompt_tokens_details 被 SDK 存为原始 dict（而非对象），
+        # 必须用 dict.get() 取值，getattr() 在 dict 上取不到 key。
         details = getattr(usage, "prompt_tokens_details", None)
         if details is not None:
-            cached_tokens = getattr(details, "cached_tokens", 0) or 0
+            if isinstance(details, dict):
+                cached_tokens = details.get("cached_tokens", 0) or 0
+            else:
+                cached_tokens = getattr(details, "cached_tokens", 0) or 0
         if not cached_tokens:
-            cached_tokens = getattr(usage, "cached_tokens", 0) or 0
+            # 兜底：DashScope 原生格式直接挂在 usage 上
+            if isinstance(usage, dict):
+                cached_tokens = usage.get("cached_tokens", 0) or 0
+            else:
+                cached_tokens = getattr(usage, "cached_tokens", 0) or 0
         logger.info(
             f"[StructuredFollowup] LLM响应: 模型={model_config.name}, 状态=成功, "
             f"finish_reason={finish_reason}, 长度={len(raw_content)}, 耗时={elapsed:.1f}s, "
@@ -1897,6 +3281,18 @@ async def generate_followup_structured(
             f"finish_reason={finish_reason}, 长度={len(raw_content)}, 耗时={elapsed:.1f}s, "
             f"工具调用={tool_call_count}次, token用量: 未返回"
         )
+    # 填充用量钩子（供调用方落库 ai_usage_logs）
+    if usage_holder is not None:
+        usage_holder.update({
+            "success": True,
+            "model": model_config.name,
+            "input_chars": len(system_prompt),
+            "output_chars": len(raw_content),
+            "input_tokens": prompt_tokens,
+            "output_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "cached_tokens": cached_tokens,
+        })
 
     # 排查日志：打印 LLM 完整原始返回，对照 prompt 规则逐条核对是否遵守（换组定义/术语黑名单/开篇一致性等）
     logger.info(f"[StructuredFollowup][排查] LLM完整原始返回(长度={len(raw_content)}字):\n{raw_content}")
@@ -1956,7 +3352,7 @@ async def generate_followup_structured(
         try:
             retry_response = await client.chat.completions.create(
                 model=model_config.name,
-                messages=[{"role": "system", "content": system_prompt}] + messages,
+                messages=build_cache_control_messages(system_prompt, messages),
                 temperature=0.3,
                 max_tokens=6000,
                 response_format={"type": "json_object"},
@@ -1996,11 +3392,26 @@ async def generate_followup_structured(
     dimension_violations = _detect_dimension_coverage(data)
     summary_dup_violations = _detect_summary_duplication(data)
     past_month_violations = _detect_past_month_suggestions(data, current_month) if current_month else []
+    month_no_basis_violations = _detect_month_without_liuyue_basis(data, liuyue_data)
+    liuyue_ganzhi_mismatch_violations = _detect_liuyue_ganzhi_mismatch(data, liuyue_data)
+    dayun_ganzhi_mismatch_violations = _detect_dayun_ganzhi_mismatch(data, analysis_data)
+    liunian_ganzhi_mismatch_violations = _detect_liunian_ganzhi_mismatch(data, analysis_data)
+    yongshen_wuxing_mismatch_violations = _detect_yongshen_wuxing_mismatch(data, analysis_data)
+    conclusion_no_basis_violations = _detect_conclusion_without_bazi_basis(data, analysis_data)
+    jixiong_mismatch_violations = _detect_jixiong_mismatch(data, analysis_data)
+    wangshuai_mismatch_violations = _detect_wangshuai_mismatch(data, analysis_data)
+    dayun_period_mismatch_violations = _detect_dayun_period_mismatch(data, analysis_data)
     llm_violations = _detect_llm_contradiction(data)
+    liuyue_falsify_violations = _detect_liuyue_jixiong_falsify(data, liuyue_data)
+    fabricated_details_violations = _detect_fabricated_life_details(data)
     all_violations = (action_violations + label_violations + favored_discouraged_violations
                       + yongshen_conflict_violations + forbidden_term_violations + ganzhi_time_violations
                       + synonym_violations + dimension_violations + summary_dup_violations
-                      + past_month_violations + llm_violations)
+                      + past_month_violations + month_no_basis_violations + liuyue_ganzhi_mismatch_violations
+                      + dayun_ganzhi_mismatch_violations + liunian_ganzhi_mismatch_violations + yongshen_wuxing_mismatch_violations
+                      + conclusion_no_basis_violations + jixiong_mismatch_violations + wangshuai_mismatch_violations
+                      + dayun_period_mismatch_violations + llm_violations
+                      + liuyue_falsify_violations + fabricated_details_violations)
     logger.info(
         f"[StructuredFollowup][命理逻辑检查] 凶年={unfavored_years}, 吉年={favored_years}, 用神={yongshen}, "
         f"启动类违规={len(action_violations)}项, 标签颠倒违规={len(label_violations)}项, "
@@ -2008,6 +3419,15 @@ async def generate_followup_structured(
         f"禁用术语违规={len(forbidden_term_violations)}项, 干支纪时违规={len(ganzhi_time_violations)}项, "
         f"同义词对立违规={len(synonym_violations)}项, 维度覆盖违规={len(dimension_violations)}项, "
         f"总结重复违规={len(summary_dup_violations)}项, 过去月份违规={len(past_month_violations)}项, "
+        f"月份无依据违规={len(month_no_basis_violations)}项, "
+        f"流月干支错误违规={len(liuyue_ganzhi_mismatch_violations)}项, "
+        f"大运干支错误违规={len(dayun_ganzhi_mismatch_violations)}项, "
+        f"流年干支错误违规={len(liunian_ganzhi_mismatch_violations)}项, "
+        f"用神五行错误违规={len(yongshen_wuxing_mismatch_violations)}项, "
+        f"结论无依据违规={len(conclusion_no_basis_violations)}项, "
+        f"吉凶判断错误违规={len(jixiong_mismatch_violations)}项, "
+        f"旺衰判断错误违规={len(wangshuai_mismatch_violations)}项, "
+        f"大运周期错误违规={len(dayun_period_mismatch_violations)}项, "
         f"LLM矛盾违规={len(llm_violations)}项, "
         f"合计={len(all_violations)}项"
     )
@@ -2029,13 +3449,32 @@ async def generate_followup_structured(
             v_dimension = _detect_dimension_coverage(d)
             v_summary_dup = _detect_summary_duplication(d)
             v_past_month = _detect_past_month_suggestions(d, current_month) if current_month else []
+            v_month_basis = _detect_month_without_liuyue_basis(d, liuyue_data)
+            v_liuyue_ganzhi_mismatch = _detect_liuyue_ganzhi_mismatch(d, liuyue_data)
+            v_dayun_ganzhi_mismatch = _detect_dayun_ganzhi_mismatch(d, analysis_data)
+            v_liunian_ganzhi_mismatch = _detect_liunian_ganzhi_mismatch(d, analysis_data)
+            v_yongshen_wuxing_mismatch = _detect_yongshen_wuxing_mismatch(d, analysis_data)
+            v_conclusion_basis = _detect_conclusion_without_bazi_basis(d, analysis_data)
+            v_jixiong = _detect_jixiong_mismatch(d, analysis_data)
+            v_wangshuai = _detect_wangshuai_mismatch(d, analysis_data)
+            v_dayun_period = _detect_dayun_period_mismatch(d, analysis_data)
             v_llm = _detect_llm_contradiction(d)
+            v_liuyue_falsify = _detect_liuyue_jixiong_falsify(d, liuyue_data)
+            v_fab_details = _detect_fabricated_life_details(d)
             return {
                 "action": v_action, "label": v_label, "favored": v_favored,
                 "yongshen": v_yongshen, "terms": v_terms, "ganzhi": v_ganzhi,
                 "synonym": v_synonym, "dimension": v_dimension, "summary_dup": v_summary_dup,
-                "past_month": v_past_month, "llm": v_llm,
-                "all": v_action + v_label + v_favored + v_yongshen + v_terms + v_ganzhi + v_synonym + v_dimension + v_summary_dup + v_past_month + v_llm,
+                "past_month": v_past_month, "month_basis": v_month_basis,
+                "liuyue_ganzhi_mismatch": v_liuyue_ganzhi_mismatch,
+                "dayun_ganzhi_mismatch": v_dayun_ganzhi_mismatch,
+                "liunian_ganzhi_mismatch": v_liunian_ganzhi_mismatch,
+                "yongshen_wuxing_mismatch": v_yongshen_wuxing_mismatch,
+                "conclusion_basis": v_conclusion_basis,
+                "jixiong": v_jixiong, "wangshuai": v_wangshuai, "dayun_period": v_dayun_period,
+                "llm": v_llm,
+                "liuyue_falsify": v_liuyue_falsify, "fab_details": v_fab_details,
+                "all": v_action + v_label + v_favored + v_yongshen + v_terms + v_ganzhi + v_synonym + v_dimension + v_summary_dup + v_past_month + v_month_basis + v_liuyue_ganzhi_mismatch + v_dayun_ganzhi_mismatch + v_liunian_ganzhi_mismatch + v_yongshen_wuxing_mismatch + v_conclusion_basis + v_jixiong + v_wangshuai + v_dayun_period + v_llm + v_liuyue_falsify + v_fab_details,
             }
 
         # 基于当前违规字典动态拼装修正提示（每次重试按最新违规类型给提示，更精准）
@@ -2120,6 +3559,21 @@ async def generate_followup_structured(
                     f"再从上述剩余月份中找到下一个吉/平月作为行动建议，给出命盘依据。"
                     f"禁止毫无根据地把'6月拿offer'改成'9月拿offer'——必须说清为什么是9月（流月数据显示9月是吉月）。"
                 )
+            if v["month_basis"]:
+                # 从 liuyue_data 提取相关年份的流月数据，注入 retry_hint
+                liuyue_hint = ""
+                for year, months in liuyue_data.items():
+                    if months:
+                        month_parts = [f"{lm.get('solar_month')}月({lm.get('month_ganzhi','')}){lm.get('judge','')}" for lm in months if isinstance(lm, dict)]
+                        if month_parts:
+                            liuyue_hint += f"{year}年流月数据：{' '.join(month_parts)}。"
+                parts.append(
+                    f"出现了月份建议无流月依据——提到具体月份（如'9月离职''10月入职'）但没有引用该月份的流月干支和十神关系。"
+                    f"【命盘结果优先】修正时每个具体月份建议必须同时包含四要素：公历月份 + 流月干支（括号标注）+ 十神关系 + 因果解释。"
+                    f"{liuyue_hint}"
+                    f"示例正确写法：'**9月（庚戌月，伤官当值）**是最佳离职窗口，伤官代表主动求变、打破现状，此时提出离职谈判最有利'。"
+                    f"禁止只说'9月是最佳窗口'而不给命理依据。"
+                )
             if v["llm"]:
                 parts.append(
                     f"LLM矛盾检测发现开篇结论与正文细节存在语义矛盾——"
@@ -2127,6 +3581,107 @@ async def generate_followup_structured(
                     f"或开篇说'拿不到裁员大礼包'正文说'能谈出补偿金'）。"
                     f"必须确保开篇结论与正文细节语义完全一致：如果正文说'换了领导'，开篇就不能说'不换组'；"
                     f"如果能谈到补偿，开篇就说'能拿到钱'而不是'拿不到'。"
+                )
+            if v["liuyue_falsify"]:
+                parts.append(
+                    f"出现了流月吉凶篡改——排盘明细明确标注【凶】或【大凶】的月份，报告却用'平月/不算凶/无大凶'等说法淡化风险来支撑行动建议。"
+                    f"【命盘结果优先】吉凶等级必须与流月明细完全一致，凶月就是凶月，禁止任何形式的改口淡化。"
+                    f"如需在该时间段给建议，只能写'该月有冲主变动需谨慎、防守为主'这类与凶性一致的表述；"
+                    f"正面行动建议（入职/签约/跳槽）只能放在明细标注【吉】或【平】的月份。"
+                )
+            if v["fab_details"]:
+                parts.append(
+                    f"出现了命盘外细节编造——薪资倍数（如1.3倍）、融资轮次（如B轮）、涨幅百分比等命盘永远不会提供的信息。"
+                    f"这类现实细节命盘数据不可能包含，属于纯编造。修正时删除全部具体数字/公司画像/议价策略，"
+                    f"只能基于命盘吉凶+十神关系给原则性方向（如'伤官月利于主动谈条件'），细节让用户自己结合实际判断。"
+                )
+            if v["liuyue_ganzhi_mismatch"]:
+                # 构建正确的流月干支映射提示
+                correct_months = []
+                for year, months in liuyue_data.items():
+                    if months:
+                        for lm in months:
+                            if isinstance(lm, dict):
+                                solar_month = lm.get('solar_month')
+                                month_ganzhi = lm.get('month_ganzhi')
+                                if solar_month and month_ganzhi:
+                                    correct_months.append(f"{year}年{solar_month}月={month_ganzhi}月")
+                correct_hint = "，".join(correct_months[:6]) + "。" if correct_months else ""
+
+                parts.append(
+                    f"出现了流月干支错误——报告中提到的月份干支与传入的命盘数据不一致。"
+                    f"【命盘结果优先】必须使用传入的真实流月干支，禁止编造或套用其他年份的干支。"
+                    f"正确的流月干支映射：{correct_hint}"
+                    f"示例：如果传入数据显示2027年9月是庚戌月，报告中就必须写'9月（庚戌月）'，"
+                    f"禁止写成'9月（丁酉月）'或其他干支。"
+                )
+            if v["dayun_ganzhi_mismatch"]:
+                current_dayun = analysis_data.get("当前大运", "")
+                parts.append(
+                    f"出现了大运干支错误——报告中提到的大运干支与传入的命盘数据不一致。"
+                    f"【命盘结果优先】必须使用传入的真实大运干支，禁止编造大运干支。"
+                    f"当前大运：{current_dayun}。"
+                    f"示例：如果传入数据显示当前大运是'癸未大运'，报告中就必须写'癸未大运'，"
+                    f"禁止写成'壬午大运'或其他干支。"
+                )
+            if v["liunian_ganzhi_mismatch"]:
+                # 构建正确的流年干支映射提示
+                key_liunian = analysis_data.get("重点流年", [])
+                year_ganzhi_list = []
+                if isinstance(key_liunian, list):
+                    for ly in key_liunian[:5]:  # 只提示前5个流年
+                        if isinstance(ly, dict):
+                            year = ly.get('year')
+                            ganzhi = ly.get('ganzhi', '')
+                            if year and ganzhi:
+                                year_ganzhi_list.append(f"{year}年={ganzhi}年")
+                correct_hint = "，".join(year_ganzhi_list) + "。" if year_ganzhi_list else ""
+
+                parts.append(
+                    f"出现了流年干支错误——报告中提到的流年干支与传入的命盘数据不一致。"
+                    f"【命盘结果优先】必须使用传入的真实流年干支，禁止编造流年干支。"
+                    f"正确的流年干支映射：{correct_hint}"
+                    f"示例：如果传入数据显示2027年是丁未年，报告中就必须写'2027年丁未年'，"
+                    f"禁止写成'2027年丙申年'或其他干支。"
+                )
+            if v["yongshen_wuxing_mismatch"]:
+                yongshen = analysis_data.get("用神", "")
+                jishen = analysis_data.get("忌神", "")
+                parts.append(
+                    f"出现了用神/忌神五行错误——报告中提到的用神或忌神五行与传入的命盘数据不一致。"
+                    f"【命盘结果优先】必须使用传入的真实用神和忌神五行，禁止编造用神/忌神五行。"
+                    f"用神：{yongshen}，忌神：{jishen}。"
+                    f"示例：如果传入数据显示用神是'金'，报告中就必须写'金是用神'，"
+                    f"禁止写成'火是用神'或其他五行。"
+                )
+            if v["jixiong"]:
+                # 构建正确的流年吉凶映射提示
+                jixiong_items = []
+                for item in analysis_data.get("重点流年", []):
+                    if isinstance(item, dict) and item.get("year") and item.get("judge"):
+                        jixiong_items.append(f"{item['year']}年={item['judge']}")
+                jixiong_hint = "，".join(jixiong_items[:8]) + "。" if jixiong_items else ""
+                parts.append(
+                    f"出现了吉凶判断错误——报告中对某些年份的吉凶判断与排盘数据不一致。"
+                    f"【命盘结果优先】必须使用排盘数据的吉凶判断，禁止擅自改成更吉或更凶的描述。"
+                    f"排盘数据的流年吉凶：{jixiong_hint}"
+                    f"示例：如果排盘数据显示2028年是'平'，报告中就不能写成'转凶'或'大吉'。"
+                )
+            if v["wangshuai"]:
+                wangshuai = analysis_data.get("旺衰结论", "")
+                parts.append(
+                    f"出现了旺衰判断错误——报告中提到的旺衰结论与排盘数据不一致。"
+                    f"【命盘结果优先】必须使用排盘数据的旺衰结论，禁止擅自更改。"
+                    f"排盘旺衰结论：{wangshuai}。"
+                    f"示例：如果排盘数据显示'身偏弱'，报告中就不能写成'身旺'或'身弱'。"
+                )
+            if v["dayun_period"]:
+                current_dayun = analysis_data.get("当前大运", "")
+                parts.append(
+                    f"出现了大运周期错误——报告中提到的大运起止年份与排盘数据不一致。"
+                    f"【命盘结果优先】必须使用排盘数据的大运周期，禁止编造。"
+                    f"当前大运：{current_dayun}。"
+                    f"示例：如果排盘数据显示'未 2021-2030'，报告中就不能写成'2021-2031'。"
                 )
             return "上次生成违背了命理逻辑约束：" + "".join(parts) + "请修正这些违规点后重新输出完整JSON。"
 
@@ -2137,7 +3692,18 @@ async def generate_followup_structured(
             "terms": forbidden_term_violations, "ganzhi": ganzhi_time_violations,
             "synonym": synonym_violations, "dimension": dimension_violations,
             "summary_dup": summary_dup_violations, "past_month": past_month_violations,
+            "month_basis": month_no_basis_violations,
+            "liuyue_ganzhi_mismatch": liuyue_ganzhi_mismatch_violations,
+            "dayun_ganzhi_mismatch": dayun_ganzhi_mismatch_violations,
+            "liunian_ganzhi_mismatch": liunian_ganzhi_mismatch_violations,
+            "yongshen_wuxing_mismatch": yongshen_wuxing_mismatch_violations,
+            "conclusion_basis": conclusion_no_basis_violations,
+            "jixiong": jixiong_mismatch_violations,
+            "wangshuai": wangshuai_mismatch_violations,
+            "dayun_period": dayun_period_mismatch_violations,
             "llm": llm_violations,
+            "liuyue_falsify": liuyue_falsify_violations,
+            "fab_details": fabricated_details_violations,
             "all": all_violations,
         }
         max_retries = 2  # 重试次数从1次提升到2次，给LLM更多修正机会
@@ -2146,7 +3712,7 @@ async def generate_followup_structured(
             try:
                 retry_response = await client.chat.completions.create(
                     model=model_config.name,
-                    messages=[{"role": "system", "content": system_prompt}] + messages + [{"role": "user", "content": retry_hint}],
+                    messages=build_cache_control_messages(system_prompt, messages + [{"role": "user", "content": retry_hint}]),
                     temperature=0.2,
                     max_tokens=6000,
                     response_format={"type": "json_object"},
@@ -2219,6 +3785,50 @@ async def generate_followup_structured(
         f"[StructuredFollowup] 命盘指纹审计: {get_chart_fingerprint(analysis_data)}, "
         f"LLM输出摘要: {raw_content[:200]}"
     )
+
+    # 7.2 L2 影子检查（结构/叙事性/命盘数据使用）：仅记录日志和 badcase，不阻塞主流程
+    try:
+        from app.services.eval.structure_checker import check_structure
+        from app.services.eval.narrative_checker import check_narrative
+        from app.services.eval.chart_usage_checker import check_chart_usage
+        l2_structure = check_structure(data, user_question)
+        l2_narrative = check_narrative(data, False)
+        l2_chart_usage = check_chart_usage(data, analysis_data)
+        l2_all = l2_structure + l2_narrative + l2_chart_usage
+        if l2_all:
+            logger.warning(
+                f"[StructuredFollowup][L2影子检查] 违规{len(l2_all)}项: "
+                f"结构={len(l2_structure)}, 叙事={len(l2_narrative)}, 命盘使用={len(l2_chart_usage)}"
+            )
+            for v in l2_all:
+                logger.warning(f"  - {v.get('type')}: {v.get('detail', '')[:80]}")
+            # 自动收集 badcase（仅当 L1 也违规时，说明是反复出现的顽固问题）
+            if all_violations:
+                try:
+                    from app.models.badcase import BadCase
+                    from app.database import SessionLocal
+                    db = SessionLocal()
+                    try:
+                        db.add(BadCase(
+                            person_id=person_id,
+                            question=user_question,
+                            chart_fingerprint=json.dumps(get_chart_fingerprint(analysis_data), ensure_ascii=False),
+                            violation_type=",".join(set(v.get("type", "") for v in l2_all)),
+                            violation_detail=json.dumps(l2_all, ensure_ascii=False)[:2000],
+                            raw_output=json.dumps(data, ensure_ascii=False)[:5000],
+                            retry_count=max_retries,
+                            final_status="degraded",
+                        ))
+                        db.commit()
+                        logger.info(f"[StructuredFollowup][L2影子检查] badcase已入库")
+                    finally:
+                        db.close()
+                except Exception as e:
+                    logger.error(f"[StructuredFollowup][L2影子检查] badcase入库失败: {e}")
+        else:
+            logger.info(f"[StructuredFollowup][L2影子检查] 通过")
+    except Exception as e:
+        logger.error(f"[StructuredFollowup][L2影子检查] 异常: {e}")
 
     # 7.5 风格盖章：把本轮后端选定的开头/总结风格写入 JSON 落库，供下一轮 pick_styles 排除
     if isinstance(data.get("opening"), dict):

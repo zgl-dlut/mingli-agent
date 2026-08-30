@@ -16,6 +16,7 @@ export interface PersonResponse {
   calendar_type?: string
   province?: string
   city?: string
+  bazi_data?: Record<string, unknown>
   created_at: string
 }
 

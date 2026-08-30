@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -21,6 +22,11 @@ if config.config_file_name is not None:
         fileConfig(config.config_file_name)
     except KeyError:
         pass
+
+# 用环境变量 DATABASE_URL 覆盖 alembic.ini 中的 sqlalchemy.url
+db_url = os.environ.get("DATABASE_URL")
+if db_url:
+    config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = Base.metadata
 
