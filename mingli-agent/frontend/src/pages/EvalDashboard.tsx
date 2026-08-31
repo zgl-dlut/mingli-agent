@@ -265,6 +265,7 @@ export default function EvalDashboard() {
           generation_time: monitorDetail.generation_time || 0,
           word_count: monitorDetail.word_count || 0,
           block_count: monitorDetail.block_count || 0,
+          prompt_version: monitorDetail.prompt_version || '',
           question_preview: monitorDetail.question_preview || '',
           response_preview: monitorDetail.response_preview || '',
           eval_passed: evalResult.passed,
@@ -1108,6 +1109,9 @@ export default function EvalDashboard() {
                           <span>耗时 <strong className="text-gray-700">{item.generation_time}s</strong></span>
                           <span>字数 <strong className="text-gray-700">{item.word_count}</strong></span>
                           <span>Block <strong className="text-gray-700">{item.block_count}</strong></span>
+                          {item.prompt_version && (
+                            <span>Prompt <strong className="text-gray-700">{item.prompt_version}</strong></span>
+                          )}
                           {/* L2 格式完成 */}
                           {item.l2_format && (
                             <span>

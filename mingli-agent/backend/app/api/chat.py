@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
-from app.config import settings
+from app.config import settings, PROMPT_VERSION
 from app.core.exceptions import PermissionDenied, ResourceNotFound
 from app.db.session import get_db, async_session
 from app.models.message import ChatMessage
@@ -446,6 +446,7 @@ async def _generate_and_save(
                     is_first_report=False,
                     generation_time=gen_time,
                     chart_data=bazi_data,
+                    prompt_version=PROMPT_VERSION,
                 )
             except Exception as mon_e:
                 print(f"[_generate_and_save] 生产监控异常: {mon_e}", flush=True)
@@ -727,6 +728,7 @@ async def _generate_and_save_first_reading(
                     is_first_report=True,
                     generation_time=gen_time,
                     chart_data=bazi_data,
+                    prompt_version=PROMPT_VERSION,
                 )
             except Exception as mon_e:
                 print(f"[_generate_and_save_first_reading] 生产监控异常: {mon_e}", flush=True)

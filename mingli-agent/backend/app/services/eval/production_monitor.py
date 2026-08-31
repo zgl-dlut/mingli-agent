@@ -337,6 +337,7 @@ async def save_monitor_result(
     generation_time: float = 0,
     chart_data: Optional[Dict] = None,
     eval_detail: Optional[Dict] = None,
+    prompt_version: str = "",
 ) -> None:
     """保存生产监控结果到数据库。
 
@@ -345,6 +346,7 @@ async def save_monitor_result(
     - L2 格式完成：结构/叙事/命盘使用检查的违规数（代码层）
     - L3 质量完成：硬性检查的通过状态 + 被哪类拦截
     - LLM 软性评分：叙事性/通顺性等（仅硬性通过时才有）
+    - prompt_version：生成该报告时的 prompt/检测器版本，用于精确归因
     """
     try:
         from app.db.session import async_session
@@ -360,6 +362,8 @@ async def save_monitor_result(
         monitor_detail = build_monitor_detail(
             report, user_question, trigger_reason, is_first_report, generation_time, eval_detail
         )
+        # prompt/检测器版本标记（生成报告时的版本，用于精确归因与跨版本对比）
+        monitor_detail["prompt_version"] = prompt_version
 
         # 完整存储四层指标
         if eval_detail:

@@ -57,3 +57,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Prompt 版本标记：每次生成端 prompt/检测器改动后手动递增，
+# 随生产评测记录落库（monitor_detail.prompt_version），用于精确归因与跨版本对比
+# 当前版本内容：数据边界声明 + 历史摘要问题清单化 + 权威命盘基准注入 +
+#              凶月淡化/凶月行动矛盾/命盘外细节(薪资倍数/融资轮/公司画像)检测器
+PROMPT_VERSION = "v2026.08.31-1"
