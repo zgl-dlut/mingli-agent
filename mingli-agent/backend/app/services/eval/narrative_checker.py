@@ -44,23 +44,24 @@ def check_narrative(report: dict, is_first_reading: bool = False) -> List[Dict]:
 
     subtopics = report.get("subtopics", [])
 
-    # 1. keyword 含术语黑名单词
-    for i, sub in enumerate(subtopics):
-        for j, blk in enumerate(sub.get("blocks", [])):
-            if not isinstance(blk, dict):
-                continue
-            kw = blk.get("keyword", "")
-            for term in TERM_BLACKLIST:
-                if term in kw:
-                    violations.append({
-                        "type": "keyword含术语",
-                        "subtopic": i,
-                        "block": j,
-                        "detail": f"keyword='{kw}' 含术语'{term}'，需替换为大白话",
-                        "location": f"subtopics[{i}].blocks[{j}].keyword",
-                        "expected": "keyword 应为大白话（如'外部压力'而非'七杀'）",
-                        "reason": "术语出现在keyword会让小白用户看不懂，术语应作为括号标签点缀在narrative中",
-                    })
+    # 1. keyword 含术语黑名单词（首次报告跳过：首次报告讲命理维度，术语是核心内容；追问保留）
+    if not is_first_reading:
+        for i, sub in enumerate(subtopics):
+            for j, blk in enumerate(sub.get("blocks", [])):
+                if not isinstance(blk, dict):
+                    continue
+                kw = blk.get("keyword", "")
+                for term in TERM_BLACKLIST:
+                    if term in kw:
+                        violations.append({
+                            "type": "keyword含术语",
+                            "subtopic": i,
+                            "block": j,
+                            "detail": f"keyword='{kw}' 含术语'{term}'，需替换为大白话",
+                            "location": f"subtopics[{i}].blocks[{j}].keyword",
+                            "expected": "keyword 应为大白话（如'外部压力'而非'七杀'）",
+                            "reason": "术语出现在keyword会让小白用户看不懂，术语应作为括号标签点缀在narrative中",
+                        })
 
     # 2. [已移除] 术语无解释检查 — 术语作为命盘依据标签出现即可，不强制要求紧跟解释
     # 核心期望：报告有命盘依据、体现专业性，术语以括号标签形式点缀即可

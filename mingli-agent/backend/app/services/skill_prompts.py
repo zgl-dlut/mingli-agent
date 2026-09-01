@@ -1234,9 +1234,9 @@ def build_authoritative_chart_basis(
     现改为：生成报告的 prompt 注入区块 + 编造检测基准 用同一个函数构建，
     双方看到的「覆盖年份/流月明细/边界声明」完全一致。
 
-    基准内容（控制在 ~2KB，保证精简不超LLM上下文）：
-      ① 四柱/日主/旺衰/用忌神/当前大运（定性骨架，不可缺）
-      ② 25年流年干支列表（只有年+干支+吉凶标签，不展开原因，占 25*15=375 字）
+    基准内容（精简但关键字段不缺）：
+      ① 四柱/日主/旺衰/用忌神/喜神/五行应用/当前大运/大运完整序列/神煞核心（骨架全集）
+      ② 25年流年干支列表（只有年+干支+吉凶标签，不展开原因）
       ③ 用户问题涉及年份的完整流年+12流月明细（带★标注，供具体断月依据）
       ④ 边界声明（越界必须声明）
     """
@@ -1255,6 +1255,36 @@ def build_authoritative_chart_basis(
     lines.append(f"  四柱: {analysis_data.get('四柱', '')}")
     lines.append(f"  日主: {analysis_data.get('日主', '')}；旺衰: {analysis_data.get('旺衰结论', '')}")
     lines.append(f"  用神: {analysis_data.get('用神', '')}；忌神: {analysis_data.get('忌神', '')}")
+    # 喜神/五行应用
+    xishen = analysis_data.get('喜神', '')
+    wuxing_app = analysis_data.get('五行应用', [])
+    if xishen or wuxing_app:
+        ws_str = '/'.join([w for w in wuxing_app if isinstance(w, str)]) if wuxing_app else ''
+        lines.append(f"  喜神: {xishen}；五行应用: {ws_str}")
+    # 大运完整序列 + 方向
+    dayun_dir = analysis_data.get('大运方向', '')
+    dayun_list = analysis_data.get('大运列表', [])
+    if dayun_dir and dayun_list and isinstance(dayun_list, list):
+        parts = []
+        for d in dayun_list[:15]:
+            if isinstance(d, dict):
+                gz = d.get('ganzhi', '')
+                sy = d.get('start_year', '')
+                ey = d.get('end_year', '')
+                if gz:
+                    parts.append(f"{gz}({sy}-{ey})")
+        if parts:
+            lines.append(f"  大运方向: {dayun_dir}；大运序列: {' → '.join(parts)}")
+    # 神煞核心（四柱各柱的关键神煞）
+    shensha = analysis_data.get('神煞', {})
+    if shensha and isinstance(shensha, dict):
+        ss_lines = []
+        for pos in ('年', '月', '日', '时'):
+            ss_list = shensha.get(pos, [])
+            if ss_list and isinstance(ss_list, list):
+                ss_lines.append(f"{pos}:{'/'.join([str(s) for s in ss_list])}")
+        if ss_lines:
+            lines.append(f"  神煞: {'; '.join(ss_lines)}")
     lines.append(f"  当前大运: {analysis_data.get('当前大运', '')}")
     lines.append("")
     lines.append(f"【流年覆盖范围 {start_year}-{end_year} 全量干支（用于对照报告是否越界）】")

@@ -121,20 +121,22 @@ def check_structure(report: dict, user_question: str, is_first_reading: bool = F
             "reason": "用户问了多个独立问题但报告未逐一拆解回答，会导致部分问题被遗漏",
         })
 
-    # 2. 每个 subtopic 的 blocks 数量（2-4）
+    # 2. 每个 subtopic 的 blocks 数量（追问2-4，首次2-6）
+    _MAX_BLOCKS = 6 if is_first_reading else 4
     for i, sub in enumerate(subtopics):
         blocks = [b for b in sub.get("blocks", []) if isinstance(b, dict)]
-        if len(blocks) < 2 or len(blocks) > 4:
+        if len(blocks) < 2 or len(blocks) > _MAX_BLOCKS:
             violations.append({
                 "type": "block数量异常",
                 "subtopic": i,
-                "detail": f"blocks={len(blocks)}，应为2-4",
+                "detail": f"blocks={len(blocks)}，应为2-{_MAX_BLOCKS}",
                 "location": f"subtopics[{i}].blocks",
-                "expected": "每个subtopic包含2-4个blocks",
-                "reason": "block过少则论述不充分，过多则碎片化，2-4个是最佳叙事节奏",
+                "expected": f"每个subtopic包含2-{_MAX_BLOCKS}个blocks（首次报告内容多放宽上限）",
+                "reason": "block过少则论述不充分，过多则碎片化，2-4是追问最佳节奏，首次报告放宽到2-6",
             })
 
-    # 3. 每个 block 的 keyword 非空、narrative 字数 30-120
+    # 3. 每个 block 的 keyword 非空、narrative 字数（30-130，首次报告放宽到30-160）
+    _MAX_NAR = 160 if is_first_reading else 130
     for i, sub in enumerate(subtopics):
         for j, blk in enumerate(sub.get("blocks", [])):
             if not isinstance(blk, dict):
@@ -158,17 +160,17 @@ def check_structure(report: dict, user_question: str, is_first_reading: bool = F
                     "block": j,
                     "detail": f"narrative={len(nar)}字，最少5字",
                     "location": f"subtopics[{i}].blocks[{j}].narrative",
-                    "expected": "narrative 至少5字，建议30-120字",
+                    "expected": "narrative 至少5字，建议30字以上",
                     "reason": "narrative过短说明该block没有实质内容，可能是LLM偷懒跳过",
                 })
-            if len(nar) > 130:
+            if len(nar) > _MAX_NAR:
                 violations.append({
                     "type": "narrative过长",
                     "subtopic": i,
                     "block": j,
-                    "detail": f"narrative={len(nar)}字，最多130字",
+                    "detail": f"narrative={len(nar)}字，最多{_MAX_NAR}字",
                     "location": f"subtopics[{i}].blocks[{j}].narrative",
-                    "expected": "narrative 最多130字，建议30-120字",
+                    "expected": f"narrative 最多{_MAX_NAR}字，建议30字以上",
                     "reason": "narrative过长会导致手机端阅读体验差，应拆成多个block",
                 })
 
