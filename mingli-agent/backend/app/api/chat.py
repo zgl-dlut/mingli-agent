@@ -445,7 +445,9 @@ async def _generate_and_save(
                     trigger_reason=trigger_reason if need_eval else "no_trigger",
                     is_first_report=False,
                     generation_time=gen_time,
-                    chart_data=bazi_data,
+                    # 用生成端重建的完整命盘（含大运列表+当前大运）作评测基准，
+                    # 与生成端同源，避免评测端用 person 旧版命盘导致大运等数据不一致→误判编造
+                    chart_data=usage_holder.get("analysis_data") or bazi_data,
                     prompt_version=PROMPT_VERSION,
                 )
             except Exception as mon_e:

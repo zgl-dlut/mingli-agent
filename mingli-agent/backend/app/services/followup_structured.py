@@ -3069,6 +3069,11 @@ async def generate_followup_structured(
         )
         analysis_data = {}  # 降级为空，后续校验会记录所有字段缺失
 
+    # 把重建后的完整命盘（含大运列表+当前大运）回传给调用方，供生产评测用作同源基准
+    # 避免评测端用 person 旧版命盘（无大运列表/当前大运空）导致与生成端数据不一致→误判编造
+    if usage_holder is not None:
+        usage_holder["analysis_data"] = analysis_data
+
     # 命盘数据完整性校验（代码层 check，不依赖 prompt）
     chart_ok, missing = validate_chart_data(analysis_data)
     if not chart_ok:
