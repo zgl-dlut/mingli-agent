@@ -354,16 +354,18 @@ def test_create_person_dedup_no_double_charge():
     _run(run())
 
 
-# ---------- 内测用户赠送积分 ----------
+# ---------- 用户注册赠送积分 ----------
 
 def test_bonus_phone_first_login_gets_points():
-    """内测用户首次登录应自动赠送积分"""
+    """白名单用户首次登录：新用户赠送240 + 白名单赠送积分"""
     async def run():
         from app.models.bonus_phone import BonusPhone
         from app.skills.auth.sms_auth_skill import SmsCodeCache
+        from app.config import settings
 
         phone = _next_phone()
         bonus_points = 1000
+        expected = settings.NEW_USER_BONUS_POINTS + bonus_points
 
         async with async_session() as db:
             db.add(BonusPhone(phone=phone, points=bonus_points))
@@ -378,16 +380,21 @@ def test_bonus_phone_first_login_gets_points():
                 res = await client.post("/api/auth/login", json={"phone": phone, "code": "111111"})
                 assert res.status_code == 200, res.text
                 body = res.json()
-                assert body["points"] == bonus_points, f"期望{bonus_points}积分，实际{body['points']}"
+                assert body["points"] == expected, f"期望{expected}积分，实际{body['points']}"
                 user_id = body["user_id"]
 
-            # 验证流水
+            # 验证流水：白名单bonus流水1条 + 新用户赠送流水1条
             async with async_session() as db:
                 txs = (await db.execute(
                     select(Transaction).where(Transaction.user_id == user_id, Transaction.biz_type == "bonus")
                 )).scalars().all()
                 assert len(txs) == 1, f"期望1条bonus流水，实际{len(txs)}条"
                 assert txs[0].points == bonus_points
+                new_txs = (await db.execute(
+                    select(Transaction).where(Transaction.user_id == user_id, Transaction.biz_type == "new_user_bonus")
+                )).scalars().all()
+                assert len(new_txs) == 1, f"期望1条new_user_bonus流水，实际{len(new_txs)}条"
+                assert new_txs[0].points == settings.NEW_USER_BONUS_POINTS
         finally:
             if user_id:
                 async with async_session() as db:
@@ -405,9 +412,11 @@ def test_bonus_phone_second_login_no_double_bonus():
     async def run():
         from app.models.bonus_phone import BonusPhone
         from app.skills.auth.sms_auth_skill import SmsCodeCache
+        from app.config import settings
 
         phone = _next_phone()
         bonus_points = 1000
+        expected = settings.NEW_USER_BONUS_POINTS + bonus_points
 
         async with async_session() as db:
             db.add(BonusPhone(phone=phone, points=bonus_points))
@@ -421,14 +430,14 @@ def test_bonus_phone_second_login_no_double_bonus():
                 # 第1次登录：赠送积分
                 res1 = await client.post("/api/auth/login", json={"phone": phone, "code": "111111"})
                 assert res1.status_code == 200
-                assert res1.json()["points"] == bonus_points
+                assert res1.json()["points"] == expected
                 user_id = res1.json()["user_id"]
 
                 # 第2次登录：不应再赠送
                 SmsCodeCache.set(phone, "111111")
                 res2 = await client.post("/api/auth/login", json={"phone": phone, "code": "111111"})
                 assert res2.status_code == 200
-                assert res2.json()["points"] == bonus_points, f"第2次登录积分应为{bonus_points}，实际{res2.json()['points']}"
+                assert res2.json()["points"] == expected, f"第2次登录积分应为{expected}，实际{res2.json()['points']}"
 
             # 验证只有1条bonus流水
             async with async_session() as db:
@@ -448,10 +457,11 @@ def test_bonus_phone_second_login_no_double_bonus():
     _run(run())
 
 
-def test_non_bonus_phone_no_points():
-    """非内测用户登录不应赠送积分"""
+def test_non_bonus_phone_gets_new_user_bonus():
+    """非白名单新用户注册自动赠送240积分"""
     async def run():
         from app.skills.auth.sms_auth_skill import SmsCodeCache
+        from app.config import settings
 
         phone = _next_phone()
 
@@ -462,14 +472,19 @@ def test_non_bonus_phone_no_points():
             async with _client() as client:
                 res = await client.post("/api/auth/login", json={"phone": phone, "code": "111111"})
                 assert res.status_code == 200, res.text
-                assert res.json()["points"] == 0, f"非内测用户积分应为0，实际{res.json()['points']}"
+                assert res.json()["points"] == settings.NEW_USER_BONUS_POINTS, \
+                    f"新用户积分应为{settings.NEW_USER_BONUS_POINTS}，实际{res.json()['points']}"
                 user_id = res.json()["user_id"]
 
             async with async_session() as db:
                 txs = (await db.execute(
                     select(Transaction).where(Transaction.user_id == user_id, Transaction.biz_type == "bonus")
                 )).scalars().all()
-                assert len(txs) == 0, f"非内测用户不应有bonus流水，实际{len(txs)}条"
+                assert len(txs) == 0, f"非白名单用户不应有bonus流水，实际{len(txs)}条"
+                new_txs = (await db.execute(
+                    select(Transaction).where(Transaction.user_id == user_id, Transaction.biz_type == "new_user_bonus")
+                )).scalars().all()
+                assert len(new_txs) == 1, f"期望1条new_user_bonus流水，实际{len(new_txs)}条"
         finally:
             if user_id:
                 async with async_session() as db:
@@ -482,10 +497,11 @@ def test_non_bonus_phone_no_points():
 
 
 def test_bonus_phone_removed_from_list_no_bonus():
-    """手机号从内测名单移除后，新注册用户不应获得赠送积分"""
+    """手机号从内测名单移除后，仍获得新用户赠送但无白名单赠送"""
     async def run():
         from app.models.bonus_phone import BonusPhone
         from app.skills.auth.sms_auth_skill import SmsCodeCache
+        from app.config import settings
 
         phone = _next_phone()
 
@@ -503,7 +519,8 @@ def test_bonus_phone_removed_from_list_no_bonus():
             async with _client() as client:
                 res = await client.post("/api/auth/login", json={"phone": phone, "code": "111111"})
                 assert res.status_code == 200
-                assert res.json()["points"] == 0, f"名单移除后积分应为0，实际{res.json()['points']}"
+                assert res.json()["points"] == settings.NEW_USER_BONUS_POINTS, \
+                    f"名单移除后应仅有新用户赠送{settings.NEW_USER_BONUS_POINTS}，实际{res.json()['points']}"
                 user_id = res.json()["user_id"]
 
             async with async_session() as db:

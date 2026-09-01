@@ -8,6 +8,8 @@ function buildLabel(t: Transaction): string {
   const desc = t.description || ''
   // 充值
   if (t.biz_type === 'recharge' || t.type === 'recharge') return '充值'
+  // 新用户赠送
+  if (t.biz_type === 'new_user_bonus') return '新用户赠送'
   // 首次报告：保留"创建人物XXX"，去掉"，生成命盘"
   if (t.biz_type === 'first_reading' || desc.startsWith('创建人物')) {
     return desc.replace('，生成命盘', '').trim() || '首次报告'

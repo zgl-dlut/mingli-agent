@@ -3053,6 +3053,8 @@ async def generate_followup_structured(
     # 现场重算命盘（加异常兜底，排盘失败不崩溃）
     from app.skills.orchestrator import generate_full_analysis
     from app.services.chart_validator import validate_chart_data, get_chart_fingerprint
+    # gender_cn 仅用于 _build_context_vars 展示（模板"日主：...（{gender}）"给用户看中文）；
+    # 喂 generate_full_analysis 用英文 gender（编排层内部 normalize 兜底转英文喂算法）
     gender_cn = "男" if gender in ("male", "男") else "女"
     try:
         analysis_data = generate_full_analysis(
@@ -3060,7 +3062,7 @@ async def generate_followup_structured(
             birth_time=birth_time,
             longitude=longitude,
             latitude=latitude,
-            gender=gender_cn,
+            gender=gender,
             location=location,
         )
     except Exception as e:
@@ -3092,7 +3094,7 @@ async def generate_followup_structured(
     # 1. 构建命盘上下文
     context = _build_context_vars(
         analysis_data=analysis_data,
-        gender=gender,
+        gender=gender_cn,  # 展示用中文（模板"日主：...（{gender}）"给用户看）
         user_question=user_question,
         birth_date=birth_date,
     )

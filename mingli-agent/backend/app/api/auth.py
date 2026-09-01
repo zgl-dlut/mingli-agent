@@ -77,6 +77,23 @@ async def send_sms_code(request: SendSmsRequest):
     return result.data
 
 
+async def grant_new_user_bonus(db: AsyncSession, user: User) -> None:
+    """新注册用户自动赠送免费体验积分（1次报告+2次追问）"""
+    bonus = settings.NEW_USER_BONUS_POINTS
+    if bonus <= 0:
+        return
+    user.points += bonus
+    db.add(Transaction(
+        user_id=user.id,
+        type="bonus",
+        points=bonus,
+        description=f"新用户赠送{bonus}积分（1次报告+2次追问）",
+        biz_type="new_user_bonus",
+    ))
+    await db.commit()
+    logger.info(f"[AUTH] 新用户 {user.phone} 自动赠送 {bonus} 积分")
+
+
 @router.post("/login")
 async def login_with_sms(request: VerifySmsRequest, db: AsyncSession = Depends(get_db)):
     """验证码登录（自动注册）"""
@@ -95,6 +112,8 @@ async def login_with_sms(request: VerifySmsRequest, db: AsyncSession = Depends(g
         db.add(user)
         await db.commit()
         await db.refresh(user)
+        # 新用户自动赠送免费体验积分
+        await grant_new_user_bonus(db, user)
     
     # 3. 白名单手机号赠送积分（从数据库查询，持久化存储）
     from app.models.bonus_phone import BonusPhone
@@ -279,6 +298,8 @@ async def wechat_oauth_callback(
         db.add(user)
         await db.commit()
         await db.refresh(user)
+        # 新用户自动赠送免费体验积分
+        await grant_new_user_bonus(db, user)
 
     # 生成 JWT token
     token_result = await security.execute(

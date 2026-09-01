@@ -1089,6 +1089,19 @@ def _extract_question_years(user_question: str, start_year: int, end_year: int) 
     years = set()
     if not user_question:
         return []
+    # 相对年份词：今年/本年/明年/去年/后年/前年 → 当前年偏移
+    # 用户问"今年"时显式年份正则匹配不到，流月明细无法注入→LLM凭空编造流月，故补相对词识别
+    import datetime as _dt
+    _cy = _dt.datetime.now().year
+    _relative = {
+        "今年": _cy, "本年": _cy, "现今": _cy, "当下": _cy, "目前": _cy,
+        "明年": _cy + 1, "下一年": _cy + 1,
+        "去年": _cy - 1, "上一年": _cy - 1,
+        "后年": _cy + 2, "前年": _cy - 2,
+    }
+    for _w, _y in _relative.items():
+        if _w in user_question and start_year <= _y <= end_year:
+            years.add(_y)
     # 四位数年份：2027年 / 2027
     for m in re.finditer(r'20\d{2}', user_question):
         y = int(m.group())

@@ -365,6 +365,12 @@ async def save_monitor_result(
         # prompt/检测器版本标记（生成报告时的版本，用于精确归因与跨版本对比）
         monitor_detail["prompt_version"] = prompt_version
 
+        # 用户与命盘标识：便于生产监控列表区分用户
+        monitor_detail["user_id"] = user_id
+        monitor_detail["session_id"] = session_id
+        if chart_data:
+            monitor_detail["bazi"] = chart_data.get("四柱", "")
+
         # 完整存储四层指标
         if eval_detail:
             hard_check = eval_detail.get("hard_check", {})
@@ -400,6 +406,22 @@ async def save_monitor_result(
                 violation_dist[vtype] = violation_dist.get(vtype, 0) + 1
 
         async with async_session() as db:
+            # 联查 person 获取生辰信息（性别+出生时间+出生地）
+            try:
+                from sqlalchemy import select
+                from app.models.session import ChatSession
+                from app.models.person import Person
+                session_row = (await db.execute(select(ChatSession).where(ChatSession.id == session_id))).scalar_one_or_none()
+                if session_row:
+                    person_row = (await db.execute(select(Person).where(Person.id == session_row.person_id))).scalar_one_or_none()
+                    if person_row:
+                        monitor_detail["gender"] = person_row.gender
+                        monitor_detail["birth_date"] = person_row.birth_date
+                        monitor_detail["birth_time"] = person_row.birth_time
+                        monitor_detail["birth_location"] = person_row.birth_location or ""
+            except Exception:
+                pass  # 联查失败不阻断主流程
+
             record = EvalResult(
                 dataset_id=f"monitor_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
                 eval_type="production_monitor",

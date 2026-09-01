@@ -5,6 +5,7 @@ import { useUserStore } from '../store/userStore'
 import { useChatStore } from '../store/chatStore'
 import { authApi } from '../api/auth'
 import type { Person } from '../types'
+import { genderToText } from '../utils/gender'
 
 interface HistoryPanelProps {
   isOpen: boolean
@@ -236,7 +237,7 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
                           {person.name || `${person.birth_date} ${person.birth_time}`}
                         </h3>
                         <p className="text-gray-400 text-xs">
-                          {person.birth_place} · {person.calendar_type === 'solar' ? '公历' : '农历'} · {person.gender === 'male' ? '男' : '女'}
+                          {person.birth_place} · {person.calendar_type === 'solar' ? '公历' : '农历'} · {genderToText(person.gender)}
                         </p>
                       </>
                     )}

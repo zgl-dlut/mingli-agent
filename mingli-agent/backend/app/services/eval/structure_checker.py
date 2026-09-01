@@ -94,12 +94,14 @@ def extract_question_keywords(question: str) -> List[str]:
     return unique[:10]
 
 
-def check_structure(report: dict, user_question: str) -> List[Dict]:
+def check_structure(report: dict, user_question: str, is_first_reading: bool = False) -> List[Dict]:
     """检查报告结构合规性。
 
     Args:
         report: 追问报告 JSON（FollowupReport 结构）
         user_question: 用户原始问题
+        is_first_reading: 是否首次报告（首次报告用户仅输入生辰无具体问题、subtopic 标题固定，
+            跳过"标题未贴合用户原话"校验；追问报告保留该校验）
 
     Returns:
         违规列表，每项 {"type": str, "detail": str, "location": str}
@@ -204,7 +206,9 @@ def check_structure(report: dict, user_question: str) -> List[Dict]:
                 })
                 break
 
-    # 6. subtopic 标题贴合用户原话
+    # 6. subtopic 标题贴合用户原话（首次报告用户仅输入生辰无具体问题、标题固定，跳过该校验；追问保留）
+    if is_first_reading:
+        return violations
     question_keywords = extract_question_keywords(user_question)
     # 也提取问题中的有意义单字（用于字符级重叠检查）
     question_chars = set(c for c in user_question if c not in "的了是在有吗呢吧啊哦呀和与或及还也都就又再更这那哪什么怎么如何是否能不能可以应该需要想要希望觉得认为知道了解关于对于因为所以虽然但是如果那么然后或者还是以及另外同时而且不过只是已经正在将会可能大概也许必须务必的地得着过们个些点次回上下里外中间前后左右我你他她它我们你们他们她们这个那个哪个这些那些哪些是不是有没有能不能会不会对不对好不好")

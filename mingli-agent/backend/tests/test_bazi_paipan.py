@@ -39,7 +39,7 @@ TEST_CASE_1 = {
     "birth_time": "10:30",
     "longitude": 116.4,
     "latitude": 39.9,
-    "gender": "男",
+    "gender": "male",
     "location": "北京",
 }
 
@@ -49,7 +49,7 @@ TEST_CASE_2 = {
     "birth_time": "19:35",
     "longitude": 121.5,
     "latitude": 31.2,
-    "gender": "女",
+    "gender": "female",
     "location": "上海",
 }
 

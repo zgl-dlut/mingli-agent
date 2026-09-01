@@ -154,6 +154,13 @@ async def list_eval_results(
                         "l3_quality": l3q,
                         "fabrication": fab,
                         "root_cause": md.get("root_cause"),
+                        "user_id": md.get("user_id"),
+                        "session_id": md.get("session_id"),
+                        "bazi": md.get("bazi", ""),
+                        "gender": md.get("gender", ""),
+                        "birth_date": md.get("birth_date", ""),
+                        "birth_time": md.get("birth_time", ""),
+                        "birth_location": md.get("birth_location", ""),
                     }
             except Exception:
                 pass

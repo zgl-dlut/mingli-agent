@@ -26,7 +26,7 @@ def test_dayun_direction_all_branches():
         {
             "name": "阳年男命（甲子年）",
             "birth": datetime(1984, 6, 15, 12, 0),
-            "gender": "男",
+            "gender": "male",
             "year_tian": "甲",  # 阳干
             "expected_direction": "顺",
         },
@@ -34,7 +34,7 @@ def test_dayun_direction_all_branches():
         {
             "name": "阴年女命（乙丑年）",
             "birth": datetime(1985, 7, 20, 10, 0),
-            "gender": "女",
+            "gender": "female",
             "year_tian": "乙",  # 阴干
             "expected_direction": "顺",
         },
@@ -42,7 +42,7 @@ def test_dayun_direction_all_branches():
         {
             "name": "阴年男命（乙丑年）",
             "birth": datetime(1985, 7, 20, 10, 0),
-            "gender": "男",
+            "gender": "male",
             "year_tian": "乙",  # 阴干
             "expected_direction": "逆",
         },
@@ -50,7 +50,7 @@ def test_dayun_direction_all_branches():
         {
             "name": "阳年女命（甲子年）",
             "birth": datetime(1984, 6, 15, 12, 0),
-            "gender": "女",
+            "gender": "female",
             "year_tian": "甲",  # 阳干
             "expected_direction": "逆",
         },
@@ -69,19 +69,19 @@ def test_dayun_direction_all_branches():
                 birth_date=case['birth'].strftime('%Y-%m-%d'),
                 birth_time=case['birth'].strftime('%H:%M'),
                 longitude=116.4,  # 北京
-                latitude=39.9,
+                gender=case['gender'],
             )
-            
+
             dayun_result = calculate_dayun(
                 birth_datetime=case['birth'],
-                day_tian=chart['日主'][0],
+                day_tian=chart.pillars["日"]["tian"],
                 gender=case['gender'],
-                month_tian=chart['月柱'][0],
-                month_di=chart['月柱'][1],
-                year_tian=chart['年柱'][0],
+                month_tian=chart.pillars["月"]["tian"],
+                month_di=chart.pillars["月"]["di"],
+                year_tian=chart.pillars["年"]["tian"],
             )
-            
-            direction = dayun_result[2] if len(dayun_result) > 2 else dayun_result[1]
+
+            direction = dayun_result[1]
             actual_direction = "顺" if "顺" in str(direction) else "逆"
             
             if actual_direction == case['expected_direction']:
@@ -107,21 +107,21 @@ def test_start_age_boundaries():
         {
             "name": "紧贴节气（清明前1天）",
             "birth": datetime(1990, 4, 4, 12, 0),  # 清明约4月5日
-            "gender": "男",
+            "gender": "male",
             "expected_range": (0.1, 0.5),  # 期望起运年龄很小
         },
         # 较大起运（远离节气）
         {
             "name": "远离节气（大雪后20天）",
             "birth": datetime(1990, 12, 27, 12, 0),  # 大雪约12月7日
-            "gender": "女",
+            "gender": "female",
             "expected_range": (2.0, 4.0),  # 期望起运年龄较大
         },
         # 中等起运
         {
             "name": "中等距离（立春后10天）",
             "birth": datetime(1990, 2, 14, 12, 0),  # 立春约2月4日
-            "gender": "男",
+            "gender": "male",
             "expected_range": (1.0, 3.0),
         },
     ]
@@ -136,13 +136,13 @@ def test_start_age_boundaries():
                 birth_date=case['birth'].strftime('%Y-%m-%d'),
                 birth_time=case['birth'].strftime('%H:%M'),
                 longitude=116.4,
-                latitude=39.9,
+                gender=case['gender'],
             )
-            
+
             # 确定方向
-            year_tian = chart['年柱'][0]
+            year_tian = chart.pillars["年"]["tian"]
             yang = year_tian in '甲丙戊庚壬'
-            forward = (case['gender'] == "男" and yang) or (case['gender'] == "女" and not yang)
+            forward = (case['gender'] == "male" and yang) or (case['gender'] == "female" and not yang)
             
             start_age = _calculate_start_age(case['birth'], forward)
             
@@ -173,16 +173,16 @@ def test_liunian_judgment_branches():
             birth_date='1990-11-10',
             birth_time='08:00',
             longitude=112.7,
-            latitude=37.7,
+            gender="female",
         )
-        
+
         dayun_result = calculate_dayun(
             birth_datetime=birth,
-            day_tian=chart['日主'][0],
-            gender="女",
-            month_tian=chart['月柱'][0],
-            month_di=chart['月柱'][1],
-            year_tian=chart['年柱'][0],
+            day_tian=chart.pillars["日"]["tian"],
+            gender="female",
+            month_tian=chart.pillars["月"]["tian"],
+            month_di=chart.pillars["月"]["di"],
+            year_tian=chart.pillars["年"]["tian"],
         )
         
         dayun_list = dayun_result[0]

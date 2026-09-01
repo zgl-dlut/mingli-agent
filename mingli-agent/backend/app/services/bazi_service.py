@@ -1073,6 +1073,23 @@ def _calculate_start_age(birth_datetime: datetime, forward: bool) -> float:
     return start_age
 
 
+def normalize_gender(gender: str) -> str:
+    """性别归一化为英文 male/female。
+
+    兼容历史多格式：中文"男/女"、英文 male/female、微信数字 1/2/0。
+    入口归一化层调用，保证 DB 与算法层只认英文，消除假阳性
+    （旧 bug：测试用中文"男/女"假阳性通过，生产 DB 存英文时 gender=="男" 失效导致顺逆排算反）。
+
+    无法识别的值抛 ValueError（fail-fast，暴露脏数据而非静默算反）。
+    """
+    _g = str(gender).strip().lower()
+    if _g in ("男", "male", "m", "1"):
+        return "male"
+    if _g in ("女", "female", "f", "2", "0"):
+        return "female"
+    raise ValueError(f"无法识别的性别值: {gender}，应为 male/female 或 男/女/1/2/0")
+
+
 def calculate_dayun(birth_datetime: datetime, day_tian: str, gender: str, month_tian: str, month_di: str, year_tian: str = "") -> Tuple[List[Dict], str, float]:
     """
     精确计算大运排盘。
@@ -1089,7 +1106,16 @@ def calculate_dayun(birth_datetime: datetime, day_tian: str, gender: str, month_
     # 注意：用年干阴阳，不是日主！兼容旧调用不传year_tian时回退用day_tian
     ref_tian = year_tian if year_tian else day_tian
     yang = ref_tian in TIANGAN_YANG
-    forward = (gender == "男" and yang) or (gender == "女" and not yang)
+    # gender 严格只认英文 male/female：入口归一化层（Pydantic validator）+
+    # generate_full_analysis 内部 normalize_gender 已兜底，正常不会收到中文/数字。
+    # 非法值 fail-fast 抛异常，暴露漏网入口而非静默算反（旧 bug 教训）。
+    if gender == "male":
+        is_male, is_female = True, False
+    elif gender == "female":
+        is_male, is_female = False, True
+    else:
+        raise ValueError(f"calculate_dayun 只认 male/female，收到: {gender}")
+    forward = (is_male and yang) or (is_female and not yang)
 
     # 大运方向
     direction = "顺" if forward else "逆"

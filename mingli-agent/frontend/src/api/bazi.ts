@@ -59,9 +59,9 @@ export interface AnalyzeResult {
   }
 }
 
-function normalizeGender(gender: string): '男' | '女' {
-  if (gender === 'female' || gender === '女') return '女'
-  return '男'
+function normalizeGender(gender: string): 'male' | 'female' {
+  if (gender === 'female' || gender === '女') return 'female'
+  return 'male'
 }
 
 // 调用后端分析 API（无状态，不需要认证）

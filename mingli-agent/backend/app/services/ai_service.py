@@ -301,7 +301,8 @@ async def generate_first_reading(
     birth_date = parts[0] if len(parts) > 0 else ''
     time_str = parts[1] if len(parts) > 1 else ''
 
-    # gender统一为中文
+    # gender_cn 仅用于 prompt 展示（build_commercial_prompt 给 LLM 看中文）；
+    # 喂 generate_full_analysis 用英文 gender（编排层内部 normalize 兜底转英文喂算法）
     gender_cn = "男" if gender in ("male", "男") else "女"
 
     # 重新生成完整分析数据（build_commercial_prompt需要完整analysis_data）
@@ -310,7 +311,7 @@ async def generate_first_reading(
         birth_time=time_str,
         longitude=longitude,
         latitude=latitude,
-        gender=gender_cn,
+        gender=gender,
         location=location,
     )
 
@@ -347,7 +348,8 @@ async def generate_first_reading_structured(
     from app.skills.orchestrator import generate_full_analysis
     from pydantic import ValidationError
 
-    # gender 统一为中文
+    # gender_cn 仅用于 prompt 展示（build_first_reading_structured_prompt 给 LLM 看中文）；
+    # 喂 generate_full_analysis 用英文 gender（编排层内部 normalize 兜底转英文喂算法）
     gender_cn = "男" if gender in ("male", "男") else "女"
 
     # 1. 现场重算命盘（加异常兜底，排盘失败不崩溃）
@@ -357,7 +359,7 @@ async def generate_first_reading_structured(
             birth_time=birth_time,
             longitude=longitude,
             latitude=latitude,
-            gender=gender_cn,
+            gender=gender,
             location=location,
         )
     except Exception as e:
@@ -551,6 +553,130 @@ async def generate_first_reading_structured(
         }
         yield json.dumps(error_report, ensure_ascii=False)
         return
+
+    # 6.5 大运编造检测 + 重试（复用追问链路检测器纯函数，不改 followup_structured.py，不影响追问链路）
+    # 背景：首次报告链路此前只有 LLM 网络层重试，无内容层编造检测，导致 LLM 凭记忆编造大运干支直达用户
+    try:
+        # 只 import 纯函数 _collect_report_texts（不调追问的检测器，零改 followup_structured.py）
+        from app.services.followup_structured import _collect_report_texts
+        import re as _re
+
+        def _detect_dayun_ganzhi_not_in_chart(report_data, chart_data):
+            """首次报告专用：报告中"X大运"的干支必须在命盘大运列表内（含当前大运）。
+
+            比追问的 _detect_dayun_ganzhi_mismatch 更宽松——追问版只跟"当前大运"比对，
+            会把合法的"未来大运"引用（如"2030年后进入癸巳大运"）误判成编造；
+            首次报告常推演未来大运走向，故改为校验干支是否在大运列表内，
+            既抓编造（列表外干支，如列表是丙戌却写壬辰）又不误伤未来大运。
+            """
+            valid = set()
+            cur = chart_data.get("当前大运", "")
+            if cur:
+                cg = cur.split()[0] if " " in cur else cur
+                if len(cg) == 2:
+                    valid.add(cg)
+            for d in chart_data.get("大运列表", []) or []:
+                if isinstance(d, dict) and d.get("ganzhi"):
+                    valid.add(d["ganzhi"])
+            if not valid:
+                return []
+            pat = _re.compile(r'([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])大运')
+            res = []
+            for path, text, _ctx in _collect_report_texts(report_data):
+                if not text:
+                    continue
+                for m in pat.finditer(text):
+                    g = m.group(1)
+                    if g not in valid:
+                        snip = text[max(0, m.start() - 10):m.end() + 20].replace("\n", "")
+                        res.append(
+                            f"{path}: 大运干支编造——'{g}大运'不在命盘大运列表内"
+                            f"(合法大运: {sorted(valid)})，原文:...{snip}..."
+                        )
+            return res
+
+        dayun_violations = _detect_dayun_ganzhi_not_in_chart(data, analysis_data)
+        if dayun_violations:
+            logger.warning(
+                f"[StructuredFirstReading] 大运编造检测命中{len(dayun_violations)}项，启动重试: "
+                f"{[v[:120] for v in dayun_violations]}"
+            )
+            current_dayun = analysis_data.get("当前大运", "")
+            dayun_list = analysis_data.get("大运列表", [])
+            retry_hint = (
+                "上一次生成的报告存在大运干支编造，必须严格按排盘数据重写，"
+                "禁止凭记忆编造大运干支。\n\n"
+                f"【排盘真实数据·大运干支必须取自此处】\n"
+                f"当前大运：{current_dayun}\n"
+                f"大运列表（只能引用其中的干支）：{dayun_list}\n\n"
+                "【检测到的违规】\n"
+                + "\n".join(f"- {v}" for v in dayun_violations)
+                + "\n\n请基于上述真实数据重新生成完整报告，确保文中所有“X大运”的干支"
+                "均取自大运列表，不得自行推断或臆造列表外的干支。"
+            )
+            _DAYUN_MAX_RETRY = 2
+            for attempt in range(1, _DAYUN_MAX_RETRY + 1):
+                try:
+                    retry_resp = await client.chat.completions.create(
+                        model=model_config.name,
+                        messages=build_cache_control_messages(
+                            system_prompt, messages + [{"role": "user", "content": retry_hint}]
+                        ),
+                        temperature=0.2,
+                        max_tokens=8000,
+                        response_format={"type": "json_object"},
+                        timeout=300,
+                        extra_body=build_llm_extra_body(model_config.name),
+                    )
+                    if retry_resp.choices:
+                        retry_raw = retry_resp.choices[0].message.content or ""
+                    else:
+                        retry_raw = getattr(retry_resp, "text", None) or ""
+                    if not retry_raw:
+                        logger.error(f"[StructuredFirstReading] 大运重试第{attempt}次返回空响应，终止")
+                        break
+                    try:
+                        retry_data = json.loads(retry_raw)
+                    except json.JSONDecodeError:
+                        retry_data = json.loads(_extract_and_fix_json(retry_raw))
+                    _normalize_report_data(retry_data)
+                    new_v = _detect_dayun_ganzhi_not_in_chart(retry_data, analysis_data)
+                    if not new_v:
+                        try:
+                            FollowupReport.model_validate(retry_data)
+                            data = retry_data
+                            logger.info(
+                                f"[StructuredFirstReading] 大运重试第{attempt}次成功，原违规已清除"
+                            )
+                            break
+                        except ValidationError:
+                            logger.error(
+                                f"[StructuredFirstReading] 大运重试第{attempt}次无大运违规但Pydantic校验失败"
+                            )
+                    else:
+                        logger.error(
+                            f"[StructuredFirstReading] 大运重试第{attempt}次仍违规{len(new_v)}项: "
+                            f"{[v[:100] for v in new_v]}"
+                        )
+                        # 降级采用最新重试结果（比首次更接近正确），继续下次重试
+                        try:
+                            FollowupReport.model_validate(retry_data)
+                            data = retry_data
+                        except ValidationError:
+                            pass
+                except Exception as e:
+                    logger.error(
+                        f"[StructuredFirstReading] 大运重试第{attempt}次异常: {type(e).__name__}: {str(e)[:200]}"
+                    )
+                    break
+            else:
+                logger.error(
+                    f"[StructuredFirstReading] 大运重试{_DAYUN_MAX_RETRY}次后仍编造，降级返回最新结果(已告警)"
+                )
+        else:
+            logger.info("[StructuredFirstReading] 大运编造检测通过，无违规")
+    except Exception as dayun_e:
+        logger.error(f"[StructuredFirstReading] 大运编造检测异常(不阻断): {type(dayun_e).__name__}: {dayun_e}")
 
     # 7. 命盘指纹审计（事后核对 LLM 输出是否与命盘一致，不强制拦截）
     logger.info(

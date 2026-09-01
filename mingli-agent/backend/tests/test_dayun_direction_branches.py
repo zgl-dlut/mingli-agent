@@ -61,7 +61,7 @@ test_cases = [
         "id": "branch_01",
         "description": "阳年男命-顺排-甲子年(1984)-立春后",
         "year": 1984, "month": 2, "day": 10, "hour": 8, "minute": 0,
-        "gender": "男",
+        "gender": "male",
         "expected_direction": "顺",
         "expected_rule": "阳年男命→顺排",
         "year_tg": "甲",  # 阳干
@@ -71,7 +71,7 @@ test_cases = [
         "id": "branch_02",
         "description": "阴年女命-顺排-乙丑年(1985)-清明后",
         "year": 1985, "month": 4, "day": 10, "hour": 12, "minute": 0,
-        "gender": "女",
+        "gender": "female",
         "expected_direction": "顺",
         "expected_rule": "阴年女命→顺排",
         "year_tg": "乙",  # 阴干
@@ -81,7 +81,7 @@ test_cases = [
         "id": "branch_03",
         "description": "阴年男命-逆排-乙丑年(1985)-芒种后",
         "year": 1985, "month": 6, "day": 10, "hour": 6, "minute": 0,
-        "gender": "男",
+        "gender": "male",
         "expected_direction": "逆",
         "expected_rule": "阴年男命→逆排",
         "year_tg": "乙",  # 阴干
@@ -91,7 +91,7 @@ test_cases = [
         "id": "branch_04",
         "description": "阳年女命-逆排-庚午年(1990)-立冬后(已有chart_001)",
         "year": 1990, "month": 11, "day": 10, "hour": 8, "minute": 0,
-        "gender": "女",
+        "gender": "female",
         "expected_direction": "逆",
         "expected_rule": "阳年女命→逆排",
         "year_tg": "庚",  # 阳干
@@ -101,7 +101,7 @@ test_cases = [
         "id": "branch_05",
         "description": "极端-紧贴节气-壬申年(1992)男-清明前1天",
         "year": 1992, "month": 4, "day": 3, "hour": 20, "minute": 0,
-        "gender": "男",
+        "gender": "male",
         "expected_direction": "顺",
         "expected_rule": "阳年男命→顺排",
         "year_tg": "壬",  # 阳干
@@ -111,7 +111,7 @@ test_cases = [
         "id": "branch_06",
         "description": "极端-远离节气-癸酉年(1993)女-大雪后20天",
         "year": 1993, "month": 12, "day": 27, "hour": 10, "minute": 0,
-        "gender": "女",
+        "gender": "female",
         "expected_direction": "顺",
         "expected_rule": "阴年女命→顺排",
         "year_tg": "癸",  # 阴干

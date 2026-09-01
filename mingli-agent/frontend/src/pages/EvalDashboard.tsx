@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import MetricCard from '../components/MetricCard'
 import VersionSelector from '../components/VersionSelector'
 import EvalMethodology from '../components/EvalMethodology'
+import { genderToText, genderIcon } from '../utils/gender'
 
 const formatTime = (iso: string) => {
   const normalized = /Z|[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + 'Z'
@@ -314,6 +315,13 @@ export default function EvalDashboard() {
           llm_soft_details: null,
           fabrication: ms.fabrication || null,
           root_cause: ms.root_cause || null,
+          user_id: ms.user_id,
+          session_id: ms.session_id,
+          bazi: ms.bazi || '',
+          gender: ms.gender || '',
+          birth_date: ms.birth_date || '',
+          birth_time: ms.birth_time || '',
+          birth_location: ms.birth_location || '',
         }
       })
       setProductionItems(enriched)
@@ -1127,6 +1135,36 @@ export default function EvalDashboard() {
                             )}
                           </div>
                         </div>
+
+                        {/* 用户 & 命盘标识 */}
+                        {(item.user_id || item.bazi) && (
+                          <div className="text-xs text-gray-500 mb-2 flex flex-wrap items-center gap-3">
+                            {item.user_id !== undefined && (
+                              <span>👤 用户 <strong className="text-gray-700">#{item.user_id}</strong></span>
+                            )}
+                            {item.gender && (
+                              <span>
+                                {genderIcon(item.gender)}
+                                <strong className="text-gray-700">{genderToText(item.gender)}</strong>
+                              </span>
+                            )}
+                            {(item.birth_date || item.birth_time) && (
+                              <span>
+                                📅 <strong className="text-gray-700">
+                                  {item.birth_date}{item.birth_time ? ` ${item.birth_time}` : ''}
+                                </strong>
+                              </span>
+                            )}
+                            {item.birth_location && (
+                              <span>📍 <strong className="text-gray-700">{item.birth_location}</strong></span>
+                            )}
+                            {item.bazi && (
+                              <span>
+                                🀄 八字 <strong className="text-amber-700 font-mono tracking-wider">{item.bazi}</strong>
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         {/* 用户问题 */}
                         <div className="text-sm text-gray-700 mb-2 bg-blue-50 border border-blue-100 rounded px-3 py-2">

@@ -222,7 +222,7 @@ def generate_full_analysis(
         birth_time: 出生时间，格式 "08:00"
         longitude: 经度，如 116.4
         latitude: 纬度，如 39.9
-        gender: 性别，"男" 或 "女"
+        gender: 性别，"male" 或 "female"（编排层内部会 normalize_gender 兜底，兼容中文/数字）
         location: 出生地，如 "北京"
 
     Returns:
@@ -235,6 +235,7 @@ def generate_full_analysis(
         DIZHI_CANGGAN,
         TIANGAN_WUXING,
         get_zodiac,
+        normalize_gender,
     )
     from app.skills.divination.dizhi_relation_skill import analyze_dizhi_relations
     from app.skills.divination.wangshuai_skill import calculate_wangshuai
@@ -246,6 +247,9 @@ def generate_full_analysis(
     # ================================================================
     # 1. 基础八字排盘（根，失败则向上抛出带上下文的异常，由调用方降级）
     # ================================================================
+    # gender 防御归一化：编排层单点兜底，外部调用方传中文/数字也转英文喂算法
+    # （calculate_dayun 严格只认 male/female，非法值 fail-fast 抛异常）
+    gender = normalize_gender(gender)
     try:
         bazi = calculate_bazi(birth_date, birth_time, longitude, gender)
     except Exception as e:

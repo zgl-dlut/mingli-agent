@@ -138,6 +138,17 @@ export interface EvalResultDetail extends EvalResultItem {
   detail: EvalCaseDetail[]
 }
 
+export interface UserPointsItem {
+  user_id: number
+  name: string
+  phone: string
+  bonus_total: number
+  recharge_total: number
+  consumed_total: number
+  balance: number
+  created_at: string
+}
+
 export interface FailureAnalysis {
   total_reports: number
   llm_evaluated: number
@@ -238,6 +249,13 @@ export const adminApi = {
     status?: string
     user_id?: number
   }) => apiClient.get<{ total: number; items: OrderItem[] }>('/admin/orders', { params }),
+
+  /** 用户积分总览：注册赠送 / 自主充值 / 累计消耗 / 当前余额 */
+  usersPoints: (params: {
+    offset?: number
+    limit?: number
+    search?: string
+  }) => apiClient.get<{ total: number; items: UserPointsItem[] }>('/admin/users-points', { params }),
 
   /** 评测结果列表 */
   evalResults: (params?: {

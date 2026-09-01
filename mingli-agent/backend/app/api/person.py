@@ -2,7 +2,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +11,7 @@ from app.core.exceptions import PermissionDenied, ResourceNotFound
 from app.db.session import get_db
 from app.models.person import Person
 from app.models.user import User
-from app.services.bazi_service import calculate_bazi
+from app.services.bazi_service import calculate_bazi, normalize_gender
 from app.services.astrology_service import calculate_astrology
 from app.services.payment_service import deduct_points
 
@@ -33,6 +33,12 @@ class PersonRequest(BaseModel):
     calendar_type: str = 'solar'
     province: str = ''
     city: str = ''
+
+    @field_validator("gender")
+    @classmethod
+    def _normalize_gender(cls, v: str) -> str:
+        """性别归一化为英文 male/female，兼容中文/数字，保证 DB 存英文"""
+        return normalize_gender(v)
 
 
 class PersonResponse(BaseModel):

@@ -18,6 +18,7 @@ import EvalDetailPage from './pages/EvalDetailPage'
 import PromptReviewPage from './pages/PromptReviewPage'
 import PromptVersionPage from './pages/PromptVersionPage'
 import AdminRechargePage from './pages/AdminRechargePage'
+import AdminUsersPage from './pages/AdminUsersPage'
 import AdminLoginPage from './pages/AdminLoginPage'
 
 /** OAuth 回调处理器：从 URL 中提取 token 并登录 */
@@ -80,6 +81,7 @@ const router = createBrowserRouter([
     ),
     children: [
       { path: 'usage', element: <UsageDashboard /> },
+      { path: 'users', element: <AdminUsersPage /> },
       { path: 'orders', element: <OrdersDashboard /> },
       { path: 'eval', element: <EvalDashboard /> },
       { path: 'eval-test', element: <EvalDashboardTest /> },

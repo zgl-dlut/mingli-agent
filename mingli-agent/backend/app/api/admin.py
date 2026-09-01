@@ -8,12 +8,13 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BusinessError
 from app.db.session import get_db
 from app.models.order import Order
+from app.models.transaction import Transaction
 from app.models.usage_log import AiUsageLog
 from app.models.user import User
 from app.services import payment_service
@@ -127,6 +128,70 @@ async def list_orders(
                 "paid_at": o.paid_at.isoformat() if o.paid_at else None,
             }
             for o, name in rows
+        ],
+    }
+
+
+@router.get("/users-points")
+async def list_users_points(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
+    search: Optional[str] = None,
+):
+    """用户积分总览：注册赠送 / 自主充值 / 累计消耗 / 当前余额
+
+    口径说明：
+    - 注册赠送：type='bonus' 的全部流水（新用户赠送240 + 白名单赠送）
+    - 已充值：type='recharge' 且 biz_type='recharge'（用户自己付费，排除管理员充值 admin_recharge）
+    - 已消耗：type='consume' 的全部流水（首次报告 + 追问）
+    - 余额：users.points 实时值
+    """
+    # 搜索条件：手机号或用户名模糊匹配
+    conditions = []
+    if search:
+        keyword = f"%{search.strip()}%"
+        conditions.append(or_(User.phone.like(keyword), User.name.like(keyword)))
+
+    total = (
+        await db.execute(select(func.count()).select_from(User).where(*conditions))
+    ).scalar() or 0
+
+    bonus_sum = func.sum(case((Transaction.type == "bonus", Transaction.points), else_=0))
+    recharge_sum = func.sum(
+        case(
+            ((Transaction.type == "recharge") & (Transaction.biz_type == "recharge"), Transaction.points),
+            else_=0,
+        )
+    )
+    consumed_sum = func.sum(case((Transaction.type == "consume", Transaction.points), else_=0))
+
+    rows = (
+        await db.execute(
+            select(User, bonus_sum, recharge_sum, consumed_sum)
+            .join(Transaction, Transaction.user_id == User.id, isouter=True)
+            .where(*conditions)
+            .group_by(User.id)
+            .order_by(User.created_at.desc(), User.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+
+    return {
+        "total": total,
+        "items": [
+            {
+                "user_id": user.id,
+                "name": user.name,
+                "phone": user.phone,
+                "bonus_total": int(bonus or 0),
+                "recharge_total": int(recharge or 0),
+                "consumed_total": int(consumed or 0),
+                "balance": user.points,
+                "created_at": user.created_at.isoformat(),
+            }
+            for user, bonus, recharge, consumed in rows
         ],
     }
 

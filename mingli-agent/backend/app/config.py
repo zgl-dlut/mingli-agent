@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     BONUS_PHONE_LIST: str = ""
     BONUS_POINTS: int = 1000
 
+    # 新注册用户自动赠送积分（默认240 = 1次报告160 + 2次追问40×2）
+    NEW_USER_BONUS_POINTS: int = 240
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
@@ -65,4 +68,7 @@ settings = Settings()
 #              大运兜底(大运列表按当前年提取) + 跨月时间段定性检测 +
 #              编造边界调整：评测prompt区分演绎vs编造、代码层移除团队画像关键词(交评测LLM判依据链)、生成端鼓励现实演绎 +
 #              评测命盘数据源修复：评测端用生成端重建的完整analysis_data(含大运列表+当前大运)做基准，不再用person旧版命盘(无大运列表)→消除大运等数据不一致误判
-PROMPT_VERSION = "v2026.09.01-3"
+#              首次报告链路接入大运编造检测+重试(复用追问链路_detect_dayun_ganzhi_mismatch/_detect_dayun_period_mismatch纯函数，不改followup_structured.py)，此前首次报告无内容层检测导致大运编造直达用户
+#              bazi_service大运方向gender兼容中英文(修DB存male/female致阴年女/阳年男应顺排被算成逆排，已重算29个命盘) + _extract_question_years补相对年份词识别(今年/明年/去年等→当前年偏移，修"今年"流月明细不注入致LLM编造流月，#155根因)
+#              评测端structure_checker:首次报告跳过"标题未贴合用户原话"检测(首次报告用户仅输入生辰无具体问题、subtopic标题固定；追问保留该校验)+llm_scorer传is_first_reading
+PROMPT_VERSION = "v2026.09.01-6"

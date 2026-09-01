@@ -42,7 +42,7 @@ async def evaluate_report(
     from app.services.eval.narrative_checker import check_narrative
     from app.services.eval.chart_usage_checker import check_chart_usage
 
-    structure_violations = check_structure(report, user_question)
+    structure_violations = check_structure(report, user_question, is_first_reading)
     narrative_violations = check_narrative(report, is_first_reading)
     chart_usage_violations = check_chart_usage(report, chart_data)
 
