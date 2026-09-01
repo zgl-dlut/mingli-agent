@@ -1610,6 +1610,13 @@ def _detect_fabricated_life_details(data: dict) -> list:
         (r'涨(?:薪|幅)[^。；，]{0,8}\d+\s*%', "涨幅百分比"),
         # 公司规模/管理风格：命盘绝无（实测：AI每轮按喜用神联想出相同画像"扁平化管理、话语权大、中小团队"）
         (r'(?:扁平化管理|扁平化团队|话语权|中小团队|小型团队|中型团队|大厂螺丝钉|成长型团队|创业团队|管理风格|汇报扁平)', "公司规模/管理风格画像"),
+        # 量化断语：命盘只给吉凶/十神/冲合，绝无offer集中、转化率、匹配度等量化指标
+        # 实测：109报告"6月10月是offer集中落地窗口，面试转化率和岗位匹配度最高"
+        (r'offer\s*集中', "offer集中断语"),
+        (r'(?:面试)?转化率', "转化率/通过率断语"),
+        (r'通过率', "转化率/通过率断语"),
+        (r'(?:岗位)?匹配度', "岗位匹配度断语"),
+        (r'成功率', "成功率断语"),
     ]
     texts = _collect_report_texts(data)
     for path, text, _ctx in texts:
@@ -1628,6 +1635,53 @@ def _detect_fabricated_life_details(data: dict) -> list:
         logger.info(f"[StructuredFollowup][命盘外细节编造检测] 违规={len(violations)}项")
         for v in violations[:5]:
             logger.info(f"  [命盘外细节编造] {v}")
+    return violations
+
+
+# ===== 跨月时间段定性检测 =====
+
+def _detect_cross_month_period(data: dict) -> list:
+    """跨月时间段定性检测：禁止给"3-5月人脉激活期""8-9月二次冲刺期"等跨月行动分期。
+
+    memory约束：禁止指定跨月时间段或更细粒度时间建议。
+    实测：109报告把多个月打包成行动分期标签——命盘仅提供单月吉凶，跨月分期属编造。
+    误伤控制：只抓"跨月范围+行动分期词"组合；单月建议（"6月适合投递"）合法不抓；
+    "3-5月期间/试用期"等纯时间描述不抓（分期词用双字明确词，不含单字"期"）。
+    """
+    violations = []
+    # 行动分期词：明确的双字标签，避免误伤"期间/试用期/期待"
+    period_labels = ("激活期", "冲刺期", "准备期", "蓄力期", "回温期", "发力期",
+                     "黄金期", "关键期", "落地期", "回暖期", "回升期", "缓步期",
+                     "窗口", "阶段", "冲刺", "激活", "蓄力", "回温", "发力", "黄金")
+    # 跨月范围：3-5月、3至5月、3到5月、3—5月（\d{1,2}不匹配4位年份，安全）
+    CROSS_MONTH = re.compile(r'(\d{1,2})\s*[-—～至到到-]\s*(\d{1,2})\s*月')
+
+    texts = _collect_report_texts(data)
+    for path, text, _ctx in texts:
+        if not text:
+            continue
+        for m in CROSS_MONTH.finditer(text):
+            try:
+                a, b = int(m.group(1)), int(m.group(2))
+            except ValueError:
+                continue
+            if not (1 <= a <= 12 and 1 <= b <= 12):
+                continue
+            # 跨月后15字窗口找行动分期词
+            post = text[m.end(): m.end() + 15]
+            hit = [w for w in period_labels if w in post]
+            if hit:
+                snippet = text[max(0, m.start() - 8): m.end() + 15].replace("\n", "")
+                violations.append(
+                    f"{path}: 跨月时间段定性——'{a}-{b}月'搭配'{hit[0]}'构成行动分期"
+                    f"(原文:...{snippet}...)。命盘仅提供单月吉凶，"
+                    f"禁止把多个月打包成'XX期/XX窗口'等跨月行动分期，应逐月给建议"
+                )
+                break  # 每个文本只报一次，避免刷屏
+    if violations:
+        logger.info(f"[StructuredFollowup][跨月时间段定性检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [跨月时间段] {v}")
     return violations
 
 
@@ -2262,6 +2316,17 @@ def _detect_dayun_ganzhi_mismatch(data: dict, analysis_data: dict) -> list:
 
     # 提取当前大运干支
     current_dayun = analysis_data.get("当前大运", "")
+    # 兜底：当前大运为空时（未起运或字段缺失），从大运列表按当前年份提取
+    if not current_dayun:
+        import datetime as _dt
+        _cur_year = _dt.datetime.now().year
+        for d in (analysis_data.get("大运列表", []) or []):
+            if isinstance(d, dict):
+                _sy = d.get("start_year", 0) or 0
+                _ey = d.get("end_year", 9999) or 9999
+                if _sy <= _cur_year <= _ey and d.get("ganzhi"):
+                    current_dayun = f"{d['ganzhi']} {_sy}-{_ey}"
+                    break
     if not current_dayun:
         return violations
 
@@ -2270,45 +2335,24 @@ def _detect_dayun_ganzhi_mismatch(data: dict, analysis_data: dict) -> list:
     if not dayun_ganzhi or len(dayun_ganzhi) != 2:
         return violations
 
-    # 匹配"X大运"的模式（X为两个汉字）
+    # 匹配"X大运"的模式（X为两个汉字干支）
     DAYUN_PATTERN = r'([甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥])大运'
 
-    def check_narrative(text: str, location: str):
-        """检查 narrative 中大运干支是否正确"""
+    # 用 _collect_report_texts 覆盖全部文本字段（narrative/keyword/verdict/lead/items等）
+    texts = _collect_report_texts(data)
+    for path, text, _ctx in texts:
         if not text:
-            return
-
-        matches = re.finditer(DAYUN_PATTERN, text)
-        for match in matches:
+            continue
+        for match in re.finditer(DAYUN_PATTERN, text):
             mentioned_ganzhi = match.group(1)
-
-            # 检查是否与传入数据一致
             if mentioned_ganzhi != dayun_ganzhi:
+                snippet = text[max(0, match.start() - 10): match.end() + 20].replace("\n", "")
                 violations.append(
-                    f"{location}: 大运干支错误——报告中写'{mentioned_ganzhi}大运'，"
+                    f"{path}: 大运干支错误——报告中写'{mentioned_ganzhi}大运'，"
                     f"但实际传入数据是'{dayun_ganzhi}大运'。"
-                    f"禁止编造大运干支，必须使用传入的真实数据"
+                    f"禁止编造大运干支，必须使用传入的真实数据(原文:...{snippet}...)"
                 )
 
-    # 检查所有 narrative 文本
-    for i, sub in enumerate(data.get("subtopics") or []):
-        if not isinstance(sub, dict):
-            continue
-        for j, b in enumerate(sub.get("blocks") or []):
-            if isinstance(b, dict):
-                check_narrative(b.get("narrative", ""), f"subtopic[{i}].block[{j}]")
-
-    # 检查 summary items
-    summary = data.get("summary") or {}
-    for j, item in enumerate(summary.get("items") or []):
-        if isinstance(item, dict):
-            check_narrative(item.get("text", ""), f"summary.items[{j}]")
-
-    # 检查 opening.verdict
-    opening = data.get("opening") or {}
-    verdict = opening.get("verdict", "")
-    if verdict:
-        check_narrative(verdict, "opening.verdict")
 
     if violations:
         logger.info(f"[StructuredFollowup][大运干支错误检测] 违规={len(violations)}项")
@@ -3404,6 +3448,7 @@ async def generate_followup_structured(
     llm_violations = _detect_llm_contradiction(data)
     liuyue_falsify_violations = _detect_liuyue_jixiong_falsify(data, liuyue_data)
     fabricated_details_violations = _detect_fabricated_life_details(data)
+    cross_month_violations = _detect_cross_month_period(data)
     all_violations = (action_violations + label_violations + favored_discouraged_violations
                       + yongshen_conflict_violations + forbidden_term_violations + ganzhi_time_violations
                       + synonym_violations + dimension_violations + summary_dup_violations
@@ -3411,7 +3456,8 @@ async def generate_followup_structured(
                       + dayun_ganzhi_mismatch_violations + liunian_ganzhi_mismatch_violations + yongshen_wuxing_mismatch_violations
                       + conclusion_no_basis_violations + jixiong_mismatch_violations + wangshuai_mismatch_violations
                       + dayun_period_mismatch_violations + llm_violations
-                      + liuyue_falsify_violations + fabricated_details_violations)
+                      + liuyue_falsify_violations + fabricated_details_violations
+                      + cross_month_violations)
     logger.info(
         f"[StructuredFollowup][命理逻辑检查] 凶年={unfavored_years}, 吉年={favored_years}, 用神={yongshen}, "
         f"启动类违规={len(action_violations)}项, 标签颠倒违规={len(label_violations)}项, "
@@ -3461,6 +3507,7 @@ async def generate_followup_structured(
             v_llm = _detect_llm_contradiction(d)
             v_liuyue_falsify = _detect_liuyue_jixiong_falsify(d, liuyue_data)
             v_fab_details = _detect_fabricated_life_details(d)
+            v_cross_month = _detect_cross_month_period(d)
             return {
                 "action": v_action, "label": v_label, "favored": v_favored,
                 "yongshen": v_yongshen, "terms": v_terms, "ganzhi": v_ganzhi,
@@ -3474,7 +3521,8 @@ async def generate_followup_structured(
                 "jixiong": v_jixiong, "wangshuai": v_wangshuai, "dayun_period": v_dayun_period,
                 "llm": v_llm,
                 "liuyue_falsify": v_liuyue_falsify, "fab_details": v_fab_details,
-                "all": v_action + v_label + v_favored + v_yongshen + v_terms + v_ganzhi + v_synonym + v_dimension + v_summary_dup + v_past_month + v_month_basis + v_liuyue_ganzhi_mismatch + v_dayun_ganzhi_mismatch + v_liunian_ganzhi_mismatch + v_yongshen_wuxing_mismatch + v_conclusion_basis + v_jixiong + v_wangshuai + v_dayun_period + v_llm + v_liuyue_falsify + v_fab_details,
+                "cross_month": v_cross_month,
+                "all": v_action + v_label + v_favored + v_yongshen + v_terms + v_ganzhi + v_synonym + v_dimension + v_summary_dup + v_past_month + v_month_basis + v_liuyue_ganzhi_mismatch + v_dayun_ganzhi_mismatch + v_liunian_ganzhi_mismatch + v_yongshen_wuxing_mismatch + v_conclusion_basis + v_jixiong + v_wangshuai + v_dayun_period + v_llm + v_liuyue_falsify + v_fab_details + v_cross_month,
             }
 
         # 基于当前违规字典动态拼装修正提示（每次重试按最新违规类型给提示，更精准）
@@ -3591,9 +3639,17 @@ async def generate_followup_structured(
                 )
             if v["fab_details"]:
                 parts.append(
-                    f"出现了命盘外细节编造——薪资倍数（如1.3倍）、融资轮次（如B轮）、涨幅百分比等命盘永远不会提供的信息。"
-                    f"这类现实细节命盘数据不可能包含，属于纯编造。修正时删除全部具体数字/公司画像/议价策略，"
+                    f"出现了命盘外细节编造——薪资倍数（如1.3倍）、融资轮次（如B轮）、涨幅百分比、offer集中、"
+                    f"转化率/通过率、岗位匹配度等命盘永远不会提供的量化信息。"
+                    f"这类现实细节命盘数据不可能包含，属于纯编造。修正时删除全部具体数字/公司画像/议价策略/量化指标，"
                     f"只能基于命盘吉凶+十神关系给原则性方向（如'伤官月利于主动谈条件'），细节让用户自己结合实际判断。"
+                )
+            if v["cross_month"]:
+                parts.append(
+                    f"出现了跨月时间段定性——把多个月打包成'3-5月XX期''8-9月XX冲刺期'等行动分期标签。"
+                    f"命盘仅提供单月吉凶（如6月吉/7月平），不提供跨月行动分期。"
+                    f"修正时拆掉所有'X-Y月+期/窗口/阶段'的跨月分期，改为逐月给单月建议："
+                    f"哪个月吉就说哪个月适合行动（并附该月流月干支+十神依据），禁止把多个月打包成一个分期标签。"
                 )
             if v["liuyue_ganzhi_mismatch"]:
                 # 构建正确的流月干支映射提示
@@ -3617,6 +3673,16 @@ async def generate_followup_structured(
                 )
             if v["dayun_ganzhi_mismatch"]:
                 current_dayun = analysis_data.get("当前大运", "")
+                # 兜底：当前大运为空时从大运列表按当前年份提取（与检测器逻辑一致）
+                if not current_dayun:
+                    _cur_y = datetime.now().year
+                    for d in (analysis_data.get("大运列表", []) or []):
+                        if isinstance(d, dict):
+                            _sy = d.get("start_year", 0) or 0
+                            _ey = d.get("end_year", 9999) or 9999
+                            if _sy <= _cur_y <= _ey and d.get("ganzhi"):
+                                current_dayun = f"{d['ganzhi']} {_sy}-{_ey}"
+                                break
                 parts.append(
                     f"出现了大运干支错误——报告中提到的大运干支与传入的命盘数据不一致。"
                     f"【命盘结果优先】必须使用传入的真实大运干支，禁止编造大运干支。"
@@ -3704,6 +3770,7 @@ async def generate_followup_structured(
             "llm": llm_violations,
             "liuyue_falsify": liuyue_falsify_violations,
             "fab_details": fabricated_details_violations,
+            "cross_month": cross_month_violations,
             "all": all_violations,
         }
         max_retries = 2  # 重试次数从1次提升到2次，给LLM更多修正机会
