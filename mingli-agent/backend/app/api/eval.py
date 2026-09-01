@@ -68,6 +68,8 @@ async def list_eval_results(
     limit: int = Query(20, ge=1, le=200),
     dataset_id: Optional[str] = None,
     eval_type: Optional[str] = Query(None, description="评测类型筛选: report_quality/chart_accuracy/badcase_eval/production_monitor"),
+    date_from: Optional[str] = Query(None, description="起始日期 YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD"),
 ):
     """评测结果列表"""
     conditions = []
@@ -75,6 +77,11 @@ async def list_eval_results(
         conditions.append(EvalResult.dataset_id == dataset_id)
     if eval_type:
         conditions.append(EvalResult.eval_type == eval_type)
+    if date_from:
+        conditions.append(EvalResult.created_at >= date_from)
+    if date_to:
+        # 含结束日当天，加到 23:59:59
+        conditions.append(EvalResult.created_at <= f"{date_to} 23:59:59")
 
     total = (
         await db.execute(select(func.count()).select_from(EvalResult).where(*conditions))
@@ -100,8 +107,8 @@ async def list_eval_results(
             detail = json.loads(r.detail) if r.detail else []
             match_count = sum(1 for case in detail if case.get("match", False))
             match_rate = match_count / len(detail) if detail else 0
-        
-        items.append({
+
+        item = {
             "id": r.id,
             "dataset_id": r.dataset_id,
             "eval_type": r.eval_type or "report_quality",  # 默认类型
@@ -117,7 +124,41 @@ async def list_eval_results(
             "soft_score": r.soft_score,
             "violation_distribution": r.violation_distribution,
             "created_at": r.created_at.isoformat(),
-        })
+        }
+
+        # 生产监控类型：从detail提取概要返回，前端列表直接展示，不再发N+1详情请求
+        # 概要只含指标/编造汇总（小），完整report/违规明细数组由前端按需调详情接口
+        if r.eval_type == "production_monitor" and r.detail:
+            try:
+                d = json.loads(r.detail)
+                md = d[0] if isinstance(d, list) else d
+                if isinstance(md, dict):
+                    er = md.get("eval_result") or {}
+                    fab = er.get("fabrication") or {}
+                    l2 = er.get("l2_format") or {}
+                    l3q = er.get("l3_quality") or {}
+                    item["monitor_summary"] = {
+                        "trigger_reason": md.get("trigger_reason", "-"),
+                        "is_first_report": md.get("is_first_report", False),
+                        "generation_time": md.get("generation_time", 0),
+                        "word_count": md.get("word_count", 0),
+                        "block_count": md.get("block_count", 0),
+                        "prompt_version": md.get("prompt_version", ""),
+                        "question_preview": (md.get("question_preview") or "")[:60],
+                        "eval_passed": er.get("passed"),
+                        "avg_soft_score": er.get("avg_soft_score") or er.get("llm_soft_score"),
+                        "hard_violations": er.get("hard_violations") or l3q.get("total_violations") or 0,
+                        "skip_reason": er.get("skip_reason", ""),
+                        "eval_error": er.get("error", ""),
+                        "l2_format": l2,
+                        "l3_quality": l3q,
+                        "fabrication": fab,
+                        "root_cause": md.get("root_cause"),
+                    }
+            except Exception:
+                pass
+
+        items.append(item)
 
     return {
         "total": total,

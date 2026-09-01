@@ -83,6 +83,12 @@ export default function EvalDashboard() {
   })
 
   // 归因标注和导出状态
+  const [productionPage, setProductionPage] = useState(0)
+  const [productionPageSize] = useState(20)
+  const [productionTotal, setProductionTotal] = useState(0)
+  const [productionDateFrom, setProductionDateFrom] = useState('')
+  const [productionDateTo, setProductionDateTo] = useState('')
+  const [expandedDetail, setExpandedDetail] = useState<Record<number, { data?: any; loading?: boolean }>>({})
   const [rootCauseModal, setRootCauseModal] = useState<{ open: boolean; itemId: number | null }>({ open: false, itemId: null })
   const [rootCauseForm, setRootCauseForm] = useState({
     category: '' as 'prompt_issue' | 'code_bug' | 'rule_too_strict' | 'edge_case' | '',
@@ -244,60 +250,77 @@ export default function EvalDashboard() {
   }, [])
 
   // ─── 加载生产监控数据 ───
-  const loadProduction = useCallback(async () => {
+  // 按需加载单条详情（完整report/违规明细/LLM评分），展开查看详情时才调
+  const loadDetail = useCallback(async (itemId: number) => {
+    if (expandedDetail[itemId]?.data || expandedDetail[itemId]?.loading) return
+    setExpandedDetail(prev => ({ ...prev, [itemId]: { loading: true } }))
+    try {
+      const { data } = await adminApi.evalResultDetail(itemId)
+      const monitorDetail: any = data?.detail?.[0] || {}
+      const evalResult: any = monitorDetail.eval_result || {}
+      setExpandedDetail(prev => ({
+        ...prev,
+        [itemId]: {
+          loading: false,
+          data: {
+            report: monitorDetail.report || null,
+            eval_violations: evalResult.violations || evalResult.l2_format?.violations || [],
+            llm_soft_details: evalResult.llm_soft_details || null,
+            layer_reviews: monitorDetail.layer_reviews || null,
+            response_preview: monitorDetail.response_preview || '',
+          },
+        },
+      }))
+    } catch {
+      setExpandedDetail(prev => ({ ...prev, [itemId]: { loading: false } }))
+    }
+  }, [expandedDetail])
+
+  const loadProduction = useCallback(async (page = productionPage, dateFrom = productionDateFrom, dateTo = productionDateTo) => {
     setProductionLoading(true)
     setProductionError(null)
     try {
-      const { data } = await adminApi.evalResults({ offset: 0, limit: 100, eval_type: 'production_monitor' })
+      const { data } = await adminApi.evalResults({
+        offset: page * productionPageSize,
+        limit: productionPageSize,
+        eval_type: 'production_monitor',
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+      } as any)
       const items = data?.items || []
-      // 加载每条的详情（包含 LLM 评分）
-      const detailPromises = items.map(item => adminApi.evalResultDetail(item.id).catch(() => null))
-      const detailResults = await Promise.all(detailPromises)
-
-      const enriched = items.map((item, idx) => {
-        const detail = detailResults[idx]?.data as any
-        const monitorDetail: any = detail?.detail?.[0] || {}
-        const evalResult: any = monitorDetail.eval_result || {}
+      // 直接用列表接口返回的 monitor_summary 概要，不再对每条发详情请求（去N+1，101请求→1请求）
+      const enriched = items.map((item: any) => {
+        const ms = item.monitor_summary || {}
         return {
           ...item,
-          trigger_reason: monitorDetail.trigger_reason || '-',
-          is_first_report: monitorDetail.is_first_report || false,
-          generation_time: monitorDetail.generation_time || 0,
-          word_count: monitorDetail.word_count || 0,
-          block_count: monitorDetail.block_count || 0,
-          prompt_version: monitorDetail.prompt_version || '',
-          question_preview: monitorDetail.question_preview || '',
-          response_preview: monitorDetail.response_preview || '',
-          eval_passed: evalResult.passed,
-          avg_soft_score: evalResult.avg_soft_score ?? evalResult.llm_soft_score,
-          hard_violations: evalResult.hard_violations ?? evalResult.l3_quality?.total_violations ?? 0,
-          skip_reason: evalResult.skip_reason || '',
-          eval_error: evalResult.error || '',
-          // L2 格式完成
-          l2_format: evalResult.l2_format || monitorDetail.l2_format || null,
-          // L3 质量完成
-          l3_quality: evalResult.l3_quality || null,
-          // 违规明细（type/detail/location/reason）
-          eval_violations: evalResult.violations || evalResult.l2_format?.violations || [],
-          // 完整报告 JSON（供查看全貌与违规定位）
-          report: monitorDetail.report || null,
-          // 分层人工复核结果
-          layer_reviews: monitorDetail.layer_reviews || null,
-          // LLM 软性评分详情
-          llm_soft_details: evalResult.llm_soft_details || null,
-          fabrication: evalResult.fabrication || null,
-          // 归因信息
-          root_cause: monitorDetail.root_cause || null,
+          trigger_reason: ms.trigger_reason || '-',
+          is_first_report: ms.is_first_report || false,
+          generation_time: ms.generation_time || 0,
+          word_count: ms.word_count || 0,
+          block_count: ms.block_count || 0,
+          prompt_version: ms.prompt_version || '',
+          question_preview: ms.question_preview || '',
+          response_preview: '',
+          eval_passed: ms.eval_passed,
+          avg_soft_score: ms.avg_soft_score,
+          hard_violations: ms.hard_violations ?? 0,
+          skip_reason: ms.skip_reason || '',
+          eval_error: ms.eval_error || '',
+          l2_format: ms.l2_format || null,
+          l3_quality: ms.l3_quality || null,
+          eval_violations: [],  // 按需加载
+          report: null,  // 按需加载
+          layer_reviews: null,
+          llm_soft_details: null,
+          fabrication: ms.fabrication || null,
+          root_cause: ms.root_cause || null,
         }
       })
       setProductionItems(enriched)
-
-      // 计算统计
-      let totalSoft = 0
-      let softCount = 0
-      let llmCount = 0
-      let passCount = 0
-      let failCount = 0
+      setProductionTotal(data?.total || 0)
+      setExpandedDetail({})  // 清空按需详情缓存
+      // 统计基于当前页
+      let totalSoft = 0, softCount = 0, llmCount = 0, passCount = 0, failCount = 0
       enriched.forEach((item: any) => {
         if (item.eval_passed !== undefined && item.eval_passed !== null) {
           llmCount++
@@ -310,7 +333,7 @@ export default function EvalDashboard() {
         }
       })
       setProductionStats({
-        total: enriched.length,
+        total: data?.total || enriched.length,
         passed: passCount,
         failed: failCount,
         llmEvaluated: llmCount,
@@ -321,7 +344,7 @@ export default function EvalDashboard() {
     } finally {
       setProductionLoading(false)
     }
-  }, [])
+  }, [productionPage, productionPageSize, productionDateFrom, productionDateTo])
 
   // 切换 Tab 时加载对应数据
   useEffect(() => {
@@ -993,6 +1016,18 @@ export default function EvalDashboard() {
 
             {/* 监控列表 */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
+              {/* 时间筛选 + 分页信息 */}
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-3 flex-wrap text-sm">
+                <span className="text-gray-600">时间筛选：</span>
+                <input type="date" value={productionDateFrom} onChange={e => setProductionDateFrom(e.target.value)} className="border rounded px-2 py-1 text-xs" />
+                <span className="text-gray-400">至</span>
+                <input type="date" value={productionDateTo} onChange={e => setProductionDateTo(e.target.value)} className="border rounded px-2 py-1 text-xs" />
+                <button onClick={() => { setProductionPage(0); loadProduction(0) }} className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">查询</button>
+                {(productionDateFrom || productionDateTo) && (
+                  <button onClick={() => { setProductionDateFrom(''); setProductionDateTo(''); setProductionPage(0); loadProduction(0, '', '') }} className="px-2 py-1 text-gray-500 text-xs hover:text-gray-700">重置</button>
+                )}
+                <span className="ml-auto text-gray-500">共 {productionTotal} 条，第 {productionPage + 1}/{Math.max(1, Math.ceil(productionTotal / productionPageSize))} 页</span>
+              </div>
               {productionLoading && <div className="p-8 text-center text-gray-500">加载中...</div>}
               {productionError && <div className="p-8 text-center text-red-500">{productionError}</div>}
               {!productionLoading && !productionError && productionItems.length === 0 && (
@@ -1014,11 +1049,14 @@ export default function EvalDashboard() {
                     const hasEval = item.eval_passed !== undefined && item.eval_passed !== null
                     const isPassed = item.eval_passed === true
 
+                    // 按需加载的详情（完整report/违规明细，展开查看详情时才加载）
+                    const ed = expandedDetail[item.id]?.data
+
                     // 解析违规 location，标记报告中违规的段落
                     const violatedBlocks = new Map<string, any[]>()   // key: "子话题-块"
                     const violatedSubtopics = new Set<string>()       // key: 子话题索引
                     const violatedSections = new Set<string>()        // opening / summary
-                    ;(item.eval_violations || []).forEach((v: any) => {
+                    ;(ed?.eval_violations || []).forEach((v: any) => {
                       const loc: string = v.location || ''
                       const blockMatch = loc.match(/subtopics\[(\d+)\]\.blocks\[(\d+)\]/)
                       if (blockMatch) {
@@ -1039,16 +1077,16 @@ export default function EvalDashboard() {
                     const fabBlocks = new Map<string, string[]>()
                     const fabSections = new Set<string>()
                     ;(item.fabrication?.['编造内容'] || []).forEach((fab: string) => {
-                      if (!fab || !item.report) return
+                      if (!fab || !ed?.report) return
                       const probe = fab.length > 25 ? fab.slice(0, 25) : fab
-                      const openingText = (item.report.opening?.lead || '') + (item.report.opening?.verdict || '')
+                      const openingText = (ed.report.opening?.lead || '') + (ed.report.opening?.verdict || '')
                       if (openingText.includes(probe)) { fabSections.add('opening'); return }
                       let matched = false
-                      ;(item.report.summary?.items || []).forEach((it: any) => {
+                      ;(ed.report.summary?.items || []).forEach((it: any) => {
                         if ((it.text || '').includes(probe)) { fabSections.add('summary'); matched = true }
                       })
                       if (matched) return
-                      ;(item.report.subtopics || []).forEach((sub: any, si: number) => {
+                      ;(ed.report.subtopics || []).forEach((sub: any, si: number) => {
                         ;(sub.blocks || []).forEach((blk: any, bi: number) => {
                           if ((blk.narrative || '').includes(probe)) {
                             const key = `${si}-${bi}`
@@ -1190,15 +1228,16 @@ export default function EvalDashboard() {
 
                         {/* 展开详情按钮 */}
                         {hasEval && (
-                          <details className="mt-2 text-xs">
+                          <details className="mt-2 text-xs" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) loadDetail(item.id) }}>
                             <summary className="cursor-pointer text-blue-600 hover:text-blue-800">查看详情</summary>
                             <div className="mt-2 p-3 bg-gray-50 rounded text-xs space-y-2">
+                              {expandedDetail[item.id]?.loading && <div className="text-gray-500">加载详情中...</div>}
                               {/* L1 技术完成 */}
                               <div className="flex items-center gap-2">
                                 <span className="font-medium text-gray-700">L1 技术完成：</span>
                                 <span className="text-green-600">✅ 通过</span>
                                 <span className="text-gray-400">(JSON解析 + Pydantic校验)</span>
-                                {renderLayerReview(item.id, 'l1', item.layer_reviews?.l1)}
+                                {renderLayerReview(item.id, 'l1', ed?.layer_reviews?.l1)}
                               </div>
                               {/* L2 格式完成 */}
                               {item.l2_format && (
@@ -1215,7 +1254,7 @@ export default function EvalDashboard() {
                                   {item.l2_format.blocked_by && (
                                     <span className="text-red-500">被拦截：{item.l2_format.blocked_by}</span>
                                   )}
-                                  {renderLayerReview(item.id, 'l2', item.layer_reviews?.l2)}
+                                  {renderLayerReview(item.id, 'l2', ed?.layer_reviews?.l2)}
                                 </div>
                               )}
                               {/* L3 质量完成 */}
@@ -1233,15 +1272,15 @@ export default function EvalDashboard() {
                                   {item.l3_quality.blocked_by && (
                                     <span className="text-red-500">被拦截：{item.l3_quality.blocked_by}</span>
                                   )}
-                                  {renderLayerReview(item.id, 'l3', item.layer_reviews?.l3)}
+                                  {renderLayerReview(item.id, 'l3', ed?.layer_reviews?.l3)}
                                 </div>
                               )}
                               {/* 违规明细：定位具体内容与原因 */}
-                              {item.eval_violations?.length > 0 && (
+                              {ed?.eval_violations?.length > 0 && (
                                 <div>
-                                  <div className="font-medium text-gray-700 mb-1">违规明细（{item.eval_violations.length} 条）：</div>
+                                  <div className="font-medium text-gray-700 mb-1">违规明细（{ed?.eval_violations.length} 条）：</div>
                                   <div className="space-y-2">
-                                    {item.eval_violations.map((v: any, i: number) => (
+                                    {ed?.eval_violations.map((v: any, i: number) => (
                                       <div key={i} className="bg-white border border-red-100 rounded p-2">
                                         <div className="flex items-center gap-2 flex-wrap">
                                           <span className="text-red-600 font-medium">{v.type}</span>
@@ -1269,12 +1308,12 @@ export default function EvalDashboard() {
                                 <div className="flex items-center gap-2">
                                   <span className="font-medium text-gray-700">LLM 软性评分：</span>
                                   <span className="text-blue-600 font-bold">{item.avg_soft_score.toFixed(2)}</span>
-                                  {item.llm_soft_details && typeof item.llm_soft_details === 'object' && (
+                                  {ed?.llm_soft_details && typeof ed?.llm_soft_details === 'object' && (
                                     <span className="text-gray-500">
-                                      (叙事:{item.llm_soft_details['叙事性'] || '-'} 通顺:{item.llm_soft_details['通顺性'] || '-'} 故事:{item.llm_soft_details['故事性'] || '-'} 加粗:{item.llm_soft_details['加粗合理性'] || '-'} 术语:{item.llm_soft_details['术语通俗化'] || '-'})
+                                      (叙事:{ed?.llm_soft_details['叙事性'] || '-'} 通顺:{ed?.llm_soft_details['通顺性'] || '-'} 故事:{ed?.llm_soft_details['故事性'] || '-'} 加粗:{ed?.llm_soft_details['加粗合理性'] || '-'} 术语:{ed?.llm_soft_details['术语通俗化'] || '-'})
                                     </span>
                                   )}
-                                  {renderLayerReview(item.id, 'llm', item.layer_reviews?.llm)}
+                                  {renderLayerReview(item.id, 'llm', ed?.layer_reviews?.llm)}
                                 </div>
                               )}
                               {/* 编造检测 */}
@@ -1316,23 +1355,25 @@ export default function EvalDashboard() {
                         )}
 
                         {/* 报告全貌（违规段落红色标注） */}
-                        <details className="mt-1 text-xs">
+                        <details className="mt-1 text-xs" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) loadDetail(item.id) }}>
                           <summary className="cursor-pointer text-blue-600 hover:text-blue-800">查看报告全貌（违规段落红色标注）</summary>
                           <div className="mt-2">
-                            {!item.report ? (
+                            {expandedDetail[item.id]?.loading ? (
+                              <div className="p-3 bg-gray-50 rounded text-gray-500">加载报告中...</div>
+                            ) : !ed?.report ? (
                               <div className="p-3 bg-gray-50 rounded text-gray-400">该记录未存完整报告（旧数据），仅显示上方预览</div>
                             ) : (
                               <div className="space-y-2">
                                 {/* 开头 */}
-                                {item.report.opening && (
+                                {ed?.report.opening && (
                                   <div className={`rounded p-2 border ${violatedSections.has('opening') || fabSections.has('opening') ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'}`}>
                                     <div className="text-gray-400 mb-1">【开头】</div>
-                                    {item.report.opening.lead && <div className="text-sm text-gray-800">{item.report.opening.lead}</div>}
-                                    {item.report.opening.verdict && <div className="text-sm text-gray-600 mt-1">【判断】{item.report.opening.verdict}</div>}
+                                    {ed?.report.opening.lead && <div className="text-sm text-gray-800">{ed?.report.opening.lead}</div>}
+                                    {ed?.report.opening.verdict && <div className="text-sm text-gray-600 mt-1">【判断】{ed?.report.opening.verdict}</div>}
                                   </div>
                                 )}
                                 {/* 子话题 */}
-                                {(item.report.subtopics || []).map((sub: any, si: number) => (
+                                {(ed?.report.subtopics || []).map((sub: any, si: number) => (
                                   <div key={si} className={`rounded p-2 border ${violatedSubtopics.has(String(si)) ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'}`}>
                                     <div className="text-gray-500 font-medium mb-1">【{sub.title || `子话题${si + 1}`}】</div>
                                     <div className="space-y-2">
@@ -1356,10 +1397,10 @@ export default function EvalDashboard() {
                                   </div>
                                 ))}
                                 {/* 总结 */}
-                                {item.report.summary && (
+                                {ed?.report.summary && (
                                   <div className={`rounded p-2 border ${violatedSections.has('summary') || fabSections.has('summary') ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'}`}>
                                     <div className="text-gray-400 mb-1">【总结】</div>
-                                    {(item.report.summary.items || []).map((it: any, k: number) => (
+                                    {(ed?.report.summary.items || []).map((it: any, k: number) => (
                                       <div key={k} className="text-sm text-gray-700">· <b>{it.keyword}</b>：{it.text}</div>
                                     ))}
                                   </div>
@@ -1371,6 +1412,22 @@ export default function EvalDashboard() {
                       </div>
                     )
                   })}
+                </div>
+              )}
+              {/* 底部分页 */}
+              {productionTotal > productionPageSize && (
+                <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between text-sm">
+                  <button
+                    onClick={() => { const p = Math.max(0, productionPage - 1); setProductionPage(p); loadProduction(p) }}
+                    disabled={productionPage === 0}
+                    className="px-3 py-1 rounded border text-xs disabled:opacity-40 hover:bg-gray-100"
+                  >上一页</button>
+                  <span className="text-gray-500">第 {productionPage + 1} / {Math.max(1, Math.ceil(productionTotal / productionPageSize))} 页</span>
+                  <button
+                    onClick={() => { const p = productionPage + 1; setProductionPage(p); loadProduction(p) }}
+                    disabled={(productionPage + 1) * productionPageSize >= productionTotal}
+                    className="px-3 py-1 rounded border text-xs disabled:opacity-40 hover:bg-gray-100"
+                  >下一页</button>
                 </div>
               )}
             </div>
