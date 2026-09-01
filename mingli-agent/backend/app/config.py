@@ -74,4 +74,5 @@ settings = Settings()
 #              评测端首次报告再放宽2项: structure_checker block数量异常放宽2-6(原2-4) + narrative_checker keyword含术语跳过(首次报告讲命理维度术语是核心内容；追问2-4+保留术语检测不变)
 #              评测端首次报告narrative上限放宽到160字(原130字)，与block放宽配套；追问仍130字
 #              build_authoritative_chart_basis补充缺失字段(喜神/五行应用/大运完整序列+方向/神煞核心)，修复编造检测端基准不全致"喜神=土""大运丁巳"等合法引用被误判为编造high的系统性bug；生成端(首次+追问)prompt注入也同步受益，实现生成端+检测端命盘基准同源同构
-PROMPT_VERSION = "v2026.09.01-9"
+#              v10: 时间线约束加"规则自检禁止外露"——LLM把质检公式"离职≤offer≤入职"原文照抄进报告(如"完全符合离职≤offer≤入职的现实逻辑")，生成端两处prompt(skill_prompts流月边界第5条+followup_structured时间线铁律末条)均加禁止外露条目
+PROMPT_VERSION = "v2026.09.01-10"
