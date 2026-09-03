@@ -124,7 +124,8 @@ export default function PointsHistoryPage() {
           </div>
         ) : (
           items.map((t) => {
-            const isPositive = t.type === 'recharge' || t.type === 'bonus' || t.points > 0
+            // 后端 points 字段恒存正数，方向由 type 决定：consume=扣费(-)，recharge/bonus=收入(+)
+            const isPositive = t.type !== 'consume'
             console.log(`[PointsHistory] 渲染记录#${t.id} type=${t.type} points=${t.points} isPositive=${isPositive} → ${isPositive ? '+' : '-'}${Math.abs(t.points)}`)
             return (
               <div

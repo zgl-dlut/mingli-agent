@@ -138,8 +138,8 @@ export default function LoginPage() {
                   : 'bg-white border-gray-300 text-transparent'
               }`}
             >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L7 7" />
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
             </button>
             <p className="text-xs text-gray-500 leading-relaxed">
