@@ -18,6 +18,39 @@ import { createLogger, traceId } from '../utils/logger'
 const logger = createLogger('ChatPage')
 const sseLogger = createLogger('SSE')
 
+/** 从 assistant 消息 content（JSON字符串）中提取 suggested_questions */
+function extractSuggestedQuestions(content: string): string[] | null {
+  if (!content || !content.trim().startsWith('{')) return null
+  try {
+    const parsed = JSON.parse(content)
+    const sq = parsed.suggested_questions
+    if (Array.isArray(sq) && sq.length > 0 && sq.every(q => typeof q === 'string' && q.trim())) {
+      return sq.map(q => q.trim())
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** 过滤掉已问过的推荐问题（精确匹配+包含匹配） */
+function filterAsked(suggested: string[], messages: { role: string; content: string }[]): string[] {
+  const askedSet = new Set(
+    messages
+      .filter(m => m.role === 'user')
+      .map(m => m.content.replace(/\s+/g, ' ').trim())
+  )
+  return suggested.filter(q => {
+    const normalized = q.replace(/\s+/g, ' ').trim()
+    if (askedSet.has(normalized)) return false
+    // 包含匹配：用户可能问了更长的版本
+    for (const asked of askedSet) {
+      if (asked.includes(normalized) || normalized.includes(asked)) return false
+    }
+    return true
+  })
+}
+
 /** 报告内容渲染组件
  * 架构：
  * 1. 结构化 JSON 报告（追问）→ FollowupReportView 直渲染 React 组件（不走 Markdown）
@@ -1124,6 +1157,30 @@ export default function Chat() {
               : <>本次分析消耗 <span className="text-brand-button font-medium">40</span> 积分，当前余额 <span className="text-brand-button font-medium">{user?.points ?? 0}</span> 积分</>
             }
           </div>
+
+          {/* 推荐追问 Chip 条：取最后一条AI回答的suggested_questions，过滤已问过的 */}
+          {(() => {
+            const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
+            if (!lastAssistant || isPersonGenerating(person.id) || inputValue) return null
+            const raw = extractSuggestedQuestions(lastAssistant.content)
+            if (!raw) return null
+            const filtered = filterAsked(raw, messages)
+            if (filtered.length === 0) return null
+            return (
+              <div className="flex gap-2 px-4 pb-2 pt-1 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                {filtered.map((q, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleSend(q)}
+                    className="flex-shrink-0 px-3 py-1.5 rounded-full border border-brand-inputBorder bg-brand-bgInput text-brand-brown text-xs whitespace-nowrap active:scale-95 transition-all hover:border-brand-gold/50"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )
+          })()}
 
           {/* 输入行 */}
           <div className="flex items-center space-x-2 px-4 py-2">

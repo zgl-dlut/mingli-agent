@@ -139,6 +139,9 @@ class FollowupReport(BaseModel):
         description="子问题列表。数量=用户问的独立问题数量，禁止为凑篇幅强行拆分"
     )
     summary: Summary = Field(description="总结")
+    suggested_questions: Optional[List[str]] = Field(
+        None, description="推荐追问问题列表（3条），根据年龄/命盘/本轮问答生成"
+    )
 
 
 # ============================================================

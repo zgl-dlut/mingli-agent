@@ -385,8 +385,22 @@ async def build_structured_prompt(
     "item_format": "可选，items渲染格式：list(列表式,默认)或paragraph(段落式,无前缀)",
     "narrative": "可选整段叙事(与items二选一)",
     "closing": "默认不输出。仅当能补充上面items/narrative没说过的新角度（真正有情绪价值的安抚、或一个新的嘱咐方向）时才输出2-3句朋友式话语。两类必须禁止：①把上面已讲过的结论换个说法再重复；②空洞金句/口号式收尾（如'守得住基本盘才能接得住新风口''稳住就是赢'这类看似有道理但无具体信息、无真实情感的话）。没有真正想对朋友说的话，就留空，宁可没有也不要凑"
-  }}
+  }},
+  "suggested_questions": ["根据用户年龄/命盘/本轮问答推荐的3条追问问题，口语化简短，≤15字"]
 }}
+
+## 推荐追问生成规则（suggested_questions 字段）
+- 根据用户年龄/性别/命盘特点和本轮问答内容，生成3条用户最可能想追问的问题
+- 问题必须口语化、自然简短（≤15字），像用户自己会说出的话
+- 年龄适配（强制执行）：
+  - 0-12岁：推荐学业方向/性格培养/健康注意事项，禁止推荐事业/跳槽/升职
+  - 13-17岁：推荐学业考试/兴趣发展/人际关系，禁止推荐事业/婚姻/投资
+  - 18-30岁：可推荐事业/感情/财运/学业
+  - 31-50岁：可推荐事业/财运/家庭/健康
+  - 51岁+：推荐健康/家庭/晚年规划，禁止推荐婚恋/生育
+- 3条问题尽量来自不同维度（事业/财运/感情/健康/流年），不要全问同一方向
+- 禁止推荐与本轮已回答内容重复的问题
+- 禁止推荐与此前对话历史中已问过的问题重复的问题
 
 ## 硬性JSON渲染约束（一条都不可改动，保障前端稳定渲染）
 - **subtopics 必须一一对应用户问题中的子问题（硬约束，高频违规点）**：用户问了几个子问题，就生成几个 subtopic，禁止自行添加用户没问的子问题。例如用户问"几月拿offer、几月入职、新公司发展如何、涨薪如何"，就生成4个 subtopic 分别回答这4个问题，**禁止**额外添加"完整行动路线""从现在到入职"等用户没问的总结性子问题。行动路线/时间线/步骤清单属于 summary 的内容，不属于 subtopic
@@ -743,6 +757,21 @@ def _normalize_report_data(data):
     # closing 金句兜底清理：LLM（qwen-plus）指令遵循能力不足，常输出空洞金句/口号式 closing，
     # 即使 prompt 已三层禁止仍不遵守。此处后端强制检测并清空，不依赖 LLM 自觉。
     _clean_slogan_closings(data)
+
+    # suggested_questions 容错：LLM 未输出或格式错误时清理为 None（前端不渲染）
+    sq = data.get("suggested_questions")
+    if sq is not None:
+        if not isinstance(sq, list):
+            data["suggested_questions"] = None
+        else:
+            # 只保留非空字符串，去重，最多3条
+            cleaned = []
+            seen = set()
+            for q in sq:
+                if isinstance(q, str) and q.strip() and q.strip() not in seen:
+                    cleaned.append(q.strip())
+                    seen.add(q.strip())
+            data["suggested_questions"] = cleaned[:3] if cleaned else None
 
     return data
 
