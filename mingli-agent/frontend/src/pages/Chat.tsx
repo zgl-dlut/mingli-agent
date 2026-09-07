@@ -160,6 +160,8 @@ export default function Chat() {
   const [person, setPerson] = useState<Person | null>(null)
   const [sessionId, setSessionId] = useState<number | null>(null)
   const [inputValue, setInputValue] = useState('')
+  // 推荐追问Chip条：仅AI刚回答完时显示，刷新/重新进入不显示
+  const [showSuggested, setShowSuggested] = useState(false)
   const [baziResult, setBaziResult] = useState<AnalyzeResult | null>(null)
   const [, setBaziLoading] = useState(false)
   const [cardPhase, setCardPhase] = useState<'loading' | 'ready' | 'done' | 'error'>('loading')
@@ -380,6 +382,7 @@ export default function Chat() {
           setPersonGenerating(personId, false)
           stopProgress(personId)
           await fetchMessages(personId, sid)
+          setShowSuggested(true)  // 后台生成完成，显示推荐Chip
           await fetchUserInfo()
         }
       } catch (e) {
@@ -401,6 +404,7 @@ export default function Chat() {
   useEffect(() => {
     if (!personId) return
     logger.info(`[Lifecycle] Chat组件 personId变更`, { personId })
+    setShowSuggested(false)  // 切换/重新进入时隐藏推荐Chip
     const id = parseInt(personId)
     const p = getPerson(id)
     if (!p) {
@@ -627,6 +631,7 @@ export default function Chat() {
           setCurrentMessage('')
           await fetchMessages(pid, sessionId)
           setFirstReadingGenerated(pid)
+          setShowSuggested(true)  // 首次报告完成，显示推荐Chip
           await fetchUserInfo()
         }
       }
@@ -850,6 +855,7 @@ export default function Chat() {
         await fetchMessages(pid, sessionId)
         setPendingUserMsg(null)
         setPendingUserMsgPid(null)
+        setShowSuggested(true)  // 追问回答完成，显示推荐Chip
         await fetchUserInfo() // 刷新积分显示
       }
     } catch (err: any) {
@@ -1160,6 +1166,7 @@ export default function Chat() {
 
           {/* 推荐追问 Chip 条：取最后一条AI回答的suggested_questions，过滤已问过的 */}
           {(() => {
+            if (!showSuggested) return null
             const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
             if (!lastAssistant || isPersonGenerating(person.id) || inputValue) return null
             const raw = extractSuggestedQuestions(lastAssistant.content)
@@ -1167,17 +1174,23 @@ export default function Chat() {
             const filtered = filterAsked(raw, messages)
             if (filtered.length === 0) return null
             return (
-              <div className="flex gap-2 px-4 pb-2 pt-1 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                {filtered.map((q, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => handleSend(q)}
-                    className="flex-shrink-0 px-3 py-1.5 rounded-full border border-brand-inputBorder bg-brand-bgInput text-brand-brown text-xs whitespace-nowrap active:scale-95 transition-all hover:border-brand-gold/50"
-                  >
-                    {q}
-                  </button>
-                ))}
+              <div className="px-4 pb-2 pt-2">
+                <div className="flex items-center gap-1 mb-1.5 text-xs text-brand-muted">
+                  <span>✨ 试试追问，点击直接发送：</span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                  {filtered.map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => handleSend(q)}
+                      className="flex-shrink-0 flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full border border-brand-inputBorder bg-brand-bgInput text-brand-brown text-xs whitespace-nowrap active:scale-95 transition-all hover:border-brand-gold/50 hover:bg-brand-gold/5"
+                    >
+                      <span>{q}</span>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-brand-gold flex-shrink-0"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                    </button>
+                  ))}
+                </div>
               </div>
             )
           })()}
