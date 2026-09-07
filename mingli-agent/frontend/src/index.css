@@ -742,3 +742,13 @@ body {
 .animate-progress {
   animation: progress 2s ease-in-out infinite;
 }
+
+/* ===== 推荐追问 Chip 条：轻量上滑淡入动画（不带 scale，适配底部窄条） ===== */
+@keyframes chipSlideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.chip-slide-up {
+  animation: chipSlideUp 0.35s ease-out both;
+  animation-delay: 0.15s;  /* 积分提示先 render，Chip 条随后轻弹 */
+}

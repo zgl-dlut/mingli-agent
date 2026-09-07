@@ -1155,16 +1155,8 @@ export default function Chat() {
       {/* 底部输入栏 */}
       {(hasGenerated || cardPhase === 'done') && (
         <div className="bg-white/90 backdrop-blur-sm border-t border-brand-inputBorder/40 flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
-          <div>
-          {/* 积分提示 */}
-          <div className="text-center text-brand-muted text-xs pt-2">
-            {isRetryOfUnanswered
-              ? <>本次为<span className="text-brand-button font-medium">重新生成</span>，不扣积分（当前余额 <span className="text-brand-button font-medium">{user?.points ?? 0}</span> 积分）</>
-              : <>本次分析消耗 <span className="text-brand-button font-medium">40</span> 积分，当前余额 <span className="text-brand-button font-medium">{user?.points ?? 0}</span> 积分</>
-            }
-          </div>
 
-          {/* 推荐追问 Chip 条：取最后一条AI回答的suggested_questions，过滤已问过的 */}
+          {/* 推荐追问 Chip 条：浅金背景独立块 + 上滑淡入动画 */}
           {(() => {
             if (!showSuggested) return null
             const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
@@ -1174,9 +1166,19 @@ export default function Chat() {
             const filtered = filterAsked(raw, messages)
             if (filtered.length === 0) return null
             return (
-              <div className="px-4 pb-2 pt-2">
-                <div className="flex items-center gap-1 mb-1.5 text-xs text-brand-muted">
-                  <span>✨ 试试追问，点击直接发送：</span>
+              <div className="mx-3 mt-3 mb-2 bg-amber-50/70 rounded-xl border border-amber-200/60 p-3 shadow-[0_1px_3px_rgba(160,128,114,0.08)] chip-slide-up">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1 text-sm font-semibold text-amber-700/80">
+                    <span className="text-base">✨</span>
+                    <span>试试追问</span>
+                    <span className="font-normal text-xs text-brand-muted/80 ml-1">（点击直接发送）</span>
+                  </div>
+                  <span className="text-[11px] text-brand-muted/60 flex-shrink-0">
+                    {isRetryOfUnanswered
+                      ? <>重新生成·不扣积分</>
+                      : <>40积分/次</>
+                    }
+                  </span>
                 </div>
                 <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                   {filtered.map((q, i) => (
@@ -1184,10 +1186,10 @@ export default function Chat() {
                       key={i}
                       type="button"
                       onClick={() => handleSend(q)}
-                      className="flex-shrink-0 flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full border border-brand-inputBorder bg-brand-bgInput text-brand-brown text-xs whitespace-nowrap active:scale-95 transition-all hover:border-brand-gold/50 hover:bg-brand-gold/5"
+                      className="flex-shrink-0 flex items-center gap-1.5 pl-3.5 pr-2.5 py-2 rounded-full border border-amber-300/50 bg-white text-brand-brown text-sm whitespace-nowrap active:scale-95 transition-all hover:border-amber-500/60 hover:bg-amber-50"
                     >
                       <span>{q}</span>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-brand-gold flex-shrink-0"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600 flex-shrink-0"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
                     </button>
                   ))}
                 </div>
@@ -1250,7 +1252,6 @@ export default function Chat() {
           {/* 免责声明 */}
           <div className="text-center text-brand-muted/40 text-[10px] py-1">
             AI存在幻觉，仅供传统文化体验与娱乐参考，不具有科学预测能力
-          </div>
           </div>
         </div>
       )}
