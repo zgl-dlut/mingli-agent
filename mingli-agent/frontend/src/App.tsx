@@ -21,6 +21,29 @@ import AdminRechargePage from './pages/AdminRechargePage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import AdminLoginPage from './pages/AdminLoginPage'
 
+/**
+ * 分享链接邀请参数捕获：/?ref=123 → localStorage（登录注册时带给后端）
+ * 模块加载时立即执行，早于路由渲染——未登录用户会被重定向到 /login，
+ * 不能放在组件 useEffect 里（Navigate 的跳转 effect 先于父组件 effect 执行）。
+ * 采用末次触点归因：以后点的最新分享链接为准。
+ */
+;(function captureInviterRef() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const ref = (params.get('ref') || '').trim()
+    if (/^\d{1,10}$/.test(ref) && ref !== '0') {
+      localStorage.setItem('inviter_ref', ref)
+      // 清掉 URL 上的 ref 参数，保持地址栏干净
+      params.delete('ref')
+      const query = params.toString()
+      const cleanUrl = window.location.pathname + (query ? `?${query}` : '') + window.location.hash
+      window.history.replaceState({}, '', cleanUrl)
+    }
+  } catch {
+    /* 隐私模式等场景静默失败 */
+  }
+})()
+
 /** OAuth 回调处理器：从 URL 中提取 token 并登录 */
 function OAuthCallbackHandler({ children }: { children: React.ReactNode }) {
   useEffect(() => {

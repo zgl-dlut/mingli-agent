@@ -57,6 +57,7 @@ class SendSmsRequest(BaseModel):
 class VerifySmsRequest(BaseModel):
     phone: str
     code: str
+    ref: int | None = None  # 邀请人用户ID（分享链接 ?ref= 带来）
 
 
 class TokenResponse(BaseModel):
@@ -94,6 +95,39 @@ async def grant_new_user_bonus(db: AsyncSession, user: User) -> None:
     logger.info(f"[AUTH] 新用户 {user.phone} 自动赠送 {bonus} 积分")
 
 
+async def grant_share_reward(db: AsyncSession, inviter_id: int | None, new_user: User) -> None:
+    """分享赚积分：新用户通过邀请链接注册后，给邀请人发放奖励积分。
+
+    仅在新用户创建分支调用（老用户登录天然不触发，每个新用户只发一次）。
+    任何异常都不阻断注册主流程。
+    """
+    if not inviter_id or not isinstance(inviter_id, int) or inviter_id <= 0:
+        return
+    try:
+        if inviter_id == new_user.id:
+            return  # 自我邀请防护（理论上不可能，双保险）
+        inviter = (await db.execute(select(User).where(User.id == inviter_id))).scalar_one_or_none()
+        if inviter is None:
+            logger.warning(f"[SHARE] 邀请人 user#{inviter_id} 不存在，跳过分享奖励（新用户 {new_user.phone}）")
+            return
+        reward = settings.SHARE_REWARD_POINTS
+        if reward <= 0:
+            return
+        inviter.points += reward
+        masked_phone = f"{new_user.phone[:3]}****{new_user.phone[-4:]}" if len(new_user.phone) >= 7 else new_user.phone
+        db.add(Transaction(
+            user_id=inviter.id,
+            type="bonus",
+            points=reward,
+            description=f"分享赚积分：好友{masked_phone}注册奖励",
+            biz_type="share_reward",
+        ))
+        await db.commit()
+        logger.info(f"[SHARE] 新用户 {new_user.phone} 由用户#{inviter_id} 邀请，发放 {reward} 积分")
+    except Exception as e:
+        logger.error(f"[SHARE] 分享奖励发放失败 inviter={inviter_id} new_user={new_user.phone}: {e}", exc_info=True)
+
+
 @router.post("/login")
 async def login_with_sms(request: VerifySmsRequest, db: AsyncSession = Depends(get_db)):
     """验证码登录（自动注册）"""
@@ -114,6 +148,11 @@ async def login_with_sms(request: VerifySmsRequest, db: AsyncSession = Depends(g
         await db.refresh(user)
         # 新用户自动赠送免费体验积分
         await grant_new_user_bonus(db, user)
+        # 分享赚积分：记录邀请人并发放奖励（仅新用户注册触发，老用户登录忽略）
+        if request.ref and isinstance(request.ref, int) and request.ref > 0:
+            user.inviter_id = request.ref
+            await db.commit()
+            await grant_share_reward(db, request.ref, user)
     
     # 3. 白名单手机号赠送积分（从数据库查询，持久化存储）
     from app.models.bonus_phone import BonusPhone

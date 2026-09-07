@@ -32,9 +32,9 @@ export const authApi = {
   sendSms: (phone: string) =>
     apiClient.post<SendSmsResponse>('/auth/send-sms', { phone }),
 
-  /** 验证码登录 */
-  login: (phone: string, code: string) =>
-    apiClient.post<LoginResponse>('/auth/login', { phone, code }),
+  /** 验证码登录（ref=邀请人用户ID，来自分享链接） */
+  login: (phone: string, code: string, ref?: number | null) =>
+    apiClient.post<LoginResponse>('/auth/login', { phone, code, ref: ref ?? null }),
 
   /** 刷新 Token */
   refreshToken: (userId: number) =>

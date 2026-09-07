@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # 新注册用户自动赠送积分（默认240 = 1次报告160 + 2次追问40×2）
     NEW_USER_BONUS_POINTS: int = 240
 
+    # 分享赚积分：每邀请1个新用户注册，邀请人获得的积分
+    SHARE_REWARD_POINTS: int = 80
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

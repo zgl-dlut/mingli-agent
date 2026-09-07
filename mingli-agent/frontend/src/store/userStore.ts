@@ -74,7 +74,16 @@ export const useUserStore = create<UserState>((set, get) => ({
         return
       }
 
-      const { data } = await authApi.login(phone, code)
+      // 分享链接邀请参数：注册时带给后端（仅新用户注册会触发邀请人奖励）
+      let inviterRef: number | null = null
+      try {
+        const raw = localStorage.getItem('inviter_ref')
+        if (raw && /^\d{1,10}$/.test(raw)) inviterRef = parseInt(raw, 10)
+      } catch { /* ignore */ }
+
+      const { data } = await authApi.login(phone, code, inviterRef)
+      // 无论新老用户，登录后即清除邀请标记（老用户登录本就不发奖励）
+      try { localStorage.removeItem('inviter_ref') } catch { /* ignore */ }
 
       const userInfo: UserInfo = {
         id: data.user_id,
