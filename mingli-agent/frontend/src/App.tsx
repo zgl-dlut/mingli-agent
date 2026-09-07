@@ -22,7 +22,8 @@ import AdminUsersPage from './pages/AdminUsersPage'
 import AdminLoginPage from './pages/AdminLoginPage'
 
 /**
- * 分享链接邀请参数捕获：/?ref=123 → localStorage（登录注册时带给后端）
+ * 分享链接邀请参数捕获：/?ref=邀请码 → localStorage（登录注册时带给后端）
+ * 邀请码为8位随机字母数字（不可猜测），兼容旧版纯数字用户ID链接。
  * 模块加载时立即执行，早于路由渲染——未登录用户会被重定向到 /login，
  * 不能放在组件 useEffect 里（Navigate 的跳转 effect 先于父组件 effect 执行）。
  * 采用末次触点归因：以后点的最新分享链接为准。
@@ -31,13 +32,16 @@ import AdminLoginPage from './pages/AdminLoginPage'
   try {
     const params = new URLSearchParams(window.location.search)
     const ref = (params.get('ref') || '').trim()
-    if (/^\d{1,10}$/.test(ref) && ref !== '0') {
-      localStorage.setItem('inviter_ref', ref)
-      // 清掉 URL 上的 ref 参数，保持地址栏干净
-      params.delete('ref')
-      const query = params.toString()
-      const cleanUrl = window.location.pathname + (query ? `?${query}` : '') + window.location.hash
-      window.history.replaceState({}, '', cleanUrl)
+    // 邀请码：8位字母数字；兼容旧版纯数字ID（1-10位）
+    if (/^[0-9A-Za-z]{4,12}$/.test(ref) || /^\d{1,10}$/.test(ref)) {
+      if (ref !== '0') {
+        localStorage.setItem('inviter_ref', ref)
+        // 清掉 URL 上的 ref 参数，保持地址栏干净
+        params.delete('ref')
+        const query = params.toString()
+        const cleanUrl = window.location.pathname + (query ? `?${query}` : '') + window.location.hash
+        window.history.replaceState({}, '', cleanUrl)
+      }
     }
   } catch {
     /* 隐私模式等场景静默失败 */

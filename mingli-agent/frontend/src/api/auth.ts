@@ -32,8 +32,8 @@ export const authApi = {
   sendSms: (phone: string) =>
     apiClient.post<SendSmsResponse>('/auth/send-sms', { phone }),
 
-  /** 验证码登录（ref=邀请人用户ID，来自分享链接） */
-  login: (phone: string, code: string, ref?: number | null) =>
+  /** 验证码登录（ref=邀请码/旧版数字ID，来自分享链接） */
+  login: (phone: string, code: string, ref?: string | null) =>
     apiClient.post<LoginResponse>('/auth/login', { phone, code, ref: ref ?? null }),
 
   /** 刷新 Token */
@@ -47,4 +47,8 @@ export const authApi = {
   /** 修改昵称 */
   updateProfile: (name: string) =>
     apiClient.put<UserInfo>('/user/profile', { name }),
+
+  /** 获取专属邀请码（懒生成，首次打开分享弹窗时创建） */
+  getInviteCode: () =>
+    apiClient.get<{ invite_code: string }>('/user/invite-code'),
 }

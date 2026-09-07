@@ -16,6 +16,7 @@ class User(Base):
     avatar: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="头像URL")
     points: Mapped[int] = mapped_column(Integer, default=0, comment="积分余额（白名单用户登录赠送，普通用户为0）")
     inviter_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="邀请人用户ID（分享赚积分）")
+    invite_code: Mapped[Optional[str]] = mapped_column(String(16), unique=True, nullable=True, comment="专属邀请码（分享链接用，不可猜测）")
     wechat_openid: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True, comment="微信openid")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

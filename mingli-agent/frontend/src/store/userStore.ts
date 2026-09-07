@@ -75,10 +75,10 @@ export const useUserStore = create<UserState>((set, get) => ({
       }
 
       // 分享链接邀请参数：注册时带给后端（仅新用户注册会触发邀请人奖励）
-      let inviterRef: number | null = null
+      let inviterRef: string | null = null
       try {
-        const raw = localStorage.getItem('inviter_ref')
-        if (raw && /^\d{1,10}$/.test(raw)) inviterRef = parseInt(raw, 10)
+        const raw = (localStorage.getItem('inviter_ref') || '').trim()
+        if (/^[0-9A-Za-z]{1,12}$/.test(raw) && raw !== '0') inviterRef = raw
       } catch { /* ignore */ }
 
       const { data } = await authApi.login(phone, code, inviterRef)

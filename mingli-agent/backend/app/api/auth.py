@@ -57,7 +57,50 @@ class SendSmsRequest(BaseModel):
 class VerifySmsRequest(BaseModel):
     phone: str
     code: str
-    ref: int | None = None  # 邀请人用户ID（分享链接 ?ref= 带来）
+    ref: str | None = None  # 邀请码/旧版数字ID（分享链接 ?ref= 带来）
+
+
+# 邀请码字符集：去除易混淆的 0/O、1/I/L
+_INVITE_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ"
+
+
+def _generate_invite_code(length: int = 8) -> str:
+    """生成随机邀请码（8位，约56^8≈9.6e13空间，不可猜测不可枚举）"""
+    import secrets
+    return "".join(secrets.choice(_INVITE_ALPHABET) for _ in range(length))
+
+
+async def get_or_create_invite_code(db: AsyncSession, user: User) -> str:
+    """懒生成用户专属邀请码：首次打开分享弹窗时生成，查唯一性重试"""
+    if user.invite_code:
+        return user.invite_code
+    for _ in range(5):
+        code = _generate_invite_code()
+        exists = (await db.execute(select(User).where(User.invite_code == code))).scalar_one_or_none()
+        if not exists:
+            user.invite_code = code
+            await db.commit()
+            logger.info(f"[SHARE] 用户#{user.id} 生成邀请码 {code}")
+            return code
+    raise RuntimeError("邀请码生成失败（连续碰撞）")
+
+
+async def resolve_inviter_by_ref(db: AsyncSession, ref: str | None) -> User | None:
+    """把分享链接的 ref 解析为邀请人：优先按邀请码查，纯数字兼容旧版 ?ref=用户ID 链接"""
+    if not ref or not isinstance(ref, str):
+        return None
+    ref = ref.strip()
+    if not ref or len(ref) > 16:
+        return None
+    # 新版：邀请码
+    inviter = (await db.execute(select(User).where(User.invite_code == ref))).scalar_one_or_none()
+    if inviter:
+        return inviter
+    # 兼容旧版：纯数字用户ID
+    if ref.isdigit():
+        inviter = (await db.execute(select(User).where(User.id == int(ref)))).scalar_one_or_none()
+        return inviter
+    return None
 
 
 class TokenResponse(BaseModel):
@@ -95,21 +138,17 @@ async def grant_new_user_bonus(db: AsyncSession, user: User) -> None:
     logger.info(f"[AUTH] 新用户 {user.phone} 自动赠送 {bonus} 积分")
 
 
-async def grant_share_reward(db: AsyncSession, inviter_id: int | None, new_user: User) -> None:
+async def grant_share_reward(db: AsyncSession, inviter: User | None, new_user: User) -> None:
     """分享赚积分：新用户通过邀请链接注册后，给邀请人发放奖励积分。
 
     仅在新用户创建分支调用（老用户登录天然不触发，每个新用户只发一次）。
     任何异常都不阻断注册主流程。
     """
-    if not inviter_id or not isinstance(inviter_id, int) or inviter_id <= 0:
+    if inviter is None:
         return
     try:
-        if inviter_id == new_user.id:
+        if inviter.id == new_user.id:
             return  # 自我邀请防护（理论上不可能，双保险）
-        inviter = (await db.execute(select(User).where(User.id == inviter_id))).scalar_one_or_none()
-        if inviter is None:
-            logger.warning(f"[SHARE] 邀请人 user#{inviter_id} 不存在，跳过分享奖励（新用户 {new_user.phone}）")
-            return
         reward = settings.SHARE_REWARD_POINTS
         if reward <= 0:
             return
@@ -123,9 +162,9 @@ async def grant_share_reward(db: AsyncSession, inviter_id: int | None, new_user:
             biz_type="share_reward",
         ))
         await db.commit()
-        logger.info(f"[SHARE] 新用户 {new_user.phone} 由用户#{inviter_id} 邀请，发放 {reward} 积分")
+        logger.info(f"[SHARE] 新用户 {new_user.phone} 由用户#{inviter.id} 邀请，发放 {reward} 积分")
     except Exception as e:
-        logger.error(f"[SHARE] 分享奖励发放失败 inviter={inviter_id} new_user={new_user.phone}: {e}", exc_info=True)
+        logger.error(f"[SHARE] 分享奖励发放失败 inviter={getattr(inviter, 'id', '?')} new_user={new_user.phone}: {e}", exc_info=True)
 
 
 @router.post("/login")
@@ -139,7 +178,14 @@ async def login_with_sms(request: VerifySmsRequest, db: AsyncSession = Depends(g
     # 2. 查找或创建用户
     stmt = select(User).where(User.phone == request.phone)
     user = (await db.execute(stmt)).scalar_one_or_none()
-    
+
+    # 解析邀请人（邀请码或旧版数字ID）；仅新用户注册时发奖，老用户登录忽略
+    inviter = None
+    if request.ref:
+        inviter = await resolve_inviter_by_ref(db, request.ref)
+        if inviter is None:
+            logger.warning(f"[SHARE] 登录携带的 ref={request.ref!r} 未匹配到邀请人，忽略")
+
     if user is None:
         # 自动注册
         user = User(phone=request.phone, name=f"用户{request.phone[-4:]}")
@@ -149,10 +195,10 @@ async def login_with_sms(request: VerifySmsRequest, db: AsyncSession = Depends(g
         # 新用户自动赠送免费体验积分
         await grant_new_user_bonus(db, user)
         # 分享赚积分：记录邀请人并发放奖励（仅新用户注册触发，老用户登录忽略）
-        if request.ref and isinstance(request.ref, int) and request.ref > 0:
-            user.inviter_id = request.ref
+        if inviter is not None:
+            user.inviter_id = inviter.id
             await db.commit()
-            await grant_share_reward(db, request.ref, user)
+            await grant_share_reward(db, inviter, user)
     
     # 3. 白名单手机号赠送积分（从数据库查询，持久化存储）
     from app.models.bonus_phone import BonusPhone

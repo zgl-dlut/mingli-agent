@@ -4,12 +4,22 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, get_or_create_invite_code
 from app.db.session import get_db
 from app.models.user import User
 from app.services.payment_service import get_transactions
 
 router = APIRouter(prefix="/api/user", tags=["user"])
+
+
+@router.get("/invite-code")
+async def get_invite_code(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """获取当前用户专属邀请码（懒生成，首次打开分享弹窗时创建）"""
+    code = await get_or_create_invite_code(db, current_user)
+    return {"invite_code": code}
 
 
 @router.get("/profile")

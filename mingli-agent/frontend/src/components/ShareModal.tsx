@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useUserStore } from '../store/userStore'
+import { useState, useEffect } from 'react'
+import { authApi } from '../api/auth'
 
 interface ShareModalProps {
   onClose: () => void
@@ -8,12 +8,19 @@ interface ShareModalProps {
 /**
  * 分享赚积分弹窗：展示专属邀请链接 + 复制按钮 + 活动说明
  * 好友通过链接注册后，后端自动给邀请人发放 80 积分（biz_type=share_reward）
+ * 链接使用不可猜测的邀请码（?ref=Xk9mP2vQ），非明文用户ID
  */
 export default function ShareModal({ onClose }: ShareModalProps) {
-  const { user } = useUserStore()
   const [copied, setCopied] = useState(false)
+  const [inviteCode, setInviteCode] = useState<string>('')
 
-  const shareLink = `https://www.qusuansuan.com/?ref=${user?.id ?? ''}`
+  useEffect(() => {
+    authApi.getInviteCode()
+      .then(({ data }) => setInviteCode(data.invite_code || ''))
+      .catch((e) => console.error('获取邀请码失败:', e))
+  }, [])
+
+  const shareLink = inviteCode ? `https://www.qusuansuan.com/?ref=${inviteCode}` : '生成中...'
 
   const handleCopy = async () => {
     // navigator.clipboard 在部分微信内置浏览器不可用，降级 textarea + execCommand
@@ -70,7 +77,8 @@ export default function ShareModal({ onClose }: ShareModalProps) {
             </div>
             <button
               onClick={handleCopy}
-              className="flex-shrink-0 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-all active:scale-95"
+              disabled={!inviteCode}
+              className="flex-shrink-0 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-all active:scale-95 disabled:opacity-50"
               style={{ backgroundColor: copied ? '#7a9a6d' : '#a18072' }}
             >
               {copied ? '已复制 ✓' : '复制链接'}
