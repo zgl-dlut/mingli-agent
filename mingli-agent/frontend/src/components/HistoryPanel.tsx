@@ -6,6 +6,7 @@ import { useChatStore } from '../store/chatStore'
 import { authApi } from '../api/auth'
 import type { Person } from '../types'
 import { genderToText } from '../utils/gender'
+import ContactModal from './ContactModal'
 
 interface HistoryPanelProps {
   isOpen: boolean
@@ -28,6 +29,7 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [showNicknameModal, setShowNicknameModal] = useState(false)
+  const [showContact, setShowContact] = useState(false)
   const [nickname, setNickname] = useState('')
   const [savingNickname, setSavingNickname] = useState(false)
 
@@ -350,6 +352,16 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
+                      setUserMenuOpen(false)
+                      setShowContact(true)
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-primary-500"
+                  >
+                    联系我们
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
                       handleOpenNicknameModal()
                     }}
                     className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-primary-500"
@@ -402,6 +414,9 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
           </div>
         </div>
       )}
+
+      {/* 联系我们弹窗 */}
+      {showContact && <ContactModal onClose={() => setShowContact(false)} />}
 
       {/* 修改昵称弹窗 */}
       {showNicknameModal && (
