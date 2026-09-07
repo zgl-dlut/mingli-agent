@@ -3753,12 +3753,12 @@ async def generate_followup_structured(
                     f"禁止写成'2027年丙申年'或其他干支。"
                 )
             if v["yongshen_wuxing_mismatch"]:
-                yongshen = analysis_data.get("用神", "")
-                jishen = analysis_data.get("忌神", "")
+                ys_local = analysis_data.get("用神", "")
+                js_local = analysis_data.get("忌神", "")
                 parts.append(
                     f"出现了用神/忌神五行错误——报告中提到的用神或忌神五行与传入的命盘数据不一致。"
                     f"【命盘结果优先】必须使用传入的真实用神和忌神五行，禁止编造用神/忌神五行。"
-                    f"用神：{yongshen}，忌神：{jishen}。"
+                    f"用神：{ys_local}，忌神：{js_local}。"
                     f"示例：如果传入数据显示用神是'金'，报告中就必须写'金是用神'，"
                     f"禁止写成'火是用神'或其他五行。"
                 )
