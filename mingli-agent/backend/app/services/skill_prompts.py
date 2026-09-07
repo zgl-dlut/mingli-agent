@@ -1305,10 +1305,68 @@ def _format_question_year_block(key_liunian, user_question: str, birth_year: int
     return "【用户问题涉及年份的详细数据（优先级高于下方重点流年）】\n" + "\n".join(lines) + boundary
 
 
+def resolve_and_format_question_year_block(
+    key_liunian,
+    user_question: str,
+    birth_year: int,
+    yongshen: str = "",
+    jishen: str = "",
+    history_user_qs=None,
+    logger=None,
+) -> tuple:
+    """时间焦点解析 + 问题年份区块构建（生成端 prompt 注入与评测端编造检测基准共用，同源同构）。
+
+    三层时间焦点：本轮显式年份 → 本轮裸月份 → 继承最近一轮用户问题。
+    返回 (区块文本, focus_info)；区块文本为空串表示无涉及年份。
+
+    关键：评测端（build_authoritative_chart_basis）必须与生成端（followup_structured）
+    走同一解析，否则"新组业务适合我吗"这类无时间词追问——生成端靠上下文锚点注入了
+    2026流月、评测端基准却没有——会把正确照抄误判为编造。
+    """
+    import datetime as _dt
+    history_user_qs = history_user_qs or []
+    valid_years = [ly.get('year') for ly in (key_liunian or []) if isinstance(ly, dict) and isinstance(ly.get('year'), int)]
+    start_y, end_y = (min(valid_years), max(valid_years)) if valid_years else (2021, 2045)
+
+    focus = _resolve_time_focus(user_question, history_user_qs, start_y, end_y, now=_dt.datetime.now())
+
+    anchor_note = ""
+    if focus["years"] and not _extract_question_years(user_question, start_y, end_y):
+        y0 = focus["years"][0]
+        m0 = focus.get("month")
+        time_txt = f"{y0}年{m0}月" if m0 else f"{y0}年"
+        if focus["inherited"]:
+            src = (focus.get("source_q") or "")[:50]
+            anchor_note = (
+                f"  ⚠ 本轮问题未明确说年份/月份。按对话上下文，时间焦点承接上轮：{time_txt}\n"
+                f"    （上轮问题：「{src}」）\n"
+                f"    本轮回答必须围绕该年份展开，禁止自行跳到其他年份；若用户本轮明确提到新年份/月份，以用户原话为准。"
+            )
+        else:
+            anchor_note = (
+                f"  ⚠ 本轮问题未明确说年份，按问题中的月份判定时间焦点为：{time_txt}。\n"
+                f"    本轮回答必须围绕该年份展开；若用户指代其他年份，以用户原话为准。"
+            )
+        if logger is not None:
+            logger.info(
+                f"[时间锚点] 本轮无显式年份，时间焦点={time_txt} "
+                f"inherited={focus['inherited']} 来源=「{(focus.get('source_q') or '')[:40]}」"
+            )
+
+    block = _format_question_year_block(
+        key_liunian, user_question, int(birth_year) if birth_year else 0,
+        yongshen=str(yongshen or ""), jishen=str(jishen or ""),
+        override_years=focus["years"] if focus["years"] else None,
+        anchor_note=anchor_note,
+    )
+    return block, focus
+
+
 def build_authoritative_chart_basis(
     analysis_data: Dict,
     user_question: str,
     birth_year: int,
+    history_user_qs=None,
 ) -> str:
     """构建一份报告生成者/评测者共用的「命盘权威精简基准」。
 
@@ -1329,7 +1387,6 @@ def build_authoritative_chart_basis(
     valid_years = sorted({ly.get('year') for ly in key_liunian if isinstance(ly, dict) and isinstance(ly.get('year'), int)})
     start_year = valid_years[0] if valid_years else 2021
     end_year = valid_years[-1] if valid_years else 2045
-    question_years = _extract_question_years(user_question, start_year, end_year)
     ly_by_year = {ly.get('year'): ly for ly in key_liunian if isinstance(ly, dict)}
     by = int(birth_year) if birth_year and isinstance(birth_year, (int, str)) and str(birth_year).isdigit() else 0
 
@@ -1384,10 +1441,13 @@ def build_authoritative_chart_basis(
         lines.append("  " + "  ".join(chunk))
     lines.append("")
 
-    question_block = _format_question_year_block(
+    # 问题年份区块与生成端同源：三层时间焦点（显式年份→裸月份→继承上轮），
+    # 评测端必须传入历史用户问题 history_user_qs，否则无时间词追问的流月引用会被误判编造
+    question_block, _focus = resolve_and_format_question_year_block(
         key_liunian, user_question, by,
         yongshen=analysis_data.get("用神", ""),
         jishen=analysis_data.get("忌神", ""),
+        history_user_qs=history_user_qs,
     )
     if question_block:
         # _format_question_year_block 已自带边界声明

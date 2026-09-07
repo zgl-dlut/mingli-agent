@@ -3174,44 +3174,20 @@ async def generate_followup_structured(
     # 实测依赖 LLM 主动调 get_liuyue_detail 不可靠：历史摘要里有前轮结论时，
     # LLM 直接照抄旧结论、工具调用=0次，导致编造结论代代传染。
     # 对齐首次报告链路：把涉及年份的完整数据直接喂给 LLM，从源头消除编造动机。
+    from app.services.skill_prompts import resolve_and_format_question_year_block
     _by_raw = birth_date.split('-')[0] if birth_date and '-' in birth_date else ""
     _birth_year_int = int(_by_raw) if _by_raw.isdigit() else 0
 
-    # 时间焦点解析：本轮无显式年份时，裸月份解析/继承上轮用户问题的时间锚点。
-    # 解决"新组业务适合我吗"这类无时间词追问导致LLM年份漂移（如上轮问9月换组、本轮答成27年）。
-    # 锚点只取用户问题原文，不引入AI历史结论，不破坏"摘要去断语化"防编造设计。
-    import datetime as _dt
-    _ly_years = [ly.get('year') for ly in (key_liunian_raw or []) if isinstance(ly, dict) and isinstance(ly.get('year'), int)]
-    _start_y, _end_y = (min(_ly_years), max(_ly_years)) if _ly_years else (2021, 2045)
+    # 时间焦点解析（三层：显式年份→裸月份→继承上轮）+ 问题年份区块构建。
+    # 必须走 skill_prompts 公共函数：评测端 build_authoritative_chart_basis 用同一函数构建
+    # 编造检测基准，生成端注入什么数据、检测端就有什么基准，避免无时间词追问的流月引用被误判编造。
     _hist_user_qs = [str(m.get("content") or "") for m in history if m.get("role") == "user"]
-    _focus = _resolve_time_focus(user_question, _hist_user_qs, _start_y, _end_y, now=_dt.datetime.now())
-
-    # 本轮无显式年份但解析出时间焦点（裸月份隐式锚点 或 继承上轮）→ 拼锚点说明注入
-    _anchor_note = ""
-    if _focus["years"] and not _extract_question_years(user_question, _start_y, _end_y):
-        _y0 = _focus["years"][0]
-        _m0 = _focus.get("month")
-        _time_txt = f"{_y0}年{_m0}月" if _m0 else f"{_y0}年"
-        if _focus["inherited"]:
-            _src = (_focus.get("source_q") or "")[:50]
-            _anchor_note = (
-                f"  ⚠ 本轮问题未明确说年份/月份。按对话上下文，时间焦点承接上轮：{_time_txt}\n"
-                f"    （上轮问题：「{_src}」）\n"
-                f"    本轮回答必须围绕该年份展开，禁止自行跳到其他年份；若用户本轮明确提到新年份/月份，以用户原话为准。"
-            )
-        else:
-            _anchor_note = (
-                f"  ⚠ 本轮问题未明确说年份，按问题中的月份判定时间焦点为：{_time_txt}。\n"
-                f"    本轮回答必须围绕该年份展开；若用户指代其他年份，以用户原话为准。"
-            )
-        logger.info(f"[时间锚点] 本轮无显式年份，时间焦点={_time_txt} inherited={_focus['inherited']} 来源=「{_focus.get('source_q', '')[:40]}」")
-
-    question_year_block = _format_question_year_block(
+    question_year_block, _focus = resolve_and_format_question_year_block(
         key_liunian_raw, user_question, _birth_year_int,
         yongshen=str(context.get('yongshen', '') or ''),
         jishen=str(context.get('jishen', '') or ''),
-        override_years=_focus["years"] if _focus["years"] else None,
-        anchor_note=_anchor_note,
+        history_user_qs=_hist_user_qs,
+        logger=logger,
     )
     if question_year_block:
         system_prompt += (

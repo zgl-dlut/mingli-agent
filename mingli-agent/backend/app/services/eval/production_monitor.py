@@ -273,6 +273,7 @@ async def run_deep_eval(
     user_question: str,
     chart_data: Dict,
     is_first_report: bool = False,
+    history_user_qs=None,
 ) -> Dict:
     """执行 LLM 深度评测（第三层），调用 llm_scorer.evaluate_report。
 
@@ -281,6 +282,7 @@ async def run_deep_eval(
         user_question: 用户问题
         chart_data: 命盘数据
         is_first_report: 是否首次报告
+        history_user_qs: 历史用户问题原文列表（时间锚点继承用，与生成端同源）
 
     Returns:
         {
@@ -294,7 +296,10 @@ async def run_deep_eval(
     """
     try:
         from app.services.eval.llm_scorer import evaluate_report
-        result = await evaluate_report(report, user_question, chart_data, is_first_report)
+        result = await evaluate_report(
+            report, user_question, chart_data, is_first_report,
+            history_user_qs=history_user_qs,
+        )
         # 统一格式：提取所有 violations
         all_violations = []
         hard_check = result.get("hard_check", {})
@@ -338,6 +343,7 @@ async def save_monitor_result(
     chart_data: Optional[Dict] = None,
     eval_detail: Optional[Dict] = None,
     prompt_version: str = "",
+    history_user_qs=None,
 ) -> None:
     """保存生产监控结果到数据库。
 
@@ -356,7 +362,10 @@ async def save_monitor_result(
         # 当 trigger_reason == "no_trigger" 时跳过深度评测（仅记录轻量监控）
         if eval_detail is None and chart_data and trigger_reason != "no_trigger":
             logger.info(f"[ProductionMonitor] 开始 LLM 深度评测...")
-            eval_detail = await run_deep_eval(report, user_question, chart_data, is_first_report)
+            eval_detail = await run_deep_eval(
+                report, user_question, chart_data, is_first_report,
+                history_user_qs=history_user_qs,
+            )
 
         # 先构建 monitor_detail（传入 eval_detail 以包含 L2 指标）
         monitor_detail = build_monitor_detail(

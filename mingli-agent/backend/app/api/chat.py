@@ -437,6 +437,12 @@ async def _generate_and_save(
                     is_first_report=False,
                     generation_time=gen_time,
                 )
+                # 历史用户问题原文：评测端时间锚点继承用（与生成端同源），
+                # 无时间词追问（如"新组业务适合我吗"）靠上轮问题确定流月年份
+                _hist_qs = [
+                    str(m.get("content") or "") for m in (history or [])
+                    if m.get("role") == "user" and str(m.get("content") or "").strip()
+                ]
                 await save_monitor_result(
                     report=report_data,
                     user_question=question,
@@ -449,6 +455,7 @@ async def _generate_and_save(
                     # 与生成端同源，避免评测端用 person 旧版命盘导致大运等数据不一致→误判编造
                     chart_data=usage_holder.get("analysis_data") or bazi_data,
                     prompt_version=PROMPT_VERSION,
+                    history_user_qs=_hist_qs,
                 )
             except Exception as mon_e:
                 print(f"[_generate_and_save] 生产监控异常: {mon_e}", flush=True)
@@ -715,6 +722,15 @@ async def _generate_and_save_first_reading(
                 user_q_row = user_q_result.scalar_one_or_none()
                 user_question = user_q_row.content if user_q_row else ""
 
+                # 历史用户问题原文：评测端时间锚点继承用（与生成端同源）
+                _hist_rows = (await db.execute(
+                    select(ChatMessage.content).where(
+                        ChatMessage.session_id == session_id,
+                        ChatMessage.role == "user",
+                    ).order_by(ChatMessage.created_at.asc())
+                )).scalars().all()
+                _hist_qs = [str(c or "") for c in _hist_rows if str(c or "").strip()]
+
                 need_eval, trigger_reason = should_deep_eval(
                     report=report_data,
                     user_question=user_question,
@@ -731,6 +747,7 @@ async def _generate_and_save_first_reading(
                     generation_time=gen_time,
                     chart_data=bazi_data,
                     prompt_version=PROMPT_VERSION,
+                    history_user_qs=_hist_qs,
                 )
             except Exception as mon_e:
                 print(f"[_generate_and_save_first_reading] 生产监控异常: {mon_e}", flush=True)

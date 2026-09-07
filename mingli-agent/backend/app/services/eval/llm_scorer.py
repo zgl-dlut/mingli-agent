@@ -18,6 +18,7 @@ async def evaluate_report(
     user_question: str,
     chart_data: dict,
     is_first_reading: bool = False,
+    history_user_qs: Optional[List[str]] = None,
 ) -> dict:
     """分层评分主入口：硬性检查 → 软性评分。
 
@@ -26,6 +27,7 @@ async def evaluate_report(
         user_question: 用户原始问题
         chart_data: 命盘数据 dict
         is_first_reading: 是否首次报告
+        history_user_qs: 历史用户问题原文列表（用于时间锚点继承，与生成端同源）
 
     Returns:
         {
@@ -76,7 +78,10 @@ async def evaluate_report(
         sizu = chart_data.get("四柱", "") if isinstance(chart_data, dict) else ""
     except Exception:
         sizu = ""
-    fabrication = await llm_check_fabrication(report, chart_data, user_question=user_question, birth_year=birth_year)
+    fabrication = await llm_check_fabrication(
+        report, chart_data, user_question=user_question, birth_year=birth_year,
+        history_user_qs=history_user_qs,
+    )
 
     # 编造检测有 high 严重程度 → 也判定不合格
     fab_blocked = (
@@ -130,17 +135,23 @@ async def llm_check_fabrication(
     chart_data: dict,
     user_question: str = "",
     birth_year: Optional[int] = None,
+    history_user_qs: Optional[List[str]] = None,
 ) -> dict:
     """用 LLM 判断输出是否编造了命盘未提供的信息（语义层补充）。
 
     关键：基准与报告生成时注入 prompt 的「命盘权威基准」完全一致
     （build_authoritative_chart_basis），避免"生成者拿了2027流月、检测器只看
-    chart_data前2000字没写2027→误判编造"的系统性误报。
+    chart_data前2000字没写2027误判编造"的系统性误报。
+
+    history_user_qs：历史用户问题原文。无时间词追问（如"新组业务适合我吗"）的时间焦点
+    靠继承上轮问题（如上轮"9月换组"）得到，生成端与检测端必须走同一时间锚点解析，
+    否则生成端注入了锚点年份流月、检测端基准却没有 → 正确引用被误判编造。
     """
     try:
         from app.services.skill_prompts import build_authoritative_chart_basis
         basis = build_authoritative_chart_basis(
-            chart_data or {}, user_question or "", int(birth_year) if birth_year else 0
+            chart_data or {}, user_question or "", int(birth_year) if birth_year else 0,
+            history_user_qs=history_user_qs,
         )
     except Exception:
         basis = json.dumps(chart_data, ensure_ascii=False)[:2000]
