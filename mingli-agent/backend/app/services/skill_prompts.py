@@ -1127,7 +1127,79 @@ def _extract_question_years(user_question: str, start_year: int, end_year: int) 
     return sorted(years)
 
 
-def _format_question_year_block(key_liunian, user_question: str, birth_year: int, yongshen: str = "", jishen: str = "") -> str:
+# 出生语境词：含这些词时裸月份大概率是生日/出生月份，不做时间锚点
+_BIRTH_CONTEXT_RE = re.compile(r'出生|生于|生日|生辰|生的|阳历|阴历|农历|公历|老历|新历')
+
+
+def _extract_month_focus(user_question: str):
+    """从问题提取裸月份（如"9月换组"→9），返回 1-12 的 int；无则 None。
+
+    防护：
+      - "3个月"是时长不是月份（数字和"月"之间隔了"个"，正则天然不匹配）
+      - 出生语境（"1995年10月出生""10月生的"）跳过，防止出生月份误锚
+    """
+    if not user_question:
+        return None
+    if _BIRTH_CONTEXT_RE.search(user_question):
+        return None
+    m = re.search(r'(?<!\d)(\d{1,2})\s*月(?!\s*[半整]?个)', user_question)
+    if not m:
+        return None
+    month = int(m.group(1))
+    return month if 1 <= month <= 12 else None
+
+
+def _resolve_month_year(month: int, now=None) -> int:
+    """裸月份→年份解析：月份>=当前月→今年，否则→明年。
+
+    命理咨询基本面向未来：9月问"9月"指今年9月，问"3月"大概率指明年3月。
+    """
+    import datetime as _dt
+    now = now or _dt.datetime.now()
+    return now.year if month >= now.month else now.year + 1
+
+
+def _resolve_time_focus(current_q: str, history_user_qs: list, start_year: int, end_year: int, now=None) -> dict:
+    """解析本轮对话的时间焦点（年份），三层优先级：
+
+    1. 本轮显式年份（2027年/27年/明年/当下等，走 _extract_question_years）
+    2. 本轮裸月份（"9月换组"→按当前时间解析年份）
+    3. 继承最近一轮用户问题的时间焦点（显式年份或裸月份）
+
+    解决"新组业务适合我吗"这类无时间词追问导致 LLM 年份漂移的问题。
+    锚点只取用户问题原文，不引入任何 AI 历史结论，保持历史摘要去断语化的防编造设计。
+
+    返回: {"years": [int], "inherited": bool, "source_q": str, "month": int|None}
+    """
+    import datetime as _dt
+    now = now or _dt.datetime.now()
+    empty = {"years": [], "inherited": False, "source_q": "", "month": None}
+    if not current_q:
+        return empty
+    # 1. 本轮显式年份
+    years = _extract_question_years(current_q, start_year, end_year)
+    if years:
+        return {"years": years, "inherited": False, "source_q": "", "month": None}
+    # 2. 本轮裸月份
+    m = _extract_month_focus(current_q)
+    if m:
+        y = _resolve_month_year(m, now)
+        if start_year <= y <= end_year:
+            return {"years": [y], "inherited": False, "source_q": "", "month": m}
+    # 3. 继承最近一轮用户问题（只看最近1轮，避免跨话题误继承）
+    for hq in reversed([str(q or "").strip() for q in history_user_qs if str(q or "").strip()]):
+        h_years = _extract_question_years(hq, start_year, end_year)
+        if h_years:
+            return {"years": h_years, "inherited": True, "source_q": hq[:80], "month": None}
+        hm = _extract_month_focus(hq)
+        if hm:
+            y = _resolve_month_year(hm, now)
+            if start_year <= y <= end_year:
+                return {"years": [y], "inherited": True, "source_q": hq[:80], "month": hm}
+    return empty
+
+
+def _format_question_year_block(key_liunian, user_question: str, birth_year: int, yongshen: str = "", jishen: str = "", override_years=None, anchor_note: str = "") -> str:
     """构建"问题涉及年份"的流年+流月明细区块（含命盘数据边界声明）。
 
     排盘已算好范围内全部年份的流年和流月，但 prompt 只展示前5个重点流年；
@@ -1145,17 +1217,22 @@ def _format_question_year_block(key_liunian, user_question: str, birth_year: int
     if not valid_years:
         return ""
     start_year, end_year = min(valid_years), max(valid_years)
-    question_years = _extract_question_years(user_question, start_year, end_year)
+    # override_years：外部已解析好的时间焦点（裸月份解析/上轮继承），直接使用
+    question_years = list(override_years) if override_years else _extract_question_years(user_question, start_year, end_year)
 
     lines = []
     ly_by_year = {ly.get('year'): ly for ly in key_liunian if isinstance(ly, dict)}
+    # 继承/隐式锚点时在区块顶部插入说明，★标记文案也同步区分
+    if anchor_note:
+        lines.append(anchor_note)
     for y in question_years:
         ly = ly_by_year.get(y)
         if not ly:
             continue
         age_hint = f"，{y - birth_year}岁" if birth_year and isinstance(birth_year, int) else ""
+        marker = "★上下文时间锚点（承接上轮对话）" if anchor_note else "★用户问题涉及年份"
         lines.append(
-            f"  - {y}年 {ly.get('ganzhi', '')}：{ly.get('judge', '')}（{ly.get('reason', '')}）{age_hint} ★用户问题涉及年份"
+            f"  - {y}年 {ly.get('ganzhi', '')}：{ly.get('judge', '')}（{ly.get('reason', '')}）{age_hint} {marker}"
         )
         liuyue_list = ly.get('liuyue', [])
         if isinstance(liuyue_list, list) and liuyue_list:

@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from app.schemas.report_schema import FollowupReport
 from app.services.report_styles import pick_styles
-from app.services.skill_prompts import _build_context_vars, _extract_liuyue_data, _format_question_year_block
+from app.services.skill_prompts import _build_context_vars, _extract_liuyue_data, _format_question_year_block, _resolve_time_focus, _extract_question_years
 from app.services.ai_service import model_pool, get_client, build_llm_extra_body, build_cache_control_messages
 
 logger = logging.getLogger(__name__)
@@ -401,6 +401,7 @@ async def build_structured_prompt(
 - 3条问题尽量来自不同维度（事业/财运/感情/健康/流年），不要全问同一方向
 - 禁止推荐与本轮已回答内容重复的问题
 - 禁止推荐与此前对话历史中已问过的问题重复的问题
+- 时间自包含（强制执行）：若本轮回答围绕具体时间焦点（如"2026年9月换组""27年4月谈赔偿"），推荐问题必须自然带上时间限定（如"9月换组后新业务适合我吗"），禁止生成脱离时间语境的光秃秃短句（如只说"新组业务适合我吗"——用户一键发送后时间上下文会丢失）
 
 ## 硬性JSON渲染约束（一条都不可改动，保障前端稳定渲染）
 - **subtopics 必须一一对应用户问题中的子问题（硬约束，高频违规点）**：用户问了几个子问题，就生成几个 subtopic，禁止自行添加用户没问的子问题。例如用户问"几月拿offer、几月入职、新公司发展如何、涨薪如何"，就生成4个 subtopic 分别回答这4个问题，**禁止**额外添加"完整行动路线""从现在到入职"等用户没问的总结性子问题。行动路线/时间线/步骤清单属于 summary 的内容，不属于 subtopic
@@ -3175,10 +3176,42 @@ async def generate_followup_structured(
     # 对齐首次报告链路：把涉及年份的完整数据直接喂给 LLM，从源头消除编造动机。
     _by_raw = birth_date.split('-')[0] if birth_date and '-' in birth_date else ""
     _birth_year_int = int(_by_raw) if _by_raw.isdigit() else 0
+
+    # 时间焦点解析：本轮无显式年份时，裸月份解析/继承上轮用户问题的时间锚点。
+    # 解决"新组业务适合我吗"这类无时间词追问导致LLM年份漂移（如上轮问9月换组、本轮答成27年）。
+    # 锚点只取用户问题原文，不引入AI历史结论，不破坏"摘要去断语化"防编造设计。
+    import datetime as _dt
+    _ly_years = [ly.get('year') for ly in (key_liunian_raw or []) if isinstance(ly, dict) and isinstance(ly.get('year'), int)]
+    _start_y, _end_y = (min(_ly_years), max(_ly_years)) if _ly_years else (2021, 2045)
+    _hist_user_qs = [str(m.get("content") or "") for m in history if m.get("role") == "user"]
+    _focus = _resolve_time_focus(user_question, _hist_user_qs, _start_y, _end_y, now=_dt.datetime.now())
+
+    # 本轮无显式年份但解析出时间焦点（裸月份隐式锚点 或 继承上轮）→ 拼锚点说明注入
+    _anchor_note = ""
+    if _focus["years"] and not _extract_question_years(user_question, _start_y, _end_y):
+        _y0 = _focus["years"][0]
+        _m0 = _focus.get("month")
+        _time_txt = f"{_y0}年{_m0}月" if _m0 else f"{_y0}年"
+        if _focus["inherited"]:
+            _src = (_focus.get("source_q") or "")[:50]
+            _anchor_note = (
+                f"  ⚠ 本轮问题未明确说年份/月份。按对话上下文，时间焦点承接上轮：{_time_txt}\n"
+                f"    （上轮问题：「{_src}」）\n"
+                f"    本轮回答必须围绕该年份展开，禁止自行跳到其他年份；若用户本轮明确提到新年份/月份，以用户原话为准。"
+            )
+        else:
+            _anchor_note = (
+                f"  ⚠ 本轮问题未明确说年份，按问题中的月份判定时间焦点为：{_time_txt}。\n"
+                f"    本轮回答必须围绕该年份展开；若用户指代其他年份，以用户原话为准。"
+            )
+        logger.info(f"[时间锚点] 本轮无显式年份，时间焦点={_time_txt} inherited={_focus['inherited']} 来源=「{_focus.get('source_q', '')[:40]}」")
+
     question_year_block = _format_question_year_block(
         key_liunian_raw, user_question, _birth_year_int,
         yongshen=str(context.get('yongshen', '') or ''),
         jishen=str(context.get('jishen', '') or ''),
+        override_years=_focus["years"] if _focus["years"] else None,
+        anchor_note=_anchor_note,
     )
     if question_year_block:
         system_prompt += (
