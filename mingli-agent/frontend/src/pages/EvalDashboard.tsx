@@ -1378,6 +1378,32 @@ export default function EvalDashboard() {
                                       ))}
                                     </div>
                                   )}
+                                  {/* 逐项核对明细：裁判自证查了什么，无编造也可展开核对 */}
+                                  {(item.fabrication['核对明细'] || []).length > 0 && (
+                                    <details className="ml-16 mt-1">
+                                      <summary className="cursor-pointer text-blue-600 hover:text-blue-800">
+                                        🔍 逐项核对明细（{item.fabrication['核对明细'].length}项，点击展开裁判核对过程）
+                                      </summary>
+                                      <div className="mt-1 space-y-1">
+                                        {item.fabrication['核对明细'].map((c: any, k: number) => (
+                                          <div key={k} className="flex gap-1.5 text-xs">
+                                            <span className="shrink-0">
+                                              {c['结果'] === '违规' ? '❌' : c['结果'] === '通过' ? '✅' : '➖'}
+                                            </span>
+                                            <div>
+                                              <span className={
+                                                c['结果'] === '违规' ? 'text-red-600 font-medium' :
+                                                c['结果'] === '通过' ? 'text-green-700 font-medium' : 'text-gray-400'
+                                              }>
+                                                【{c['检查项']}{c['结果'] !== '未涉及' ? `·${c['结果']}` : ''}】
+                                              </span>
+                                              <span className="text-gray-600">{c['说明']}</span>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </details>
+                                  )}
                                 </div>
                               )}
                               {/* 跳过原因 */}

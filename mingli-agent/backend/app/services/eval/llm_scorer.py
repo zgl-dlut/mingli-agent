@@ -156,6 +156,15 @@ async def llm_check_fabrication(
     except Exception:
         basis = json.dumps(chart_data, ensure_ascii=False)[:2000]
 
+    # 流年覆盖范围（供核对明细第8项"越界年份"判断，与 basis 内标注一致）
+    try:
+        key_liunian = (chart_data or {}).get("重点流年", [])
+        valid_years = sorted({ly.get('year') for ly in key_liunian
+                              if isinstance(ly, dict) and isinstance(ly.get('year'), int)})
+        ly_range = f"{valid_years[0]}-{valid_years[-1]}年" if valid_years else "命盘所示"
+    except Exception:
+        ly_range = "命盘所示"
+
     prompt = f"""命盘数据（权威来源，与报告生成者共用同一份）：
 {basis}
 
@@ -187,9 +196,32 @@ LLM 生成的报告：
 
 严重程度：命盘数据编造(类型1)/与命盘矛盾(类型2)/无依据数字事件(类型3)=high；纯凑话团队画像=medium
 
-输出 JSON：{{"编造": true/false, "编造内容": ["..."], "严重程度": "high/medium/low"}}
+【必须输出逐项核对明细——无论是否发现编造】
+你不能只给一个"无编造"的结论，必须逐项核对报告实际引用的内容，并在"核对明细"中列出每一项的核对过程，
+让人能看到你确实查过。固定核对以下 8 项（报告未涉及的项结果标"未涉及"，不要省略该项）：
+1. 大运干支：报告提到的每个大运干支，是否在命盘【大运序列/当前大运】中
+2. 流年干支：报告提到的流年干支/吉凶，是否与命盘【流年覆盖】一致
+3. 流月吉凶：报告提到的具体月份吉凶/行动建议，是否与命盘该年流月明细一致
+4. 十神：报告提到的十神（正财/正官/七杀等），是否在命盘【十神分布】中标注（禁止自行重推，见上方铁律）
+5. 格局：报告提到的格局名，是否与命盘【格局】标注一致
+6. 用神忌神：报告提到的用神/忌神/喜神，是否与命盘标注一致
+7. 具体数字/事件：报告是否出现命盘算不出的具体数字（薪资倍数/涨幅/几号入职）或具体人物故事
+8. 越界年份：报告是否引用了命盘覆盖范围（{ly_range}）之外的年份且未声明"命盘未提供"
+
+每项"说明"必须写明核对依据，格式如："报告称'己亥大运'，命盘大运序列含己亥(2026-2035)，一致"
+或"报告称'乙卯大运'，命盘大运序列无此干支，编造"。禁止只写"没问题""一致"这种空泛说明。
+
+输出 JSON：{{
+  "编造": true/false,
+  "编造内容": ["..."],
+  "严重程度": "high/medium/low",
+  "核对明细": [
+    {{"检查项": "大运干支", "结果": "通过/违规/未涉及", "说明": "报告称'...'，命盘...，一致/不一致"}},
+    ...8项齐全
+  ]
+}}
 """
-    return await _call_llm(prompt)
+    return await _call_llm(prompt, max_tokens=2000)
 
 
 def _build_fabrication_basis(chart_data: dict, user_question: str = "", birth_year: Optional[int] = None) -> str:
@@ -204,7 +236,7 @@ def _build_fabrication_basis(chart_data: dict, user_question: str = "", birth_ye
         return json.dumps(chart_data, ensure_ascii=False)[:2000]
 
 
-async def _call_llm(prompt: str) -> dict:
+async def _call_llm(prompt: str, max_tokens: int = 1000) -> dict:
     """调用 qwen-flash，复用 model_pool。"""
     try:
         from app.services.ai_service import model_pool, get_client, build_llm_extra_body
@@ -218,7 +250,7 @@ async def _call_llm(prompt: str) -> dict:
             model=model_config.name,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            max_tokens=1000,
+            max_tokens=max_tokens,
             response_format={"type": "json_object"},
             timeout=30,
             extra_body=build_llm_extra_body(model_config.name),
