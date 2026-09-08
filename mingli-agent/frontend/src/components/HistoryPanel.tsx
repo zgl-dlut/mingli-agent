@@ -6,6 +6,7 @@ import { useChatStore } from '../store/chatStore'
 import { authApi } from '../api/auth'
 import type { Person } from '../types'
 import { genderToText } from '../utils/gender'
+import { solarToLunar } from '../utils/lunarConvert'
 import ContactModal from './ContactModal'
 
 interface HistoryPanelProps {
@@ -32,6 +33,20 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
   const [showContact, setShowContact] = useState(false)
   const [nickname, setNickname] = useState('')
   const [savingNickname, setSavingNickname] = useState(false)
+
+  // 根据用户原始历法，返回展示用的生辰日期字符串（农历用户需把公历日期还原）
+  const getDisplayBirthDate = (person: Person): string => {
+    if (person.calendar_type !== 'lunar') return person.birth_date
+    const [y, m, d] = person.birth_date.split('-').map(Number)
+    if (!y || !m || !d) return person.birth_date
+    try {
+      const lunar = solarToLunar(y, m, d)
+      const leap = lunar.isLeap ? '闰' : ''
+      return `${lunar.year}-${leap}${String(lunar.month).padStart(2, '0')}-${String(lunar.day).padStart(2, '0')}`
+    } catch {
+      return person.birth_date
+    }
+  }
 
   const handleClose = () => {
     setIsExiting(true)
@@ -80,7 +95,7 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
   const handleStartEdit = (person: Person) => {
     setEditingId(person.id)
     // 默认显示出生年月日时间
-    setEditName(person.name || `${person.birth_date} ${person.birth_time}`)
+    setEditName(person.name || `${getDisplayBirthDate(person)} ${person.birth_time}`)
     setExpandedMenuId(null) // 关闭菜单
   }
 
@@ -236,7 +251,7 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
                     ) : (
                       <>
                         <h3 className="font-medium text-gray-800 text-sm truncate">
-                          {person.name || `${person.birth_date} ${person.birth_time}`}
+                          {person.name || `${getDisplayBirthDate(person)} ${person.birth_time}`}
                         </h3>
                         <p className="text-gray-400 text-xs">
                           {person.birth_place} · {person.calendar_type === 'solar' ? '公历' : '农历'} · {genderToText(person.gender)}

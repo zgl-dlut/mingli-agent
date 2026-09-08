@@ -411,4 +411,4 @@ class TestLiunianLiuyueConsistency:
             assert judge in ctx_str, f"上下文缺少流年{year}年的吉凶标签{judge}"
 
         # 验证流月数据也传递到了上下文
-        assert "流月吉凶" in ctx_str, "上下文缺少流月吉凶数据"
+        assert "流月明细" in ctx_str, "上下文缺少流月明细数据"

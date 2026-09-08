@@ -6,6 +6,9 @@ LLM 输出 JSON（response_format=json_object），后端容错+校验，
 
 与首次报告解读链路完全隔离，互不影响。
 """
+
+from __future__ import annotations
+
 import json
 import re
 import time

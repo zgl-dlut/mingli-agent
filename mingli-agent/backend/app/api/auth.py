@@ -1,7 +1,11 @@
 """
 认证 API - 手机号验证码登录 + 微信 OAuth
 """
+
+from __future__ import annotations
+
 import logging
+from typing import Optional
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import RedirectResponse
@@ -57,7 +61,7 @@ class SendSmsRequest(BaseModel):
 class VerifySmsRequest(BaseModel):
     phone: str
     code: str
-    ref: str | None = None  # 邀请码/旧版数字ID（分享链接 ?ref= 带来）
+    ref: Optional[str] = None  # 邀请码/旧版数字ID（分享链接 ?ref= 带来）
 
 
 # 邀请码字符集：去除易混淆的 0/O、1/I/L
@@ -85,7 +89,7 @@ async def get_or_create_invite_code(db: AsyncSession, user: User) -> str:
     raise RuntimeError("邀请码生成失败（连续碰撞）")
 
 
-async def resolve_inviter_by_ref(db: AsyncSession, ref: str | None) -> User | None:
+async def resolve_inviter_by_ref(db: AsyncSession, ref: Optional[str]) -> Optional[User]:
     """把分享链接的 ref 解析为邀请人：优先按邀请码查，纯数字兼容旧版 ?ref=用户ID 链接"""
     if not ref or not isinstance(ref, str):
         return None
@@ -138,7 +142,7 @@ async def grant_new_user_bonus(db: AsyncSession, user: User) -> None:
     logger.info(f"[AUTH] 新用户 {user.phone} 自动赠送 {bonus} 积分")
 
 
-async def grant_share_reward(db: AsyncSession, inviter: User | None, new_user: User) -> None:
+async def grant_share_reward(db: AsyncSession, inviter: Optional[User], new_user: User) -> None:
     """分享赚积分：新用户通过邀请链接注册后，给邀请人发放奖励积分。
 
     仅在新用户创建分支调用（老用户登录天然不触发，每个新用户只发一次）。

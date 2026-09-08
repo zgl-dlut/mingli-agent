@@ -1162,12 +1162,20 @@ def calculate_dayun(birth_datetime: datetime, day_tian: str, gender: str, month_
 
 
 def calculate_wuxing(pillars: Dict[str, Dict[str, str]]) -> Dict[str, int]:
+    """
+    统计五行分布，包含天干和地支藏干（本气+中气+余气）。
+
+    仅统计天干+地支本气会漏掉藏干中的五行（如亥中甲木、辰中乙木），
+    导致"木完全缺失"等与命盘底层逻辑矛盾的错误结论。
+    """
     wuxing = {"金": 0, "木": 0, "火": 0, "土": 0, "水": 0}
     for pillar in pillars.values():
         tian = pillar["tian"]
         di = pillar["di"]
         wuxing[TIANGAN_WUXING[tian]] += 1
-        wuxing[DIZHI_WUXING[di]] += 1
+        # 地支藏干（本气+中气+余气），DIZHI_CANGGAN 首项即本气，无需再加 DIZHI_WUXING
+        for cg in DIZHI_CANGGAN.get(di, []):
+            wuxing[TIANGAN_WUXING[cg]] += 1
     return wuxing
 
 

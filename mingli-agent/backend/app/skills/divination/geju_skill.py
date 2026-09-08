@@ -360,6 +360,96 @@ def _apply_tiaohou_correction(xi_ji: Dict, day_tian: str, month_di: str, geju_ty
 # 主接口
 # ============================================================
 
+
+
+def _check_poge(day_tian: str, pillars: Dict, shishen: Dict, geju_shishen: str) -> Optional[Dict]:
+    """
+    格局破格检查。
+
+    常见破格条件（基于《渊海子平》格局用神理论）：
+    - 食神格/伤官格：天干见印星（正印/偏印）→ 印星夺食/制伤（枭神夺食最凶）
+    - 正官格：天干见伤官 → 伤官见官
+    - 七杀格：天干无食神/伤官制杀（简化判断，实际还需看身强身弱）
+
+    参数:
+        day_tian: 日主天干
+        pillars: 四柱
+        shishen: 十神 {"年": {"tian": "正财", "di": "偏印"}, ...}
+        geju_shishen: 格局十神（如"食神"、"正官"等）
+
+    返回:
+        破格时返回 {"is_poge": True, "type": ..., "detail": ..., "description": ...}
+        未破格返回 None
+    """
+    if not geju_shishen:
+        return None
+
+    # 收集天干十神（排除日主自身）
+    pillar_names = ["年", "月", "日", "时"]
+    tian_shishen = {}
+    for name in pillar_names:
+        ss = shishen.get(name, {}).get("tian", "")
+        if ss and ss != "日主":
+            tian_shishen[name] = ss
+
+    # 食神格 / 伤官格 破格：印星夺食（偏印=枭神夺食最凶，正印亦夺食）
+    if geju_shishen in ("食神", "伤官"):
+        yin_list = [
+            f"{name}干{ss}" for name, ss in tian_shishen.items()
+            if ss in ("正印", "偏印")
+        ]
+        if yin_list:
+            has_pianyin = "偏印" in tian_shishen.values()
+            xing_name = "枭神夺食" if has_pianyin else "印星夺食"
+            geju_label = "食神" if geju_shishen == "食神" else "伤官"
+            return {
+                "is_poge": True,
+                "type": xing_name,
+                "detail": "、".join(yin_list),
+                "description": (
+                    f"{geju_label}格天干见印星({'、'.join(yin_list)})，构成破格（{xing_name}）。"
+                    f"需财星制印护{geju_label}，或比劫化印生身，方能解破格之病；"
+                    f"若原局无解救，则格局层次大降。"
+                ),
+            }
+
+    # 正官格 破格：伤官见官
+    if geju_shishen == "正官":
+        shangguan_list = [
+            f"{name}干{ss}" for name, ss in tian_shishen.items()
+            if ss == "伤官"
+        ]
+        if shangguan_list:
+            return {
+                "is_poge": True,
+                "type": "伤官见官",
+                "detail": "、".join(shangguan_list),
+                "description": (
+                    f"正官格天干见伤官({'、'.join(shangguan_list)})，构成破格（伤官见官，为祸百端）。"
+                    f"需印星制伤护官，或财星化伤生官，方解。"
+                ),
+            }
+
+    # 七杀格 破格：天干无食伤制杀（简化判断）
+    if geju_shishen == "七杀":
+        has_shishang = any(
+            ss in ("食神", "伤官") for ss in tian_shishen.values()
+        )
+        if not has_shishang:
+            # 七杀无制，但若身强有比劫亦可抗杀，此处仅作提示
+            return {
+                "is_poge": True,
+                "type": "七杀无制",
+                "detail": "天干无食神/伤官制杀",
+                "description": (
+                    "七杀格天干无食神伤官制杀，构成破格（七杀无制）。"
+                    "需身强有比劫帮身抗杀，或食神伤官制杀，方为贵格。"
+                ),
+            }
+
+    return None
+
+
 def calculate_geju(
     day_tian: str,
     month_di: str,
@@ -496,7 +586,12 @@ def calculate_geju(
             "说明": f"旺衰结论为「{wangshuai_conclusion}」，可能构成从格，需结合全局详细判断",
         }
 
-    # ---- 8. 返回结果 ----
+    # ---- 8. 破格检查 ----
+    poge = _check_poge(day_tian, pillars, shishen, geju_shishen)
+    if poge is not None:
+        full_desc += poge["description"]
+
+    # ---- 9. 返回结果 ----
     result = {
         "geju_type": geju_type,
         "geju_source": geju_source,
@@ -504,6 +599,7 @@ def calculate_geju(
         "geju_source_ganzhi": geju_source_ganzhi,
         "xi_ji": xi_ji,
         "special_geju": special_geju,
+        "poge": poge,
         "full_description": full_desc,
     }
 

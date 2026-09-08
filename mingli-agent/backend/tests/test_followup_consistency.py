@@ -14,6 +14,7 @@
 import sys
 import os
 import json
+import asyncio
 import urllib.request
 
 import pytest
@@ -22,6 +23,11 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from app.services.followup_structured import build_structured_prompt, _build_history_summary, _extract_and_fix_json
+
+def _build_prompt(*args, **kwargs):
+    """同步包装 async 的 build_structured_prompt，供测试调用"""
+    return asyncio.run(build_structured_prompt(*args, **kwargs))
+
 from app.services.report_styles import (
     OPENING_STYLES, SUMMARY_STYLES, RECENT_WINDOW, pick_styles, _collect_used_styles,
 )
@@ -62,6 +68,7 @@ FIXED_CONTEXT = {
     "key_liunian": "2027丁未年：丁火透干+未土，火土忌神当道，对弱水日主不利，耗身破财",
     "user_question": "2027年我适合创业吗？",
     "age": 35,
+    "birth_year": 1991,
     "age_stage": "中年期（31-50岁）",
 }
 
@@ -81,44 +88,44 @@ class TestPromptConsistencyRules:
 
     def test_prompt_has_panpan_authority(self):
         """命盘数据是最高推演依据"""
-        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
+        prompt = _build_prompt(FIXED_CONTEXT, WRONG_HISTORY)
         assert "命盘数据是最高推演依据" in prompt
 
     def test_prompt_allows_correction(self):
         """以命盘为准可修正前轮"""
-        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
+        prompt = _build_prompt(FIXED_CONTEXT, WRONG_HISTORY)
         assert "以命盘为准" in prompt
 
     def test_prompt_forbids_blind_follow(self):
         """不盲从惯性判断（禁止复用前轮式断语）"""
-        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
+        prompt = _build_prompt(FIXED_CONTEXT, WRONG_HISTORY)
         assert "不盲从惯性判断" in prompt
 
     def test_prompt_forbids_fabrication(self):
         """严禁编造命理依据"""
-        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
+        prompt = _build_prompt(FIXED_CONTEXT, WRONG_HISTORY)
         assert "严禁编造命理依据" in prompt
 
     def test_prompt_no_must_keep_consistent(self):
         """旧措辞'必须保持一致，禁止自相矛盾'已移除（避免强制盲从）"""
-        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
+        prompt = _build_prompt(FIXED_CONTEXT, WRONG_HISTORY)
         assert "必须与历史摘要保持一致，禁止自相矛盾" not in prompt
 
     def test_prompt_injects_history_when_present(self):
         """有历史摘要时，摘要区块注入 prompt（新：只含用户问题，不含AI断语）"""
-        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
+        prompt = _build_prompt(FIXED_CONTEXT, WRONG_HISTORY)
         assert "此前对话话题" in prompt
         # WRONG_HISTORY 是模拟摘要文本（外部传入），区块本身不携带结论性规则
         assert "没有任何历史结论" in prompt
 
     def test_prompt_no_history_section_when_empty(self):
         """空历史时不应出现历史摘要区块"""
-        prompt = build_structured_prompt(FIXED_CONTEXT, "")
+        prompt = _build_prompt(FIXED_CONTEXT, "")
         assert "此前对话话题" not in prompt
 
     def test_prompt_keeps_bazi_data(self):
         """命盘数据完整注入（以命盘为准的前提）"""
-        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
+        prompt = _build_prompt(FIXED_CONTEXT, WRONG_HISTORY)
         assert "壬水" in prompt
         assert "金水" in prompt  # 用神
         assert "火土" in prompt  # 忌神
@@ -259,7 +266,7 @@ class TestStyleRotation:
         """prompt 只注入选中的那一条风格（尾部'本轮风格要求'），未选中风格名不出现"""
         opening = ("痛点直击式", OPENING_STYLES["痛点直击式"])
         summary = ("时间轴", SUMMARY_STYLES["时间轴"])
-        prompt = build_structured_prompt(FIXED_CONTEXT, "", opening_style=opening, summary_style=summary)
+        prompt = _build_prompt(FIXED_CONTEXT, "", opening_style=opening, summary_style=summary)
         assert "## 本轮风格要求" in prompt
         assert f"开头风格：**痛点直击式**（{OPENING_STYLES['痛点直击式']}）" in prompt
         assert f"总结风格：**时间轴**（{SUMMARY_STYLES['时间轴']}）" in prompt
@@ -277,7 +284,7 @@ class TestStyleRotation:
         summary = _build_history_summary(history)
         assert "上次开头句式" not in summary
         assert "上次总结风格" not in summary
-        assert "核心结论" in summary  # verdict 提取仍保留
+        assert "核心结论" not in summary  # assistant verdict 不进摘要（防编造传染）
 
 
 # ============================================================
@@ -306,8 +313,8 @@ class TestPromptCachingLayout:
         opening_b = ("现状承接式", OPENING_STYLES["现状承接式"])
         summary_a = ("时间轴", SUMMARY_STYLES["时间轴"])
         summary_b = ("行动清单", SUMMARY_STYLES["行动清单"])
-        p1 = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY, opening_a, summary_a)
-        p2 = build_structured_prompt(ctx2, "", opening_b, summary_b)
+        p1 = _build_prompt(FIXED_CONTEXT, WRONG_HISTORY, opening_a, summary_a)
+        p2 = _build_prompt(ctx2, "", opening_b, summary_b)
         prefix_len = self._common_prefix_len(p1, p2)
         assert prefix_len >= 5000, f"静态公共前缀仅{prefix_len}字，缓存收益受限"
 
@@ -315,7 +322,7 @@ class TestPromptCachingLayout:
         """动态内容统一收尾：对照示例 → 本次会话信息（命盘→历史→风格→问题）"""
         opening = ("痛点直击式", OPENING_STYLES["痛点直击式"])
         summary = ("时间轴", SUMMARY_STYLES["时间轴"])
-        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY, opening, summary)
+        prompt = _build_prompt(FIXED_CONTEXT, WRONG_HISTORY, opening, summary)
         # 静态区在前，动态区在后
         assert prompt.rindex("## 对照示例") < prompt.index("# 本次会话信息")
         session_pos = prompt.index("# 本次会话信息")
@@ -330,7 +337,7 @@ class TestPromptCachingLayout:
 
     def test_anchor_phrases_intact(self):
         """重排后探针字典与既有测试依赖的锚点短语全部保留"""
-        prompt = build_structured_prompt(FIXED_CONTEXT, WRONG_HISTORY)
+        prompt = _build_prompt(FIXED_CONTEXT, WRONG_HISTORY)
         # 来源：_rule_checks / _consistency_checks / _verdict_consistency_checks 探针
         # 及 TestPromptConsistencyRules 既有断言
         anchors = [
@@ -387,7 +394,7 @@ class TestLLMNotContaminated:
 
     def _call_llm(self, history_summary: str) -> dict:
         """用 build_structured_prompt 构造 prompt 并调用 LLM，返回解析后的 dict"""
-        prompt = build_structured_prompt(FIXED_CONTEXT, history_summary)
+        prompt = _build_prompt(FIXED_CONTEXT, history_summary)
         body = json.dumps({
             "model": _LLM_MODEL,
             "messages": [

@@ -292,6 +292,21 @@ def generate_full_analysis(
         logger.warning(f"[排盘] 地支关系计算失败，置空: {type(e).__name__}: {e}", exc_info=True)
         dizhi_result = {"summary": ""}
 
+    # 将地支三刑（含自刑）合并到神煞字段，避免报告引用命盘未提供的神煞数据
+    # calculate_shensha 返回中文键 {年: [...], 月: [...], ...}
+    # dizhi_result 的 location 形如 "年月" / "月日"，直接用中文字符作键
+    sanxing_list = dizhi_result.get("三刑", []) if isinstance(dizhi_result, dict) else []
+    if sanxing_list and shensha:
+        for sx in sanxing_list:
+            xing_type = sx.get("type", "")
+            xing_dz = "".join(sx.get("dizhi", []))
+            location = sx.get("location", "")
+            shensha_label = f"{xing_dz}{xing_type}" if xing_type else xing_dz
+            for ch in location:
+                if ch in shensha:
+                    if shensha_label not in shensha[ch]:
+                        shensha[ch].append(shensha_label)
+
     # ================================================================
     # 3. 日主旺衰（需要英文 key）
     # ================================================================
@@ -487,11 +502,12 @@ def generate_full_analysis(
         "总分": wangshuai_result.get("total_score", 0),
     }
 
-    # 格局详情
+    # 格局详情（含破格信息）
     geju_detail = {
         "类型": geju_result.get("geju_type", ""),
         "来源": geju_result.get("geju_source_ganzhi", ""),
         "喜忌": geju_result.get("xi_ji", {}),
+        "破格": geju_result.get("poge"),
     }
 
     # ================================================================

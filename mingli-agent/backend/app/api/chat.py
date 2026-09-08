@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import get_current_user
 from app.config import settings, PROMPT_VERSION
 from app.core.exceptions import PermissionDenied, ResourceNotFound
+from app.core.lunar_utils import get_display_birth_date
 from app.db.session import get_db, async_session
 from app.models.message import ChatMessage
 from app.models.session import ChatSession
@@ -583,7 +584,8 @@ async def get_first_reading(
     )
     if not existing_user_msg.scalar_one_or_none():
         calendar_label = "公历" if person.calendar_type == "solar" else "农历"
-        user_content = f"出生时间：{person.birth_date} {person.birth_time}({calendar_label})\n出生地点：{person.birth_location}\n性别：{'男' if person.gender == 'male' else '女'}"
+        display_date = get_display_birth_date(person.birth_date, person.calendar_type)
+        user_content = f"出生时间：{display_date} {person.birth_time}({calendar_label})\n出生地点：{person.birth_location}\n性别：{'男' if person.gender == 'male' else '女'}"
         user_message = ChatMessage(
             session_id=session_id,
             role="user",

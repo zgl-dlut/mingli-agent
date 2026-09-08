@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.core.exceptions import PermissionDenied, ResourceNotFound
+from app.core.lunar_utils import get_display_birth_date
 from app.db.session import get_db
 from app.models.person import Person
 from app.models.user import User
@@ -137,14 +138,15 @@ async def create_person(
     await db.commit()
     await db.refresh(session)
     
+    display_date = get_display_birth_date(person.birth_date, person.calendar_type)
     user_message = ChatMessage(
         session_id=session.id,
         role="user",
-        content=f"出生时间：{person.birth_date} {person.birth_time}({'公历' if person.calendar_type == 'solar' else '农历'})\n出生地点：{person.birth_location}\n性别：{'男' if person.gender == 'male' else '女'}",
+        content=f"出生时间：{display_date} {person.birth_time}({'公历' if person.calendar_type == 'solar' else '农历'})\n出生地点：{person.birth_location}\n性别：{'男' if person.gender == 'male' else '女'}",
     )
     db.add(user_message)
     await db.commit()
-    
+
     return {
         "person": {
             "id": person.id,
@@ -383,10 +385,11 @@ async def ensure_session(
 
     # 重建初始 user 消息（与 create_person 一致，保证首次报告生成的"发送内容"存在）
     calendar_label = "公历" if person.calendar_type == "solar" else "农历"
+    display_date = get_display_birth_date(person.birth_date, person.calendar_type)
     user_message = ChatMessage(
         session_id=session.id,
         role="user",
-        content=f"出生时间：{person.birth_date} {person.birth_time}({calendar_label})\n出生地点：{person.birth_location}\n性别：{'男' if person.gender == 'male' else '女'}",
+        content=f"出生时间：{display_date} {person.birth_time}({calendar_label})\n出生地点：{person.birth_location}\n性别：{'男' if person.gender == 'male' else '女'}",
     )
     db.add(user_message)
     await db.commit()

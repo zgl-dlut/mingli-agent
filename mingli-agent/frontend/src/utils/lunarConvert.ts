@@ -6,7 +6,7 @@
  * - lunar.getSolar()：转换为公历对象
  * - LunarYear.fromYear(year).getLeapMonth()：获取某年闰月月份（0 表示无闰月）
  */
-import { Lunar, LunarYear } from 'lunar-typescript'
+import { Lunar, LunarYear, Solar } from 'lunar-typescript'
 
 interface SolarDate {
   year: number
@@ -49,4 +49,21 @@ export function getLeapMonth(year: number): number {
  */
 export function isLeapMonthOf(year: number, month: number): boolean {
   return getLeapMonth(year) === month
+}
+
+/**
+ * 公历日期转农历日期（用于展示层：把数据库存的公历日期还原为用户原始农历日期）
+ * @param year 公历年
+ * @param month 公历月（1-12）
+ * @param day 公历日
+ */
+export function solarToLunar(year: number, month: number, day: number): SolarDate & { isLeap: boolean } {
+  const solar = Solar.fromYmd(year, month, day)
+  const lunar = solar.getLunar()
+  return {
+    year: lunar.getYear(),
+    month: Math.abs(lunar.getMonth()),
+    day: lunar.getDay(),
+    isLeap: lunar.getMonth() < 0,
+  }
 }
