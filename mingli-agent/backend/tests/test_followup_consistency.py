@@ -327,8 +327,8 @@ class TestPromptCachingLayout:
         assert prompt.rindex("## 对照示例") < prompt.index("# 本次会话信息")
         session_pos = prompt.index("# 本次会话信息")
         # 动态区内顺序：命盘 → 历史 → 风格 → 问题
-        assert prompt.index("## 命盘数据", session_pos) < prompt.index("## 历史对话摘要", session_pos)
-        assert prompt.index("## 历史对话摘要", session_pos) < prompt.index("## 本轮风格要求", session_pos)
+        assert prompt.index("## 命盘数据", session_pos) < prompt.index("## 此前对话话题", session_pos)
+        assert prompt.index("## 此前对话话题", session_pos) < prompt.index("## 本轮风格要求", session_pos)
         assert prompt.index("## 本轮风格要求", session_pos) < prompt.index("## 用户问题", session_pos)
         # 本轮风格区块包含选中风格名
         style_section = prompt[prompt.index("## 本轮风格要求"):]
@@ -343,7 +343,7 @@ class TestPromptCachingLayout:
         anchors = [
             "命盘数据是最高推演依据",
             "以命盘为准",
-            "不盲从前轮判断",
+            "不盲从惯性判断",
             "严禁编造命理依据",
             "未来剧本",
             "closing 硬约束",
@@ -351,7 +351,7 @@ class TestPromptCachingLayout:
             "守得住基本盘",
             "禁止closing复述",
             "错误写法5",
-            "历史对话摘要",
+            "此前对话话题",
             "opening.verdict 必须从 subtopic 的实际细节中提炼",
             "写完全部 subtopic 后强制回查",
             "模糊预判术语必须定义边界",
@@ -363,7 +363,7 @@ class TestPromptCachingLayout:
             "结论与建议必须因果衔接",
             "输出前自检",
             "全报告统一适用",
-            "历史摘要仅供话题承接",
+            "没有任何历史结论",
         ]
         for phrase in anchors:
             assert phrase in prompt, f"锚点短语丢失：{phrase}"
