@@ -125,7 +125,12 @@ export default function AddPerson() {
       // 查询城市经纬度
       const coord = getCityCoord(province, city)
 
-      const autoName = `${birthDate} ${birthTime}`
+      // 自动名用用户原始历法日期：农历用户显示农历日期（与后端 lunar_utils 展示格式对齐，闰月加"闰"）
+      const displayDateForName =
+        calendarType === 'lunar'
+          ? `${birthYear}-${isLeapMonth ? '闰' : ''}${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`
+          : birthDate
+      const autoName = `${displayDateForName} ${birthTime}`
       const person = await createPerson({
         name: autoName,
         gender,
