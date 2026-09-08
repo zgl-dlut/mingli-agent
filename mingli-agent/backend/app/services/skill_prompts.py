@@ -1394,6 +1394,23 @@ def build_authoritative_chart_basis(
     lines.append("【命盘骨架】")
     lines.append(f"  四柱: {analysis_data.get('四柱', '')}")
     lines.append(f"  日主: {analysis_data.get('日主', '')}；旺衰: {analysis_data.get('旺衰结论', '')}")
+    # 十神分布/格局：命盘已算好的权威标注，评测者必须直接引用，禁止自行重推十神生克
+    # （评测模型自行推十神易错，如把癸日主年干丙火正财误判为"无正财"，导致正确引用被误报编造）
+    shishen_dist = analysis_data.get('十神分布', '')
+    if shishen_dist:
+        lines.append(f"  十神分布: {shishen_dist}")
+    geju = analysis_data.get('格局', '')
+    geju_detail = analysis_data.get('格局详情', {})
+    if geju:
+        geju_src = ''
+        if isinstance(geju_detail, dict):
+            geju_src = geju_detail.get('来源', '') or ''
+        lines.append(f"  格局: {geju}" + (f"（依据：{geju_src}）" if geju_src else ''))
+    # 五行分布（含地支藏干统计），避免"全局无某行"类误判（如亥中藏甲木）
+    wuxing_dist = analysis_data.get('五行分布', {})
+    if isinstance(wuxing_dist, dict) and wuxing_dist:
+        wx_str = '/'.join(f"{k}{v}" for k, v in wuxing_dist.items())
+        lines.append(f"  五行分布(含藏干): {wx_str}")
     lines.append(f"  用神: {analysis_data.get('用神', '')}；忌神: {analysis_data.get('忌神', '')}")
     # 喜神/五行应用
     xishen = analysis_data.get('喜神', '')
