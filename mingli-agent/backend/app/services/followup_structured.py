@@ -201,6 +201,117 @@ def _build_history_summary(history: list, max_rounds: int = 5) -> str:
 
 
 # ============================================================
+# 指代消解改写器（影子模式：默认只记录对比，绝不替换线上问题）
+# 解决多轮追问里"那个窗口/第二点/这个贵人"等指代 AI 上轮回答内容的断片问题。
+# 设计红线：AI 上轮回答只进改写器（输出是"问题"非"结论"），不进主生成 prompt，
+#          不破坏"历史摘要去结论化、结论每轮基于命盘重推"的防编造传染设计。
+# ============================================================
+
+def _extract_last_assistant_text(history: list, max_chars: int = 900) -> str:
+    """从 history 提取最近一条 assistant 回答的可读纯文本。
+
+    assistant 的 content 存的是结构化报告 JSON（opening/subtopics/summary），
+    这里抽成纯文本供改写器理解"用户在指上轮回答里的什么"。仅改写器使用。
+    """
+    for msg in reversed(history or []):
+        if msg.get("role") != "assistant":
+            continue
+        raw = str(msg.get("content") or "").strip()
+        if not raw:
+            return ""
+        try:
+            data = json.loads(raw)
+        except Exception:
+            # 非 JSON（如拦截/降级文案）直接用原文
+            return raw[:max_chars]
+        parts = []
+        opening = data.get("opening") or {}
+        if isinstance(opening, dict) and opening.get("lead"):
+            parts.append(str(opening["lead"]))
+        for st in (data.get("subtopics") or []):
+            if not isinstance(st, dict):
+                continue
+            if st.get("title"):
+                parts.append(str(st["title"]))
+            for it in (st.get("items") or []):
+                if isinstance(it, dict) and it.get("text"):
+                    parts.append(str(it["text"]))
+                elif isinstance(it, str):
+                    parts.append(it)
+        summary = data.get("summary") or {}
+        if isinstance(summary, dict) and summary.get("title"):
+            parts.append(str(summary["title"]))
+        text = "；".join(p for p in parts if p)
+        return text[:max_chars] if text else raw[:max_chars]
+    return ""
+
+
+_COREF_REWRITE_SYS = """你是中文多轮对话的「指代消解改写器」。
+用户在命理咨询里会连续追问，本轮问题常含指代词（那个/这个/它/上面说的/刚才提到的/第二点/第一条…）或省略了主语，这些指代指向 AI 上一轮回答里讲过的内容。
+
+你的任务：结合【AI上一轮回答要点】，把【用户本轮问题】改写成一句「不看上下文也能完全看懂」的自包含问题。
+
+严格规则：
+1. 只消解指代、补全省略的主语/对象；禁止新增上一轮没有的信息，禁止引入任何命理结论。
+2. 时间焦点不得改变：若给定了时间焦点年份，改写后必须保留该年份，不得换成别的年份或月份。
+3. 改写结果必须是一个「问题」（带疑问/咨询语气），不是陈述句；保持口语自然，不超过40字。
+4. 若本轮问题本身已自包含、无指代或省略，changed 设为 false，rewritten 原样返回本轮问题。
+5. refers_to 填指代词实际指向的上一轮内容片段（供人工核对改写是否准确），无指代则留空。
+
+只输出 JSON：{"changed": true或false, "rewritten": "改写后的问题", "refers_to": "指向的上轮内容片段"}"""
+
+
+async def _rewrite_question_coreference(
+    user_question: str,
+    last_answer_text: str,
+    focus_years: list,
+) -> Optional[dict]:
+    """运行指代消解改写器。
+
+    返回 {"changed": bool, "rewritten": str, "refers_to": str}；
+    首轮无AI历史、模型池为空、调用异常或输出为空时返回 None（调用方须兜底，不影响主流程）。
+    """
+    if not user_question or not last_answer_text:
+        return None
+    if not model_pool:
+        return None
+    try:
+        model_config = model_pool[0]
+        client = await get_client(model_config)
+        focus_str = "、".join(str(y) for y in focus_years) if focus_years else "（未指定）"
+        user_payload = (
+            f"【时间焦点年份】{focus_str}\n"
+            f"【AI上一轮回答要点】{last_answer_text}\n"
+            f"【用户本轮问题】{user_question}"
+        )
+        resp = await client.chat.completions.create(
+            model=model_config.name,
+            messages=[
+                {"role": "system", "content": _COREF_REWRITE_SYS},
+                {"role": "user", "content": user_payload},
+            ],
+            temperature=0,
+            max_tokens=400,
+            response_format={"type": "json_object"},
+            timeout=30,
+            extra_body=build_llm_extra_body(model_config.name),
+        )
+        content = resp.choices[0].message.content or ""
+        data = json.loads(content)
+        rewritten = str(data.get("rewritten") or "").strip()
+        if not rewritten:
+            return None
+        return {
+            "changed": bool(data.get("changed")) and rewritten != user_question,
+            "rewritten": rewritten,
+            "refers_to": str(data.get("refers_to") or "").strip(),
+        }
+    except Exception as e:
+        logger.warning(f"[指代改写-Shadow] 改写器调用失败(不影响主流程): {type(e).__name__}: {str(e)[:150]}")
+        return None
+
+
+# ============================================================
 # 精简 prompt（只含命理逻辑 + JSON 结构示例，不含任何格式规则）
 # ============================================================
 
@@ -3207,6 +3318,35 @@ async def generate_followup_structured(
     else:
         logger.info("[StructuredFollowup] 问题未识别到涉及年份，未注入流月明细（依赖工具调用）")
 
+    # 3.5 指代消解改写器（影子模式：并行运行+写日志对比，默认不替换线上问题）
+    # _gen_question 是实际用于生成的问题：off/shadow 模式下恒等于原始 user_question（零影响），
+    # 仅 apply 模式且改写器确实补全了指代时才替换。任何异常都回退原问题。
+    _gen_question = user_question
+    try:
+        from app.config import settings as _rw_settings
+        _rw_mode = str(getattr(_rw_settings, "QUESTION_REWRITE_MODE", "off") or "off").lower()
+        if _rw_mode != "off":
+            _last_ans_text = _extract_last_assistant_text(history)
+            _focus_years = list(_focus.get("years") or []) if isinstance(_focus, dict) else []
+            _rw = await _rewrite_question_coreference(user_question, _last_ans_text, _focus_years)
+            if _rw is not None:
+                logger.info(
+                    f"[指代改写-Shadow] mode={_rw_mode} 焦点年={_focus_years}\n"
+                    f"  原问题: 「{user_question}」\n"
+                    f"  改写为: 「{_rw['rewritten']}」 (changed={_rw['changed']})\n"
+                    f"  指代指向: 「{_rw['refers_to']}」"
+                )
+                if _rw_mode == "apply" and _rw["changed"]:
+                    _gen_question = _rw["rewritten"]
+                    logger.info("[指代改写] apply模式生效：已用改写后的自包含问题替换线上问题")
+            else:
+                logger.info(
+                    f"[指代改写-Shadow] mode={_rw_mode} 本轮未产出改写"
+                    f"（首轮无AI历史/模型池空/调用失败/输出为空，均不影响主流程）"
+                )
+    except Exception as _rw_e:
+        logger.warning(f"[指代改写-Shadow] 改写环节异常(已忽略,不影响主流程): {type(_rw_e).__name__}: {str(_rw_e)[:150]}")
+
     # 4. 构建 messages：history 已压缩为摘要注入 system_prompt，messages 只传当前问题
     # 不再传完整 history 到 messages 数组，避免上下文超限 + 输出雷同
     _orig_chars = sum(len((m.get("content") or "")) for m in history)
@@ -3219,7 +3359,7 @@ async def generate_followup_structured(
     else:
         logger.info("[StructuredFollowup][排查] 历史摘要为空（首轮追问无历史）")
 
-    messages = [{"role": "user", "content": user_question}]
+    messages = [{"role": "user", "content": _gen_question}]
     logger.info(
         f"[StructuredFollowup][排查] messages构造: roles={[m['role'] for m in messages]}, "
         f"用户问题长度={len(user_question)}, system_prompt长度={len(system_prompt)}"

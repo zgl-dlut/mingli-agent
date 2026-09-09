@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     AI_API_KEYS: str = ""
     AI_BASE_URLS: str = ""
 
+    # 追问指代消解改写器（多轮对话"那个窗口/第二点"等指代AI上轮回答内容的补全）
+    # off   = 完全不运行
+    # shadow= 影子模式（默认）：并行运行改写器、结果只写日志对比，绝不替换线上问题，零影响
+    # apply = 正式启用：改写后的自包含问题用于生成
+    QUESTION_REWRITE_MODE: str = "shadow"
+
     # 微信支付
     WECHAT_APP_ID: Optional[str] = None
     WECHAT_APP_SECRET: Optional[str] = None  # 公众号AppSecret（OAuth网页授权用，非APIv3密钥）
