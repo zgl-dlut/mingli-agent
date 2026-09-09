@@ -398,6 +398,29 @@ export default function Chat() {
     scrollToBottom({ force: false })
   }, [messages, currentMessage, pendingUserMsg])
 
+  // 推荐Chip出现后底部栏增高、滚动容器被压矮，需重新定位：
+  // 锚定"最后一条追问问题"贴可视区顶部，回答在下方展开（短回答时浏览器自动钳制为整屏可见）
+  useEffect(() => {
+    if (!showSuggested) return
+    const timer = window.setTimeout(() => {
+      const container = scrollContainerRef.current
+      if (!container) return
+      const bubbles = container.querySelectorAll('[data-role="user"]')
+      const lastQuestion = bubbles[bubbles.length - 1] as HTMLElement | undefined
+      if (!lastQuestion) {
+        scrollToBottom({ force: false })  // 首次报告等无追问场景：回退滚到底
+        return
+      }
+      if (!isNearBottom()) return  // 用户上翻阅读时不拽回，与现有守卫口径一致
+      const containerRect = container.getBoundingClientRect()
+      const elRect = lastQuestion.getBoundingClientRect()
+      const targetTop = container.scrollTop + (elRect.top - containerRect.top) - 8
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+    }, 200)  // 盖过消息effect的100ms防抖竞态，确保面板已参与布局
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSuggested])
+
   // optimistic 问题在生成完成（finally/catch 里 fetchMessages 后）清除，不在此 effect 提前清除
   // 提前清除会导致重试场景（messages 已有历史相同问题）optimistic 被误清，问题不显示
 
@@ -1035,7 +1058,7 @@ export default function Chat() {
         {(cardPhase === 'done' || hasGenerated) && (
           <div className="space-y-3">
             {messages.filter(Boolean).map((msg) => (
-              <div key={msg.id} className="flex items-start gap-2">
+              <div key={msg.id} data-role={msg.role} className="flex items-start gap-2">
                 {/* 左侧头像 */}
                 <div className="flex-shrink-0 mt-1" style={{ width: '36px' }}>
                   {msg.role === 'assistant' ? (
