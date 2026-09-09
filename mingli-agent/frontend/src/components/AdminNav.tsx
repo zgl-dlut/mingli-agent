@@ -2,7 +2,6 @@ import { Link, useLocation } from 'react-router-dom'
 import Logo from './Logo'
 
 const tabs = [
-  { path: '/feedback', label: '反馈看板' },
   { path: '/admin/usage', label: '用量记录' },
   { path: '/admin/users', label: '用户积分' },
   { path: '/admin/orders', label: '订单记录' },
