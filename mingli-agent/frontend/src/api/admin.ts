@@ -288,44 +288,6 @@ export const adminApi = {
     limit?: number
   }) => apiClient.get<{ metric_name: string; eval_type?: string; trend: TrendPoint[] }>('/admin/eval-trend', { params }),
 
-  // ========== 人工审核 ==========
-
-  /** 提交人工审核 */
-  submitPromptReview: (data: {
-    eval_result_id?: number
-    badcase_id?: number
-    report_data?: string
-    user_question?: string
-    reviewer_id?: number
-    review_result: string
-    review_comment?: string
-    problem_tags?: string[]
-    auto_add_to_dataset?: boolean
-  }) => apiClient.post('/admin/prompt-review', data),
-
-  /** 获取审核记录列表 */
-  promptReviews: (params?: {
-    review_result?: string
-    offset?: number
-    limit?: number
-  }) => apiClient.get<{ total: number; items: any[] }>('/admin/prompt-reviews', { params }),
-
-  /** LLM 辅助提炼规则 */
-  extractRule: (review_id: number) =>
-    apiClient.post(`/admin/prompt-review/${review_id}/extract-rule`),
-
-  /** 确认规则并注入 prompt */
-  injectPrompt: (review_id: number, data: { rule: string; rule_category: string; confirm: boolean }) =>
-    apiClient.post(`/admin/prompt-review/${review_id}/inject-prompt`, data),
-
-  /** 获取 prompt 版本历史 */
-  promptVersions: (params?: { offset?: number; limit?: number }) =>
-    apiClient.get<{ total: number; items: any[] }>('/admin/prompt-versions', { params }),
-
-  /** 回滚 prompt 版本 */
-  rollbackPromptVersion: (version_id: number) =>
-    apiClient.post(`/admin/prompt-versions/${version_id}/rollback`, { confirm: true }),
-
   /** 添加用例到评测集 */
   addToEvalDataset: (data: {
     description: string

@@ -7,8 +7,6 @@ const tabs = [
   { path: '/admin/orders', label: '订单记录' },
   { path: '/admin/recharge', label: '积分充值' },
   { path: '/admin/eval', label: '评测中心' },
-  { path: '/admin/prompt-review', label: '人工审核' },
-  { path: '/admin/prompt-versions', label: 'Prompt 版本' },
 ]
 
 export default function AdminNav() {

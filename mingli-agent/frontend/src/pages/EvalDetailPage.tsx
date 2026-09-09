@@ -442,14 +442,6 @@ export default function EvalDetailPage() {
                       </div>
                     </div>
                   )}
-
-                  {/* 提交人工审核按钮 */}
-                  <button
-                    onClick={() => navigate(`/admin/prompt-review?case_id=${caseItem.id}&eval_result_id=${detail.id}`)}
-                    className="mt-2 ml-2 px-3 py-1.5 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700"
-                  >
-                    提交人工审核
-                  </button>
                 </div>
               )
             })}
