@@ -207,11 +207,13 @@ def _build_history_summary(history: list, max_rounds: int = 5) -> str:
 #          不破坏"历史摘要去结论化、结论每轮基于命盘重推"的防编造传染设计。
 # ============================================================
 
-def _extract_last_assistant_text(history: list, max_chars: int = 900) -> str:
+def _extract_last_assistant_text(history: list, max_chars: int = 1200) -> str:
     """从 history 提取最近一条 assistant 回答的可读纯文本。
 
-    assistant 的 content 存的是结构化报告 JSON（opening/subtopics/summary），
-    这里抽成纯文本供改写器理解"用户在指上轮回答里的什么"。仅改写器使用。
+    assistant 的 content 存的是结构化报告 JSON（FollowupReport）：
+      opening{lead,verdict} / subtopics[]{title,lead,blocks[]} / summary{title,lead,items,narrative}
+    block 分三种：keyword{keyword,narrative,sub_items} / narrative{text} / group{title,paragraphs}。
+    这里按真实 schema 抽全正文，供改写器理解"用户在指上轮回答里的什么"。仅改写器使用。
     """
     for msg in reversed(history or []):
         if msg.get("role") != "assistant":
@@ -225,38 +227,78 @@ def _extract_last_assistant_text(history: list, max_chars: int = 900) -> str:
             # 非 JSON（如拦截/降级文案）直接用原文
             return raw[:max_chars]
         parts = []
+
         opening = data.get("opening") or {}
-        if isinstance(opening, dict) and opening.get("lead"):
-            parts.append(str(opening["lead"]))
+        if isinstance(opening, dict):
+            for _k in ("lead", "verdict"):
+                if opening.get(_k):
+                    parts.append(str(opening[_k]))
+
         for st in (data.get("subtopics") or []):
             if not isinstance(st, dict):
                 continue
             if st.get("title"):
                 parts.append(str(st["title"]))
-            for it in (st.get("items") or []):
+            if st.get("lead"):
+                parts.append(str(st["lead"]))
+            for blk in (st.get("blocks") or []):
+                if not isinstance(blk, dict):
+                    continue
+                btype = blk.get("type")
+                if btype == "group":
+                    if blk.get("title"):
+                        parts.append(str(blk["title"]))
+                    for _p in (blk.get("paragraphs") or []):
+                        if _p:
+                            parts.append(str(_p))
+                elif btype == "narrative":
+                    if blk.get("text"):
+                        parts.append(str(blk["text"]))
+                else:  # keyword 块（默认）：关键词 + 叙事正文 + 子要点
+                    if blk.get("keyword"):
+                        parts.append(str(blk["keyword"]))
+                    if blk.get("narrative"):
+                        parts.append(str(blk["narrative"]))
+                    for _si in (blk.get("sub_items") or []):
+                        if _si:
+                            parts.append(str(_si))
+
+        summary = data.get("summary") or {}
+        if isinstance(summary, dict):
+            for _k in ("title", "lead", "narrative"):
+                if summary.get(_k):
+                    parts.append(str(summary[_k]))
+            for it in (summary.get("items") or []):
                 if isinstance(it, dict) and it.get("text"):
                     parts.append(str(it["text"]))
                 elif isinstance(it, str):
                     parts.append(it)
-        summary = data.get("summary") or {}
-        if isinstance(summary, dict) and summary.get("title"):
-            parts.append(str(summary["title"]))
+
         text = "；".join(p for p in parts if p)
         return text[:max_chars] if text else raw[:max_chars]
     return ""
 
 
 _COREF_REWRITE_SYS = """你是中文多轮对话的「指代消解改写器」。
-用户在命理咨询里会连续追问，本轮问题常含指代词（那个/这个/它/上面说的/刚才提到的/第二点/第一条…）或省略了主语，这些指代指向 AI 上一轮回答里讲过的内容。
+用户在命理咨询里会连续追问。本轮问题里凡是「脱离了上一轮就不知道具体指什么」的内容，都要结合【AI上一轮回答要点】补全成一句自包含的问题。
 
-你的任务：结合【AI上一轮回答要点】，把【用户本轮问题】改写成一句「不看上下文也能完全看懂」的自包含问题。
+需要补全的有两类：
+A. 显式指代词：那个/这个/它/上面说的/刚才提到的/第二点/第一条/那边/这份…
+B. 隐含上下文指代（更容易漏，重点识别）：词语本身语法完整，但它指的"具体是哪一个/哪一次/什么时间节点"只在上一轮出现过。例如"新团队/新公司/新工作/这个机会/入职以后/那边的领导/薪资"等——必须用上一轮讨论的具体事情（如"今年X月入职的新公司"）把它锚定清楚。
 
 严格规则：
-1. 只消解指代、补全省略的主语/对象；禁止新增上一轮没有的信息，禁止引入任何命理结论。
-2. 时间焦点不得改变：若给定了时间焦点年份，改写后必须保留该年份，不得换成别的年份或月份。
-3. 改写结果必须是一个「问题」（带疑问/咨询语气），不是陈述句；保持口语自然，不超过40字。
-4. 若本轮问题本身已自包含、无指代或省略，changed 设为 false，rewritten 原样返回本轮问题。
-5. refers_to 填指代词实际指向的上一轮内容片段（供人工核对改写是否准确），无指代则留空。
+1. 只做指代/省略的补全，把"哪一个/哪次/什么时间"锚定到上一轮的具体内容；禁止新增上一轮没有的信息，禁止引入任何命理结论或吉凶。
+2. 时间焦点不得改变：若给定了时间焦点年份，改写后必须保留，不得换成别的年份/月份；补全时间时只能沿用上一轮明确说过的月份。
+3. 改写结果必须是一个「问题」（带咨询语气），不是陈述句；保持口语自然，不超过45字。
+4. 若本轮问题与上一轮话题无关、本身已完全自包含（例如换了个全新话题），changed 设为 false，rewritten 原样返回。不要强行把上轮内容塞进去。
+5. refers_to 填指代词实际指向的上一轮内容片段（供人工核对），无指代则留空。
+
+示例：
+上轮要点：「…今年10-11月适合投递，12月到次年1月陆续有offer，2-3月入职新公司…」
+- 本轮「新团队对我的长期发展如何」→ changed=true，rewritten「我入职新公司后的新团队，对我的长期发展如何」，refers_to「2-3月入职新公司」
+- 本轮「那边薪资大概什么水平」→ changed=true，rewritten「我要入职的那家新公司，薪资大概什么水平」，refers_to「入职新公司」
+- 本轮「那我要提前准备什么」→ changed=true，rewritten「在入职新公司之前，我需要提前准备什么」，refers_to「2-3月入职新公司」
+- 本轮「我适合自己创业吗」（换了全新话题，与上轮求职无关）→ changed=false，rewritten 原样，refers_to 留空
 
 只输出 JSON：{"changed": true或false, "rewritten": "改写后的问题", "refers_to": "指向的上轮内容片段"}"""
 
