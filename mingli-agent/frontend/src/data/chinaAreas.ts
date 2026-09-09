@@ -614,6 +614,7 @@ export const chinaAreas: AreaNode[] = [
       { code: '4115', name: '信阳市', children: [{ code: '411502', name: '浉河区' }, { code: '411503', name: '平桥区' }, { code: '411521', name: '罗山县' }, { code: '411522', name: '光山县' }, { code: '411523', name: '新县' }, { code: '411525', name: '商城县' }, { code: '411526', name: '固始县' }, { code: '411527', name: '潢川县' }, { code: '411528', name: '淮滨县' }, { code: '411529', name: '息县' }] },
       { code: '4116', name: '周口市', children: [{ code: '411602', name: '川汇区' }, { code: '411603', name: '淮阳区' }, { code: '411621', name: '扶沟县' }, { code: '411622', name: '西华县' }, { code: '411623', name: '商水县' }, { code: '411624', name: '沈丘县' }, { code: '411625', name: '郸城县' }, { code: '411626', name: '太康县' }, { code: '411627', name: '鹿邑县' }, { code: '411681', name: '项城市' }] },
       { code: '4117', name: '驻马店市', children: [{ code: '411702', name: '驿城区' }, { code: '411721', name: '西平县' }, { code: '411722', name: '上蔡县' }, { code: '411723', name: '平舆县' }, { code: '411724', name: '正阳县' }, { code: '411725', name: '确山县' }, { code: '411726', name: '泌阳县' }, { code: '411727', name: '汝南县' }, { code: '411728', name: '遂平县' }, { code: '411729', name: '新蔡县' }] },
+      { code: '419001', name: '济源市', children: [{ code: '419001', name: '济源市' }] },
     ],
   },
   {
@@ -633,6 +634,10 @@ export const chinaAreas: AreaNode[] = [
       { code: '4212', name: '咸宁市', children: [{ code: '421202', name: '咸安区' }, { code: '421221', name: '嘉鱼县' }, { code: '421222', name: '通城县' }, { code: '421223', name: '崇阳县' }, { code: '421224', name: '通山县' }, { code: '421281', name: '赤壁市' }] },
       { code: '4213', name: '随州市', children: [{ code: '421303', name: '曾都区' }, { code: '421321', name: '随县' }, { code: '421381', name: '广水市' }] },
       { code: '4228', name: '恩施土家族苗族自治州', children: [{ code: '422801', name: '恩施市' }, { code: '422802', name: '利川市' }, { code: '422822', name: '建始县' }, { code: '422823', name: '巴东县' }, { code: '422825', name: '宣恩县' }, { code: '422826', name: '咸丰县' }, { code: '422827', name: '来凤县' }, { code: '422828', name: '鹤峰县' }] },
+      { code: '429004', name: '仙桃市', children: [{ code: '429004', name: '仙桃市' }] },
+      { code: '429005', name: '潜江市', children: [{ code: '429005', name: '潜江市' }] },
+      { code: '429006', name: '天门市', children: [{ code: '429006', name: '天门市' }] },
+      { code: '429021', name: '神农架林区', children: [{ code: '429021', name: '神农架林区' }] },
     ],
   },
   {
