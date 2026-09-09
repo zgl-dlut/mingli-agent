@@ -4,8 +4,9 @@ import AdminNav from '../components/AdminNav'
 import { genderToText, genderIcon } from '../utils/gender'
 
 const formatTime = (iso: string) => {
-  const normalized = /Z|[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + 'Z'
-  const d = new Date(normalized)
+  // 后端 created_at 是北京时间 naive（无时区后缀），直接按本地时区解析即可；
+  // 切勿加 'Z'（会被当成 UTC 再 +8h，显示晚 8 小时）。自带时区的串原样解析。
+  const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`

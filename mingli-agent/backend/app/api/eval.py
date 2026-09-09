@@ -91,7 +91,7 @@ async def list_eval_results(
         await db.execute(
             select(EvalResult)
             .where(*conditions)
-            .order_by(EvalResult.created_at.desc())
+            .order_by(EvalResult.created_at.desc(), EvalResult.id.desc())
             .offset(offset)
             .limit(limit)
         )
@@ -237,7 +237,7 @@ async def list_badcases(
         await db.execute(
             select(BadCase)
             .where(*conditions)
-            .order_by(BadCase.created_at.desc())
+            .order_by(BadCase.created_at.desc(), BadCase.id.desc())
             .offset(offset)
             .limit(limit)
         )
@@ -488,7 +488,7 @@ async def get_eval_trend(
         await db.execute(
             select(EvalResult)
             .where(*conditions)
-            .order_by(EvalResult.created_at.desc())
+            .order_by(EvalResult.created_at.desc(), EvalResult.id.desc())
             .limit(limit)
         )
     ).scalars().all()
