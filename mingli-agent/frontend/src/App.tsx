@@ -12,8 +12,6 @@ import RechargePage from './pages/RechargePage'
 import UsageDashboard from './pages/UsageDashboard'
 import OrdersDashboard from './pages/OrdersDashboard'
 import EvalDashboard from './pages/EvalDashboard'
-import EvalComparePage from './pages/EvalComparePage'
-import EvalDetailPage from './pages/EvalDetailPage'
 import AdminRechargePage from './pages/AdminRechargePage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import AdminLoginPage from './pages/AdminLoginPage'
@@ -108,8 +106,6 @@ const router = createBrowserRouter([
       { path: 'users', element: <AdminUsersPage /> },
       { path: 'orders', element: <OrdersDashboard /> },
       { path: 'eval', element: <EvalDashboard /> },
-      { path: 'eval-detail/:id', element: <EvalDetailPage /> },
-      { path: 'eval-compare', element: <EvalComparePage /> },
       { path: 'recharge', element: <AdminRechargePage /> },
     ],
   },

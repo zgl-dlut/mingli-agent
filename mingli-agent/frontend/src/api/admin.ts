@@ -269,35 +269,6 @@ export const adminApi = {
   evalResultDetail: (id: number) =>
     apiClient.get<EvalResultDetail>(`/admin/eval-results/${id}`),
 
-  /** 评测结果对比 */
-  evalCompare: (baseline_id: number, current_id: number) =>
-    apiClient.get<EvalCompareResult>('/admin/eval-compare', { params: { baseline_id, current_id } }),
-
-  /** 评测集内容 */
-  evalDataset: () =>
-    apiClient.get<{ total: number; items: any[] }>('/admin/eval-dataset'),
-
-  /** 获取评测类型列表 */
-  evalTypes: () =>
-    apiClient.get<{ types: EvalTypeInfo[] }>('/admin/eval-types'),
-
-  /** 获取指标趋势 */
-  evalTrend: (params: {
-    eval_type?: string
-    metric_name?: string
-    limit?: number
-  }) => apiClient.get<{ metric_name: string; eval_type?: string; trend: TrendPoint[] }>('/admin/eval-trend', { params }),
-
-  /** 添加用例到评测集 */
-  addToEvalDataset: (data: {
-    description: string
-    user_question: string
-    report_data?: string
-    expected_pass: boolean
-    expected_violations: string[]
-    review_comment?: string
-  }) => apiClient.post('/admin/eval-dataset/add', data),
-
   /** 管理员通过手机号充值积分 */
   rechargeByPhone: (data: { phone: string; points: number; remark?: string }) =>
     apiClient.post<{ user_id: number; user_name: string; phone: string; points_added: number; balance: number; order_id: number }>('/admin/recharge-by-phone', data),
