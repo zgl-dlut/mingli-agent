@@ -405,17 +405,24 @@ export default function Chat() {
     const timer = window.setTimeout(() => {
       const container = scrollContainerRef.current
       if (!container) return
+      // 关键：取消消息滚动effect的防抖定时器，它会在之后执行把页面拽回底部，覆盖我们的定位
+      if (debounceScrollRef.current) {
+        clearTimeout(debounceScrollRef.current)
+        debounceScrollRef.current = null
+      }
       const bubbles = container.querySelectorAll('[data-role="user"]')
       const lastQuestion = bubbles[bubbles.length - 1] as HTMLElement | undefined
       if (!lastQuestion) {
-        scrollToBottom({ force: false })  // 首次报告等无追问场景：回退滚到底
+        // 首次报告等无追问场景：回退滚到底（瞬时，避免smooth动画冲突）
+        container.scrollTo({ top: container.scrollHeight - container.clientHeight, behavior: 'auto' })
         return
       }
       if (!isNearBottom()) return  // 用户上翻阅读时不拽回，与现有守卫口径一致
       const containerRect = container.getBoundingClientRect()
       const elRect = lastQuestion.getBoundingClientRect()
       const targetTop = container.scrollTop + (elRect.top - containerRect.top) - 8
-      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+      // behavior:auto 瞬时定位：微信webview里连续两次smooth滚动第二次会被吞掉
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' })
     }, 200)  // 盖过消息effect的100ms防抖竞态，确保面板已参与布局
     return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
