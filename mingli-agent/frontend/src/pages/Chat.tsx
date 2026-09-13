@@ -10,6 +10,7 @@ import type { Person } from '../types'
 import { analyzeBazi, AnalyzeResult } from '../api/bazi'
 import Logo from '../components/Logo'
 import { FollowupReportView, isStructuredReport } from '../components/FollowupReportView'
+import { DateSelectCard, isDateSelectReport } from '../components/DateSelectCard'
 import { normalizeReportContent } from '../utils/reportFormat'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -60,6 +61,10 @@ function filterAsked(suggested: string[], messages: { role: string; content: str
  * 首次报告仍用 Markdown + react-markdown，两条链路隔离互不影响。
  */
 const HtmlContent = React.memo(({ content }: { content: string }) => {
+  // 择日 Agent 结果：JSON 直渲染为日期卡片
+  if (isDateSelectReport(content)) {
+    return <DateSelectCard content={content} />
+  }
   // 追问报告：JSON 直渲染
   if (isStructuredReport(content)) {
     return <FollowupReportView content={content} />
@@ -128,6 +133,7 @@ export default function Chat() {
     setCurrentMessage,
     setPersonGenerating,
     isPersonGenerating,
+    generatingPersonIds,
     hasFirstReading,
     setFirstReadingGenerated,
   } = useChatStore()
@@ -398,35 +404,54 @@ export default function Chat() {
     scrollToBottom({ force: false })
   }, [messages, currentMessage, pendingUserMsg])
 
-  // 推荐Chip出现后底部栏增高、滚动容器被压矮，需重新定位：
-  // 锚定"最后一条追问问题"贴可视区顶部，回答在下方展开（短回答时浏览器自动钳制为整屏可见）
+  // 追问/首次报告完成后的滚动定位：本轮"用户问题"贴可视区顶部，回答在下方展开（短回答自动整屏可见）。
+  // 三个要点（此前版本三连 bug 的原因）：
+  //  1) 触发信号用"最后一条消息id变化"，不能只依赖 showSuggested——连续追问时它恒为 true，effect 不再触发；
+  //  2) 必须等生成结束（进度条移除、消息替换、面板出现都稳定后）再定位，否则高度继续变化会跳到中间；
+  //  3) 用 rAF + 延迟等布局稳定，瞬时定位避免微信 webview smooth 动画被吞。
+  const isThisGenerating = generatingPersonIds.includes(parseInt(personId || '0'))
+  const safeMessages = messages.filter(Boolean)
+  const lastMsg = safeMessages.length ? safeMessages[safeMessages.length - 1] : null
+  const lastMsgId = lastMsg?.id ?? 0
+  const lastMsgRole = lastMsg?.role ?? ''
+  const suggestedVisible = showSuggested && !inputValue
   useEffect(() => {
-    if (!showSuggested) return
+    if (!suggestedVisible) return
+    if (isThisGenerating) return  // 进度条还在（高度还会变），等其移除后本 effect 自动再触发
+    let raf1 = 0
+    let raf2 = 0
     const timer = window.setTimeout(() => {
-      const container = scrollContainerRef.current
-      if (!container) return
-      // 关键：取消消息滚动effect的防抖定时器，它会在之后执行把页面拽回底部，覆盖我们的定位
-      if (debounceScrollRef.current) {
-        clearTimeout(debounceScrollRef.current)
-        debounceScrollRef.current = null
-      }
-      const bubbles = container.querySelectorAll('[data-role="user"]')
-      const lastQuestion = bubbles[bubbles.length - 1] as HTMLElement | undefined
-      if (!lastQuestion) {
-        // 首次报告等无追问场景：回退滚到底（瞬时，避免smooth动画冲突）
-        container.scrollTo({ top: container.scrollHeight - container.clientHeight, behavior: 'auto' })
-        return
-      }
-      if (!isNearBottom()) return  // 用户上翻阅读时不拽回，与现有守卫口径一致
-      const containerRect = container.getBoundingClientRect()
-      const elRect = lastQuestion.getBoundingClientRect()
-      const targetTop = container.scrollTop + (elRect.top - containerRect.top) - 8
-      // behavior:auto 瞬时定位：微信webview里连续两次smooth滚动第二次会被吞掉
-      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' })
-    }, 200)  // 盖过消息effect的100ms防抖竞态，确保面板已参与布局
-    return () => window.clearTimeout(timer)
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          const container = scrollContainerRef.current
+          if (!container) return
+          // 取消消息滚动 effect 残留的防抖任务，避免它稍后把页面拽回底部覆盖定位
+          if (debounceScrollRef.current) {
+            clearTimeout(debounceScrollRef.current)
+            debounceScrollRef.current = null
+          }
+          const bubbles = container.querySelectorAll('[data-role="user"]')
+          const lastQuestion = bubbles[bubbles.length - 1] as HTMLElement | undefined
+          if (!lastQuestion) {
+            // 无用户问题气泡：回退滚到底
+            container.scrollTo({ top: container.scrollHeight - container.clientHeight, behavior: 'auto' })
+            return
+          }
+          if (!isNearBottom()) return  // 用户上翻阅读时不拽回
+          const cRect = container.getBoundingClientRect()
+          const qRect = lastQuestion.getBoundingClientRect()
+          const target = container.scrollTop + (qRect.top - cRect.top) - 8
+          container.scrollTo({ top: Math.max(0, target), behavior: 'auto' })
+        })
+      })
+    }, 150)  // 等进度条移除、面板出现、消息替换等布局变化全部落定
+    return () => {
+      window.clearTimeout(timer)
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showSuggested])
+  }, [suggestedVisible, isThisGenerating, lastMsgId, lastMsgRole])
 
   // optimistic 问题在生成完成（finally/catch 里 fetchMessages 后）清除，不在此 effect 提前清除
   // 提前清除会导致重试场景（messages 已有历史相同问题）optimistic 被误清，问题不显示
@@ -926,6 +951,14 @@ export default function Chat() {
 
   const hasGenerated = hasFirstReading(person.id)
 
+  // 乐观问题去重：fetchMessages 落库后 messages 已含真实问题，而 pendingUserMsg 尚未清除，
+  // 中间态会同时渲染两个相同问题。真实问题一旦进 messages，乐观气泡立即隐藏，与时序无关。
+  const normText = (s: string) => (s || '').replace(/\s+/g, ' ').trim()
+  const optimisticDup = !!(
+    pendingUserMsg
+    && pendingUserMsgPid === person.id
+    && safeMessages.some(m => m.role === 'user' && normText(m.content) === normText(pendingUserMsg))
+  )
   // 重试判定：上一条消息是相同内容的 user 消息（中断后重问），用于按钮分支、文案、跳过积分门槛
   const lastMsgForRetry = messages.length > 0 ? messages[messages.length - 1] : null
   const isRetryOfUnanswered = !!(
@@ -1102,8 +1135,8 @@ export default function Chat() {
               </div>
             ))}
 
-            {/* optimistic用户消息 */}
-            {pendingUserMsg && pendingUserMsgPid === person.id && (
+            {/* optimistic用户消息（真实问题已落库则隐藏，避免重复渲染） */}
+            {pendingUserMsg && pendingUserMsgPid === person.id && !optimisticDup && (
               <div className="flex items-start gap-2">
                 <div className="flex-shrink-0 mt-1" style={{ width: '36px' }} />
                 <div className="flex-1">
