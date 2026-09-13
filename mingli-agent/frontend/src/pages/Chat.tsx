@@ -387,30 +387,33 @@ export default function Chat() {
     const timer = window.setInterval(async () => {
       try {
         const { generating, error } = await chatApi.getGeneratingStatus(sid)
+        // 兜底：generating=true 但答案已能拉到（后端落库后还在跑监控采样/用量收尾，
+        // 任务尚未出列），以消息为准立即收敛，不让进度条与答案长时间同屏
+        if (generating) {
+          await fetchMessages(personId, sid)
+        }
         if (error) {
           // 任务异常：显示错误提示，停止进度条
           logger.error(`[Resume] 后台生成异常`, { personId, error })
           clearInterval(timer)
           generatingPollRef.current.delete(personId)
-          setPersonGenerating(personId, false)
-          stopProgress(personId)
+          stopGenerationUi(personId)
           setPendingUserMsg(null)
           setPendingUserMsgPid(null)
-          isSendingMapRef.current.set(personId, false)
-          abortControllersRef.current.delete(personId)
           alert(`生成失败，请稍后重试`)
           await fetchUserInfo()
-        } else if (!generating) {
-          logger.info(`[Resume] 后台生成完成，拉取消息并停止进度条`, { personId })
+        } else if (!generating || lastMessageIsAssistant()) {
+          if (generating) {
+            logger.info(`[Resume] 状态仍为generating但答案已落库（后端收尾窗口），提前收敛`, { personId })
+          } else {
+            logger.info(`[Resume] 后台生成完成，拉取消息并停止进度条`, { personId })
+          }
           clearInterval(timer)
           generatingPollRef.current.delete(personId)
-          setPersonGenerating(personId, false)
-          stopProgress(personId)
+          stopGenerationUi(personId)
           await fetchMessages(personId, sid)
           setPendingUserMsg(null)
           setPendingUserMsgPid(null)
-          isSendingMapRef.current.set(personId, false)
-          abortControllersRef.current.delete(personId)
           setShowSuggested(true)  // 后台生成完成，显示推荐Chip
           await fetchUserInfo()
         }
@@ -419,6 +422,15 @@ export default function Chat() {
       }
     }, 3000)
     generatingPollRef.current.set(personId, timer)
+  }
+
+  // 本地消息最后一条是否已是 AI 回复——"答案已落库"的最高事实。
+  // 后端在答案 commit 之后还要跑监控采样/用量落库，最后才把任务移出 generating 表，
+  // 两者间存在数秒甚至更长的窗口，期间 generating 仍为 true 但答案其实已经能拉到。
+  const lastMessageIsAssistant = () => {
+    const msgs = useChatStore.getState().messages
+    const last = msgs.filter(Boolean).slice(-1)[0]
+    return !!last && last.role === 'assistant'
   }
 
   // 与后端"对账"：SSE 被切App/网络抖动掐断后，确认后台任务的真实状态。
@@ -449,6 +461,19 @@ export default function Chat() {
     }
 
     if (status.generating) {
+      // 接管前先拉一次消息：后端落库后还要跑监控/用量收尾才把任务出列，
+      // 此窗口内 generating=true 但答案已经能拉到——直接按完成收敛，不恢复进度条
+      await fetchMessages(pid, sid)
+      if (lastMessageIsAssistant()) {
+        logger.info(`[Reconcile] 状态generating但答案已落库（后端收尾窗口），按完成收敛`, { pid })
+        stopGenerationUi(pid)
+        setCurrentMessage('')
+        setPendingUserMsg(null)
+        setPendingUserMsgPid(null)
+        setShowSuggested(true)
+        await fetchUserInfo()
+        return status.error ? 'failed' : 'synced'
+      }
       logger.info(`[Reconcile] 后台任务仍在生成，接管进度条与轮询`, { pid, elapsed: status.elapsed_seconds })
       // 代际+1：已断SSE的finally不得清掉这里恢复的状态
       genCounterRef.current.set(pid, (genCounterRef.current.get(pid) ?? 0) + 1)
@@ -592,13 +617,20 @@ export default function Chat() {
             logger.error(`[Resume] 上次生成异常`, { personId: id, error })
             alert(`生成失败，请稍后重试`)
           } else if (generating && !isPersonGenerating(id)) {
-            logger.info(`[Resume] 后台生成中，恢复进度条并启动轮询`, { personId: id, elapsed_seconds })
-            setPersonGenerating(id, true)
-            // 按后端返回的真实已耗时恢复进度，避免从10%重置
-            startProgress(id, elapsed_seconds || 0)
-            // 首次报告生成中刷新：隐藏"查看完整解读"按钮，避免用户重复点击触发生成
-            setCardPhase('done')
-            startGeneratingPoll(id, s.id)
+            // 后端"答案落库"早于"任务出列"（中间还在跑监控采样/用量收尾），
+            // 刚 fetchMessages 拉到的末尾已是 AI 回复 → 答案实际已完成，不恢复进度条
+            if (lastMessageIsAssistant()) {
+              logger.info(`[Resume] 状态为generating但答案已落库，跳过进度条恢复`, { personId: id })
+              setShowSuggested(true)
+            } else {
+              logger.info(`[Resume] 后台生成中，恢复进度条并启动轮询`, { personId: id, elapsed_seconds })
+              setPersonGenerating(id, true)
+              // 按后端返回的真实已耗时恢复进度，避免从10%重置
+              startProgress(id, elapsed_seconds || 0)
+              // 首次报告生成中刷新：隐藏"查看完整解读"按钮，避免用户重复点击触发生成
+              setCardPhase('done')
+              startGeneratingPoll(id, s.id)
+            }
           }
         } catch (e) {
           logger.warn(`[Resume] generating-status 查询失败`, String(e))
