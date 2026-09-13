@@ -15,6 +15,7 @@ import { normalizeReportContent } from '../utils/reportFormat'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { createLogger, traceId } from '../utils/logger'
+import { isWechatBrowser, ensureWxReady, wxStartRecord, wxStopRecord, wxTranslateVoice, wxOnRecordEnd } from '../utils/wxSdk'
 
 const logger = createLogger('ChatPage')
 const sseLogger = createLogger('SSE')
@@ -186,6 +187,51 @@ export default function Chat() {
   // pending 消息的 ref 镜像：visibilitychange 等事件回调需读取最新值（事件effect不会随state重绑）
   const pendingRef = useRef<{ text: string | null; pid: number | null }>({ text: null, pid: null })
   pendingRef.current = { text: pendingUserMsg, pid: pendingUserMsgPid }
+
+  // 语音提问：按住说话 → 微信语音识别 → 弹窗确认修改后发送（仅微信内显示）
+  const [voiceRecording, setVoiceRecording] = useState(false)
+  const [voiceTranslating, setVoiceTranslating] = useState(false)
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false)
+  const [voiceText, setVoiceText] = useState('')
+  const voiceRecordingRef = useRef(false)
+
+  const handleVoiceStart = async () => {
+    if (voiceRecordingRef.current || voiceTranslating) return
+    voiceRecordingRef.current = true
+    setVoiceRecording(true)
+    try {
+      await wxStartRecord()
+    } catch (e: any) {
+      voiceRecordingRef.current = false
+      setVoiceRecording(false)
+      alert(e?.message || String(e))
+    }
+  }
+
+  // 松手/60秒到时：结束录音 → 转文字 → 打开确认弹窗
+  const finishVoice = async () => {
+    if (!voiceRecordingRef.current) return
+    voiceRecordingRef.current = false
+    setVoiceRecording(false)
+    setVoiceTranslating(true)
+    try {
+      let localId = ''
+      try {
+        localId = await wxStopRecord()
+      } catch {
+        return  // 录音还没真正开始就松手，忽略
+      }
+      const text = await wxTranslateVoice(localId)
+      setVoiceText(text)
+      setVoiceModalOpen(true)
+    } catch (e: any) {
+      alert(e?.message || String(e))
+    } finally {
+      setVoiceTranslating(false)
+    }
+  }
+  const finishVoiceRef = useRef<() => void>(() => {})
+  finishVoiceRef.current = finishVoice
   
   // 同步锁（按人独立），防止同一人物快速重复发送；不同人物可并发
   const isSendingMapRef = useRef<Map<number, boolean>>(new Map())
@@ -733,6 +779,15 @@ export default function Chat() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, person?.id])
+
+  // 微信语音预热：挂载即完成SDK加载+签名，避免首次按住说话时等待网络；
+  // 注册"录音满60秒自动结束"回调，等同用户松手
+  useEffect(() => {
+    if (!isWechatBrowser()) return
+    ensureWxReady().catch((e) => logger.warn(`[Voice] 微信JS-SDK预热失败`, String(e)))
+    wxOnRecordEnd(() => finishVoiceRef.current())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // person 删除后的跳转由 HistoryPanel 的 navigate 负责，避免双重 navigate 冲突
   // SSE 流未中断的部分由 catch 里的 personExists 检查静默处理
@@ -1454,6 +1509,25 @@ export default function Chat() {
 
           {/* 输入行 */}
           <div className="flex items-center space-x-2 px-4 py-2">
+            {isWechatBrowser() && (
+              <button
+                type="button"
+                aria-label="按住说话"
+                disabled={!!person && isPersonGenerating(person.id)}
+                onPointerDown={(e) => { e.preventDefault(); handleVoiceStart() }}
+                onPointerUp={() => finishVoice()}
+                onPointerCancel={() => finishVoice()}
+                onPointerLeave={() => { if (voiceRecordingRef.current) finishVoice() }}
+                style={{ touchAction: 'none' }}
+                className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full border transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${voiceRecording ? 'border-brand-gold bg-amber-50' : 'border-brand-inputBorder bg-brand-bgInput'}`}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={voiceRecording ? 'text-amber-700 animate-pulse' : 'text-brand-brown/60'}>
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" x2="12" y1="19" y2="22" />
+                </svg>
+              </button>
+            )}
             <input
               type="text"
               value={inputValue}
@@ -1507,6 +1581,62 @@ export default function Chat() {
           {/* 免责声明 */}
           <div className="text-center text-brand-muted/40 text-[10px] py-1">
             AI存在幻觉，仅供传统文化体验与娱乐参考，不具有科学预测能力
+          </div>
+        </div>
+      )}
+
+      {/* 语音录音/转写中的提示浮层：pointer-events-none，不挡松手事件 */}
+      {(voiceRecording || voiceTranslating) && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center" style={{ pointerEvents: 'none', backgroundColor: 'rgba(0,0,0,0.25)' }}>
+          <div className="bg-black/70 text-white rounded-2xl px-6 py-5 flex flex-col items-center gap-2">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" x2="12" y1="19" y2="22" />
+            </svg>
+            <span className="text-sm">{voiceTranslating ? '正在转文字…' : '正在录音，松开转文字'}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 语音转文字确认弹窗：可修改后发送 */}
+      {voiceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }} onClick={() => setVoiceModalOpen(false)}>
+          <div className="bg-white w-full rounded-t-2xl px-4 pt-4 pb-6" style={{ maxWidth: '820px' }} onClick={(e) => e.stopPropagation()}>
+            <p className="text-xs text-brand-muted mb-2">✨ 已把语音转成文字，可修改后发送（40积分/次）</p>
+            <textarea
+              autoFocus
+              value={voiceText}
+              onChange={(e) => setVoiceText(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder="识别结果"
+              className="w-full border border-brand-inputBorder rounded-xl p-3 text-sm focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none bg-brand-bgInput"
+            />
+            <div className="flex justify-end gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => setVoiceModalOpen(false)}
+                className="px-5 h-10 rounded-full text-sm border border-brand-inputBorder text-brand-brown/70 bg-white"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={!voiceText.trim() || (!!person && isPersonGenerating(person.id))}
+                onClick={() => {
+                  const q = voiceText.replace(/[\r\n]+/g, ' ').trim()
+                  if (!q) return
+                  setVoiceModalOpen(false)
+                  setVoiceText('')
+                  handleSend(q)
+                }}
+                className="px-5 h-10 rounded-full text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+              >
+                发送
+              </button>
+            </div>
           </div>
         </div>
       )}
