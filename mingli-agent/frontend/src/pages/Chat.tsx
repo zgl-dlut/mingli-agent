@@ -366,6 +366,20 @@ export default function Chat() {
     })
   }
 
+  // 生成闭环即时清理：答案确认已落库（SSE 收到 __SAVED__ 或后台已空闲）时调用。
+  // 无条件清掉进度条/轮询/生成锁，避免"回答已显示、进度条还在转"的同屏残留
+  // （触发场景：切走时 SSE 被冻结、切回后恢复对账与苏醒的旧流同时完成）。
+  // 不清 pendingUserMsg——由调用方在 fetchMessages 后清除，防止问题气泡闪空。
+  const stopGenerationUi = (personId: number) => {
+    const oldPoll = generatingPollRef.current.get(personId)
+    if (oldPoll) clearInterval(oldPoll)
+    generatingPollRef.current.delete(personId)
+    stopProgress(personId)
+    setPersonGenerating(personId, false)
+    isSendingMapRef.current.set(personId, false)
+    abortControllersRef.current.delete(personId)
+  }
+
   // 启动生成状态轮询（刷新后恢复用）：每 3 秒查后端任务是否完成，完成后拉取消息
   const startGeneratingPoll = (personId: number, sid: number) => {
     const oldTimer = generatingPollRef.current.get(personId)
@@ -452,10 +466,7 @@ export default function Chat() {
 
     // 任务已空闲：停进度条、拉消息，让已落库的问答显示出来
     logger.info(`[Reconcile] 后台任务空闲，拉取最新消息`, { pid, backendError: status.error })
-    setPersonGenerating(pid, false)
-    stopProgress(pid)
-    isSendingMapRef.current.set(pid, false)
-    abortControllersRef.current.delete(pid)
+    stopGenerationUi(pid)
     setCurrentMessage('')
     await fetchMessages(pid, sid)
     // 问题已随消息回来→清乐观气泡；根本没存进去→退回输入框，用户可直接重发
@@ -818,6 +829,7 @@ export default function Chat() {
         logger.success(`[${callId}] SSE流完成`, { accLen: acc.length, saved })
 
         if (saved) {
+          stopGenerationUi(pid)  // 答案已落库，立即撤进度条/轮询，防止与回答同屏
           setCurrentMessage('')
           await fetchMessages(pid, sessionId)
           setFirstReadingGenerated(pid)
@@ -1047,6 +1059,7 @@ export default function Chat() {
         alert(`生成失败(${sseError})，请稍后重试`)
       } else if (saved) {
         dlog(`存库完成，拉取消息`)
+        stopGenerationUi(pid)  // 答案已落库，立即撤进度条/轮询，防止与回答同屏
         setCurrentMessage('')
         await fetchMessages(pid, sessionId)
         setPendingUserMsg(null)
