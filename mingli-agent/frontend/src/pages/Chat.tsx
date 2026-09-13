@@ -183,6 +183,9 @@ export default function Chat() {
   const [pendingUserMsg, setPendingUserMsg] = useState<string | null>(null)
   // optimistic 消息所属的 personId，防止切换会话后泄漏到其他人的对话框
   const [pendingUserMsgPid, setPendingUserMsgPid] = useState<number | null>(null)
+  // pending 消息的 ref 镜像：visibilitychange 等事件回调需读取最新值（事件effect不会随state重绑）
+  const pendingRef = useRef<{ text: string | null; pid: number | null }>({ text: null, pid: null })
+  pendingRef.current = { text: pendingUserMsg, pid: pendingUserMsgPid }
   
   // 同步锁（按人独立），防止同一人物快速重复发送；不同人物可并发
   const isSendingMapRef = useRef<Map<number, boolean>>(new Map())
@@ -379,6 +382,8 @@ export default function Chat() {
           stopProgress(personId)
           setPendingUserMsg(null)
           setPendingUserMsgPid(null)
+          isSendingMapRef.current.set(personId, false)
+          abortControllersRef.current.delete(personId)
           alert(`生成失败，请稍后重试`)
           await fetchUserInfo()
         } else if (!generating) {
@@ -388,6 +393,10 @@ export default function Chat() {
           setPersonGenerating(personId, false)
           stopProgress(personId)
           await fetchMessages(personId, sid)
+          setPendingUserMsg(null)
+          setPendingUserMsgPid(null)
+          isSendingMapRef.current.set(personId, false)
+          abortControllersRef.current.delete(personId)
           setShowSuggested(true)  // 后台生成完成，显示推荐Chip
           await fetchUserInfo()
         }
@@ -396,6 +405,70 @@ export default function Chat() {
       }
     }, 3000)
     generatingPollRef.current.set(personId, timer)
+  }
+
+  // 与后端"对账"：SSE 被切App/网络抖动掐断后，确认后台任务的真实状态。
+  // 后端生成是独立任务（扣费+问题落库在任务启动前已提交），断流 ≠ 失败：
+  //  - generating：任务还在跑 → 接管进度条+轮询（轮询完成时自动拉消息）
+  //  - 空闲：拉取最新消息；若问题没存进去（请求在落库前失败），把问题退回输入框方便重发
+  //  - failed：后端记录了任务异常
+  //  - unknown：连状态都查不到（断网），保留问题气泡与进度条，等 online/回前台 再次对账
+  const reconcileWithBackend = async (
+    pid: number,
+    sid: number,
+    pendingQuestion?: string | null,
+  ): Promise<'generating' | 'synced' | 'failed' | 'unknown'> => {
+    let status: { generating: boolean; error?: string | null; elapsed_seconds?: number }
+    try {
+      status = await chatApi.getGeneratingStatus(sid)
+    } catch (e) {
+      logger.warn(`[Reconcile] 状态查询失败（可能断网），保留现场等恢复后自动对账`, { pid, error: String(e) })
+      // 代际+1：让已断SSE的finally不要清掉问题气泡和进度条
+      genCounterRef.current.set(pid, (genCounterRef.current.get(pid) ?? 0) + 1)
+      isSendingMapRef.current.set(pid, false)
+      setPersonGenerating(pid, true)
+      if (pendingQuestion) {
+        setPendingUserMsg(pendingQuestion)
+        setPendingUserMsgPid(pid)
+      }
+      return 'unknown'
+    }
+
+    if (status.generating) {
+      logger.info(`[Reconcile] 后台任务仍在生成，接管进度条与轮询`, { pid, elapsed: status.elapsed_seconds })
+      // 代际+1：已断SSE的finally不得清掉这里恢复的状态
+      genCounterRef.current.set(pid, (genCounterRef.current.get(pid) ?? 0) + 1)
+      isSendingMapRef.current.set(pid, false)
+      setPersonGenerating(pid, true)
+      setCurrentMessage('')
+      if (pendingQuestion) {
+        setPendingUserMsg(pendingQuestion)
+        setPendingUserMsgPid(pid)
+      }
+      startProgress(pid, status.elapsed_seconds || 0)
+      startGeneratingPoll(pid, sid)
+      return 'generating'
+    }
+
+    // 任务已空闲：停进度条、拉消息，让已落库的问答显示出来
+    logger.info(`[Reconcile] 后台任务空闲，拉取最新消息`, { pid, backendError: status.error })
+    setPersonGenerating(pid, false)
+    stopProgress(pid)
+    isSendingMapRef.current.set(pid, false)
+    abortControllersRef.current.delete(pid)
+    setCurrentMessage('')
+    await fetchMessages(pid, sid)
+    // 问题已随消息回来→清乐观气泡；根本没存进去→退回输入框，用户可直接重发
+    const norm = (s: string | null | undefined) => (s || '').replace(/\s+/g, ' ').trim()
+    const questionSaved = useChatStore.getState().messages.some(
+      m => m.role === 'user' && norm(m.content) === norm(pendingQuestion),
+    )
+    if (pendingQuestion && !questionSaved) {
+      setInputValue(pendingQuestion)
+    }
+    setPendingUserMsg(null)
+    setPendingUserMsgPid(null)
+    return status.error ? 'failed' : 'synced'
   }
 
   // 消息或流式内容变化时：只在用户已经接近底部，或正在生成回复时自动滚动
@@ -556,6 +629,68 @@ export default function Chat() {
     }
   }, [])
 
+  // 切App/微信挂起后回到前台的自动对账：webview 挂起会掐断 SSE，但页面未必重载
+  // （纯内存态丢失时挂载恢复逻辑不执行 → 表现为"问题消失、回答不见"，而后端任务其实已跑完落库）。
+  // 回前台时主动查后端：仍在生成→接管轮询；已空闲且本地有未闭环状态→补拉消息。
+  const reconcileInFlightRef = useRef(false)
+  useEffect(() => {
+    if (!sessionId || !person) return
+    const pid = person.id
+
+    const doReconcile = async (reason: string) => {
+      if (reconcileInFlightRef.current) return
+      reconcileInFlightRef.current = true
+      try {
+        // webview 刚恢复的瞬间网络栈可能还没就绪，稍等再查
+        await new Promise(r => window.setTimeout(r, 300))
+        let status: { generating: boolean; error?: string | null; elapsed_seconds?: number }
+        try {
+          status = await chatApi.getGeneratingStatus(sessionId)
+        } catch {
+          return  // 网络还没恢复，等 online / 下次回前台
+        }
+        if (status.generating) {
+          if (generatingPollRef.current.has(pid)) return  // 本地轮询已在跑，无需接管
+          logger.info(`[Reconcile] ${reason}: 后台生成中但本地无轮询，接管`, { pid })
+          await reconcileWithBackend(pid, sessionId, pendingRef.current.text)
+          return
+        }
+        // 已空闲：仅在本地存在"未闭环"迹象时补拉，避免每次回前台都重刷消息列表
+        const st = useChatStore.getState()
+        const msgs = st.messages
+        const last = msgs.length ? msgs[msgs.length - 1] : null
+        const p = pendingRef.current
+        const drift =
+          st.generatingPersonIds.includes(pid) ||
+          (p.pid === pid && !!p.text) ||
+          !!st.currentMessage ||
+          last?.role === 'user'
+        if (drift) {
+          logger.info(`[Reconcile] ${reason}: 任务已空闲但本地未闭环，补拉消息`, { pid })
+          await reconcileWithBackend(pid, sessionId, p.pid === pid ? p.text : null)
+        }
+      } finally {
+        reconcileInFlightRef.current = false
+      }
+    }
+
+    const onVisibility = () => { if (document.visibilityState === 'visible') doReconcile('visibility') }
+    const onPageshow = () => doReconcile('pageshow')
+    const onFocus = () => doReconcile('focus')
+    const onOnline = () => doReconcile('online')
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pageshow', onPageshow)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('online', onOnline)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pageshow', onPageshow)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('online', onOnline)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, person?.id])
+
   // person 删除后的跳转由 HistoryPanel 的 navigate 负责，避免双重 navigate 冲突
   // SSE 流未中断的部分由 catch 里的 personExists 检查静默处理
 
@@ -709,8 +844,14 @@ export default function Chat() {
         }
         startGeneratingPoll(pid, sessionId)
       } else {
-        logger.error(`[${callId}] 生成失败`, { error: String(err) })
-        alert(`生成失败: ${String(err).replace('Error: ', '')}`)
+        // 切App/网络抖动掐断SSE时后端任务仍在跑，先对账再决定是否提示失败
+        logger.warn(`[${callId}] 首次解读SSE中断，与后端对账`, { error: String(err) })
+        const r = await reconcileWithBackend(pid, sessionId)
+        if (r === 'failed') {
+          alert(`生成失败，请稍后重试`)
+        } else if (r === 'unknown') {
+          alert('网络连接似乎断开了，恢复网络后请重新打开页面')
+        }
       }
       await fetchUserInfo()
     } finally {
@@ -920,9 +1061,15 @@ export default function Chat() {
         dlog(`请求被中断或person已删除`)
         logger.info(`[${callId}] 请求被中断或person已删除`)
       } else {
-        dlog(`发送失败: ${String(err)}`)
-        logger.error(`[${callId}] 发送失败`, { error: String(err) })
-        alert(`发送失败: ${err?.name || 'Error'} - ${err?.message || String(err)}`)
+        // 切App/微信挂起/网络抖动会掐断SSE，但后端任务独立运行、问题已落库，
+        // 不能直接判"发送失败"清场——先与后端对账，该接管接管、该补拉补拉
+        logger.warn(`[${callId}] SSE中断，与后端对账`, { error: String(err) })
+        const r = await reconcileWithBackend(pid, sessionId, question)
+        if (r === 'failed') {
+          alert(`生成失败，请稍后重试`)
+        } else if (r === 'unknown') {
+          alert('网络连接似乎断开了，恢复网络后回答会自动出现')
+        }
       }
       await fetchUserInfo()
     } finally {
