@@ -557,8 +557,8 @@ async def generate_first_reading_structured(
     # 6.5 大运编造检测 + 重试（复用追问链路检测器纯函数，不改 followup_structured.py，不影响追问链路）
     # 背景：首次报告链路此前只有 LLM 网络层重试，无内容层编造检测，导致 LLM 凭记忆编造大运干支直达用户
     try:
-        # 只 import 纯函数 _collect_report_texts（不调追问的检测器，零改 followup_structured.py）
-        from app.services.followup_structured import _collect_report_texts
+        # 只 import 纯函数 _collect_report_texts 和 _detect_shensha_mismatch（不改追问链路）
+        from app.services.followup_structured import _collect_report_texts, _detect_shensha_mismatch
         import re as _re
 
         def _detect_dayun_ganzhi_not_in_chart(report_data, chart_data):
@@ -677,6 +677,98 @@ async def generate_first_reading_structured(
             logger.info("[StructuredFirstReading] 大运编造检测通过，无违规")
     except Exception as dayun_e:
         logger.error(f"[StructuredFirstReading] 大运编造检测异常(不阻断): {type(dayun_e).__name__}: {dayun_e}")
+
+    # 6.6 神煞编造检测 + 重试（复用追问链路 _detect_shensha_mismatch 纯函数）
+    # 背景：LLM 为迎合用户"太乙贵人"等问题，编造命盘不存在的天乙贵人等神煞
+    try:
+        shensha_violations = _detect_shensha_mismatch(data, analysis_data)
+        if shensha_violations:
+            logger.warning(
+                f"[StructuredFirstReading] 神煞编造检测命中{len(shensha_violations)}项，启动重试: "
+                f"{[v[:120] for v in shensha_violations]}"
+            )
+            # 拼命盘真实神煞提示
+            shensha = analysis_data.get("神煞", {})
+            chart_ss_lines = []
+            for pos in ("年", "月", "日", "时"):
+                ss_list = shensha.get(pos, shensha.get({"年": "year", "月": "month", "日": "day", "时": "hour"}.get(pos, ""), []))
+                if isinstance(ss_list, list) and ss_list:
+                    chart_ss_lines.append(f"{pos}:{'/'.join(map(str, ss_list))}")
+            chart_ss_hint = "；".join(chart_ss_lines) if chart_ss_lines else "（无）"
+            retry_hint = (
+                "上一次生成的报告存在神煞编造，必须严格按排盘数据重写，"
+                "禁止凭记忆或迎合用户问题编造命盘不存在的神煞。\n\n"
+                f"【排盘真实数据·神煞只能取自此处】\n"
+                f"命盘神煞（只能引用其中已列出的名称）：{chart_ss_hint}\n\n"
+                "【检测到的违规】\n"
+                + "\n".join(f"- {v}" for v in shensha_violations)
+                + "\n\n请基于上述真实数据重新生成完整报告，确保文中所有神煞名称"
+                "均取自命盘神煞字段，不得自行推断或臆造命盘没有的神煞。"
+                "用户问及命盘未带的神煞（如太乙贵人/天乙贵人）时，应如实说明命盘该柱未带，"
+                "可从已有的德秀贵人/月德合等神煞解释贵人特质，禁止编造命盘没有的神煞名称。"
+            )
+            _SHENSHA_MAX_RETRY = 2
+            for attempt in range(1, _SHENSHA_MAX_RETRY + 1):
+                try:
+                    retry_resp = await client.chat.completions.create(
+                        model=model_config.name,
+                        messages=build_cache_control_messages(
+                            system_prompt, messages + [{"role": "user", "content": retry_hint}]
+                        ),
+                        temperature=0.2,
+                        max_tokens=8000,
+                        response_format={"type": "json_object"},
+                        timeout=300,
+                        extra_body=build_llm_extra_body(model_config.name),
+                    )
+                    if retry_resp.choices:
+                        retry_raw = retry_resp.choices[0].message.content or ""
+                    else:
+                        retry_raw = getattr(retry_resp, "text", None) or ""
+                    if not retry_raw:
+                        logger.error(f"[StructuredFirstReading] 神煞重试第{attempt}次返回空响应，终止")
+                        break
+                    try:
+                        retry_data = json.loads(retry_raw)
+                    except json.JSONDecodeError:
+                        retry_data = json.loads(_extract_and_fix_json(retry_raw))
+                    _normalize_report_data(retry_data)
+                    new_v = _detect_shensha_mismatch(retry_data, analysis_data)
+                    if not new_v:
+                        try:
+                            FollowupReport.model_validate(retry_data)
+                            data = retry_data
+                            logger.info(
+                                f"[StructuredFirstReading] 神煞重试第{attempt}次成功，原违规已清除"
+                            )
+                            break
+                        except ValidationError:
+                            logger.error(
+                                f"[StructuredFirstReading] 神煞重试第{attempt}次无神煞违规但Pydantic校验失败"
+                            )
+                    else:
+                        logger.error(
+                            f"[StructuredFirstReading] 神煞重试第{attempt}次仍违规{len(new_v)}项: "
+                            f"{[v[:100] for v in new_v]}"
+                        )
+                        try:
+                            FollowupReport.model_validate(retry_data)
+                            data = retry_data
+                        except ValidationError:
+                            pass
+                except Exception as e:
+                    logger.error(
+                        f"[StructuredFirstReading] 神煞重试第{attempt}次异常: {type(e).__name__}: {str(e)[:200]}"
+                    )
+                    break
+            else:
+                logger.error(
+                    f"[StructuredFirstReading] 神煞重试{_SHENSHA_MAX_RETRY}次后仍编造，降级返回最新结果(已告警)"
+                )
+        else:
+            logger.info("[StructuredFirstReading] 神煞编造检测通过，无违规")
+    except Exception as shensha_e:
+        logger.error(f"[StructuredFirstReading] 神煞编造检测异常(不阻断): {type(shensha_e).__name__}: {shensha_e}")
 
     # 7. 命盘指纹审计（事后核对 LLM 输出是否与命盘一致，不强制拦截）
     logger.info(

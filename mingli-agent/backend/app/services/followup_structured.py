@@ -2553,6 +2553,77 @@ def _detect_dayun_ganzhi_mismatch(data: dict, analysis_data: dict) -> list:
     return violations
 
 
+def _detect_shensha_mismatch(data: dict, analysis_data: dict) -> list:
+    """神煞编造检测：报告中提到的神煞必须存在于命盘神煞列表中。
+
+    高频违规场景：报告称"你日柱己卯自带天乙贵人"，但命盘神煞字段
+    日柱只有桃花/将星/童子/德秀贵人/天喜/月德合，并无天乙贵人。
+    LLM 为迎合用户"太乙贵人"等问题强行编造命盘不存在的神煞。
+
+    检测逻辑：
+    1. 从 analysis_data['神煞'] 合并四柱全部神煞为集合
+    2. 扫描报告全文本，匹配已知神煞名称
+    3. 报告提到的神煞不在命盘集合中 → 编造
+    """
+    violations = []
+
+    # 已知神煞名称表（与 shensha_skill.py calculate_shensha 输出对齐）
+    KNOWN_SHENSHA = [
+        "天乙贵人", "文昌贵人", "国印", "天医", "太极贵人",
+        "六厄", "将星", "空亡", "十恶大败", "童子", "五行正印",
+        "月德贵人", "天德", "金舆", "亡神", "劫煞", "羊刃",
+        "学堂", "勾绞", "德秀贵人", "金神", "红鸾", "天喜",
+        "孤辰", "寡宿", "元辰", "月德合", "福星贵人", "十灵日",
+        "六秀日", "驿马", "桃花", "华盖",
+    ]
+    # 否定/解释语境词：报告如实说明"未带/不带/无"或解释概念"俗称/即/也就是"时不算编造
+    NEGATION_PREFIXES = ["未带", "不带", "没有", "命盘无", "四柱无", "未现",
+                          "未列入", "不在", "并无", "未入", "非带", "并非",
+                          "不算", "无此", "命盘未", "四柱未", "其实是",
+                          "俗称", "又称", "又名", "即天", "也就是"]
+
+    # 从命盘提取四柱全部神煞（兼容中英文键）
+    shensha = analysis_data.get("神煞", {})
+    if not isinstance(shensha, dict):
+        return violations
+    chart_shensha = set()
+    for pos in ("year", "month", "day", "hour", "年", "月", "日", "时"):
+        ss_list = shensha.get(pos, [])
+        if isinstance(ss_list, list):
+            for s in ss_list:
+                if isinstance(s, str):
+                    chart_shensha.add(s)
+    if not chart_shensha:
+        return violations
+
+    texts = _collect_report_texts(data)
+    for path, text, _ctx in texts:
+        if not text:
+            continue
+        for name in KNOWN_SHENSHA:
+            idx = text.find(name)
+            while idx != -1:
+                if name not in chart_shensha:
+                    # 否定语境排除：神煞名前10字内出现否定词则跳过（如"未带天乙贵人"）
+                    prefix = text[max(0, idx - 10): idx]
+                    is_negated = any(neg in prefix for neg in NEGATION_PREFIXES)
+                    if not is_negated:
+                        snippet = text[max(0, idx - 10): idx + len(name) + 20].replace("\n", "")
+                        violations.append(
+                            f"{path}: 神煞编造——报告中提到'{name}'，"
+                            f"但命盘神煞字段（年/月/日/时四柱）均无此神煞"
+                            f"（命盘实际神煞：{sorted(chart_shensha)}）。"
+                            f"禁止编造命盘不存在的神煞，原文:...{snippet}..."
+                        )
+                idx = text.find(name, idx + len(name))
+
+    if violations:
+        logger.info(f"[StructuredFollowup][神煞编造检测] 违规={len(violations)}项")
+        for v in violations[:5]:
+            logger.info(f"  [神煞编造] {v}")
+    return violations
+
+
 def _detect_liunian_ganzhi_mismatch(data: dict, analysis_data: dict) -> list:
     """流年干支一致性检测：报告中提到的流年干支必须与传入数据一致。
 
@@ -3685,6 +3756,7 @@ async def generate_followup_structured(
     liuyue_falsify_violations = _detect_liuyue_jixiong_falsify(data, liuyue_data)
     fabricated_details_violations = _detect_fabricated_life_details(data)
     cross_month_violations = _detect_cross_month_period(data)
+    shensha_mismatch_violations = _detect_shensha_mismatch(data, analysis_data)
     all_violations = (action_violations + label_violations + favored_discouraged_violations
                       + yongshen_conflict_violations + forbidden_term_violations + ganzhi_time_violations
                       + synonym_violations + dimension_violations + summary_dup_violations
@@ -3693,7 +3765,7 @@ async def generate_followup_structured(
                       + conclusion_no_basis_violations + jixiong_mismatch_violations + wangshuai_mismatch_violations
                       + dayun_period_mismatch_violations + llm_violations
                       + liuyue_falsify_violations + fabricated_details_violations
-                      + cross_month_violations)
+                      + cross_month_violations + shensha_mismatch_violations)
     logger.info(
         f"[StructuredFollowup][命理逻辑检查] 凶年={unfavored_years}, 吉年={favored_years}, 用神={yongshen}, "
         f"启动类违规={len(action_violations)}项, 标签颠倒违规={len(label_violations)}项, "
@@ -3711,6 +3783,7 @@ async def generate_followup_structured(
         f"旺衰判断错误违规={len(wangshuai_mismatch_violations)}项, "
         f"大运周期错误违规={len(dayun_period_mismatch_violations)}项, "
         f"LLM矛盾违规={len(llm_violations)}项, "
+        f"神煞编造违规={len(shensha_mismatch_violations)}项, "
         f"合计={len(all_violations)}项"
     )
     if all_violations:
@@ -3744,6 +3817,7 @@ async def generate_followup_structured(
             v_liuyue_falsify = _detect_liuyue_jixiong_falsify(d, liuyue_data)
             v_fab_details = _detect_fabricated_life_details(d)
             v_cross_month = _detect_cross_month_period(d)
+            v_shensha = _detect_shensha_mismatch(d, analysis_data)
             return {
                 "action": v_action, "label": v_label, "favored": v_favored,
                 "yongshen": v_yongshen, "terms": v_terms, "ganzhi": v_ganzhi,
@@ -3757,8 +3831,8 @@ async def generate_followup_structured(
                 "jixiong": v_jixiong, "wangshuai": v_wangshuai, "dayun_period": v_dayun_period,
                 "llm": v_llm,
                 "liuyue_falsify": v_liuyue_falsify, "fab_details": v_fab_details,
-                "cross_month": v_cross_month,
-                "all": v_action + v_label + v_favored + v_yongshen + v_terms + v_ganzhi + v_synonym + v_dimension + v_summary_dup + v_past_month + v_month_basis + v_liuyue_ganzhi_mismatch + v_dayun_ganzhi_mismatch + v_liunian_ganzhi_mismatch + v_yongshen_wuxing_mismatch + v_conclusion_basis + v_jixiong + v_wangshuai + v_dayun_period + v_llm + v_liuyue_falsify + v_fab_details + v_cross_month,
+                "cross_month": v_cross_month, "shensha": v_shensha,
+                "all": v_action + v_label + v_favored + v_yongshen + v_terms + v_ganzhi + v_synonym + v_dimension + v_summary_dup + v_past_month + v_month_basis + v_liuyue_ganzhi_mismatch + v_dayun_ganzhi_mismatch + v_liunian_ganzhi_mismatch + v_yongshen_wuxing_mismatch + v_conclusion_basis + v_jixiong + v_wangshuai + v_dayun_period + v_llm + v_liuyue_falsify + v_fab_details + v_cross_month + v_shensha,
             }
 
         # 基于当前违规字典动态拼装修正提示（每次重试按最新违规类型给提示，更精准）
@@ -3985,6 +4059,22 @@ async def generate_followup_structured(
                     f"当前大运：{current_dayun}。"
                     f"示例：如果排盘数据显示'未 2021-2030'，报告中就不能写成'2021-2031'。"
                 )
+            if v["shensha"]:
+                shensha = analysis_data.get("神煞", {})
+                chart_ss_lines = []
+                for pos in ("年", "月", "日", "时"):
+                    ss_list = shensha.get(pos, shensha.get({"年": "year", "月": "month", "日": "day", "时": "hour"}.get(pos, ""), []))
+                    if isinstance(ss_list, list) and ss_list:
+                        chart_ss_lines.append(f"{pos}:{'/'.join(map(str, ss_list))}")
+                chart_ss_hint = "；".join(chart_ss_lines) if chart_ss_lines else "（无）"
+                parts.append(
+                    f"出现了神煞编造——报告中提到了命盘神煞字段不存在的神煞（如'天乙贵人'）。"
+                    f"【命盘结果优先】只能引用命盘神煞字段已列出的神煞，禁止凭记忆或迎合用户问题编造神煞。"
+                    f"命盘实际神煞：{chart_ss_hint}。"
+                    f"示例：如果命盘日柱神煞只有'桃花/将星/童子/德秀贵人/天喜/月德合'，"
+                    f"报告就不能说'你带天乙贵人'；用户问'太乙贵人'时，应如实说明命盘该柱未带天乙贵人，"
+                    f"可从已有的德秀贵人/月德合等神煞解释贵人特质，禁止编造命盘没有的神煞名称。"
+                )
             return "上次生成违背了命理逻辑约束：" + "".join(parts) + "请修正这些违规点后重新输出完整JSON。"
 
         # 当前违规字典（首次用上面已算好的检测结果，后续重试基于最新 data 重算）
@@ -4007,6 +4097,7 @@ async def generate_followup_structured(
             "liuyue_falsify": liuyue_falsify_violations,
             "fab_details": fabricated_details_violations,
             "cross_month": cross_month_violations,
+            "shensha": shensha_mismatch_violations,
             "all": all_violations,
         }
         max_retries = 2  # 重试次数从1次提升到2次，给LLM更多修正机会
