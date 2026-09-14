@@ -188,51 +188,32 @@ export default function Chat() {
   const pendingRef = useRef<{ text: string | null; pid: number | null }>({ text: null, pid: null })
   pendingRef.current = { text: pendingUserMsg, pid: pendingUserMsgPid }
 
-  // 语音提问：按住说话 → 微信语音识别 → 弹窗确认修改后发送（仅微信内显示）
-  const [voiceRecording, setVoiceRecording] = useState(false)
+  // 语音提问（微信输入法式）：点话筒开始→变绿聆听→再点结束→文字直接回填输入框，
+  // 可继续说（追加）或手动修改，最后自行点"追问"发送。仅微信内显示。
+  const [voiceActive, setVoiceActive] = useState(false)      // 绿色聆听态
   const [voiceTranslating, setVoiceTranslating] = useState(false)
-  const [voiceModalOpen, setVoiceModalOpen] = useState(false)
-  const [voiceText, setVoiceText] = useState('')
-  const voiceRecordingRef = useRef(false)
+  const voiceActiveRef = useRef(false)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  // 必须【同步】发起 startRecord：iOS 微信麦克风授权只认按下手势的直接调用栈，
-  // 函数体内不能有 await；结果用 Promise.then/catch 异步收。
-  const handleVoiceStart = () => {
-    if (voiceRecordingRef.current || voiceTranslating) return
-    if (!isWxReadySync()) {
-      // 预热未完成（进页面立刻按了/预热失败）：触发一次签名，提示再按
-      ensureWxReady().catch(() => {})
-      alert('录音功能准备中，请再按一次')
-      return
-    }
-    voiceRecordingRef.current = true
-    setVoiceRecording(true)
-    wxStartRecordImmediate().catch((e: any) => {
-      voiceRecordingRef.current = false
-      setVoiceRecording(false)
-      const tip = friendlyWxError(e)
-      if (tip) alert(tip)
+  // 识别文字追加到输入框（已有文字用空格连接），并聚焦方便继续修改
+  const appendVoiceText = (text: string) => {
+    const piece = text.replace(/[\r\n]+/g, ' ').trim()
+    if (!piece) return
+    setInputValue(prev => {
+      const base = prev.replace(/[\r\n]+/g, ' ').replace(/\s+$/, '')
+      return base ? `${base} ${piece}` : piece
     })
+    window.setTimeout(() => { inputRef.current?.focus() }, 50)
   }
 
-  // 松手/60秒到时：结束录音 → 转文字 → 打开确认弹窗
-  const finishVoice = async () => {
-    if (!voiceRecordingRef.current) return
-    voiceRecordingRef.current = false
-    setVoiceRecording(false)
+  // 转文字→回填。autoEnded/localId 用于60秒自动结束（微信已停录，直接给localId）
+  const translateAndFill = async (localId: string) => {
+    setVoiceActive(false)
+    voiceActiveRef.current = false
     setVoiceTranslating(true)
-    // stopRecord 同样必须在松手手势栈内【同步发起】，await 只能放在发起之后
-    const stopPromise = wxStopRecordImmediate()
     try {
-      let localId = ''
-      try {
-        localId = await stopPromise
-      } catch {
-        return  // 录音还没真正开始就松手，忽略
-      }
       const text = await wxTranslateVoice(localId)
-      setVoiceText(text)
-      setVoiceModalOpen(true)
+      appendVoiceText(text)
     } catch (e: any) {
       const tip = friendlyWxError(e)
       if (tip) alert(tip)
@@ -240,8 +221,44 @@ export default function Chat() {
       setVoiceTranslating(false)
     }
   }
-  const finishVoiceRef = useRef<() => void>(() => {})
-  finishVoiceRef.current = finishVoice
+
+  // 话筒点击切换。start/stop 必须在 click 的【直接同步调用栈】发起
+  //（iOS 麦克风授权只认用户手势），await 只能放在发起之后。
+  const toggleVoice = () => {
+    if (voiceTranslating || (!!person && isPersonGenerating(person.id))) return
+    if (!voiceActiveRef.current) {
+      // 开始聆听
+      if (!isWxReadySync()) {
+        ensureWxReady().catch(() => {})
+        alert('语音功能准备中，请再点一次')
+        return
+      }
+      voiceActiveRef.current = true
+      setVoiceActive(true)
+      wxStartRecordImmediate().catch((e: any) => {
+        voiceActiveRef.current = false
+        setVoiceActive(false)
+        const tip = friendlyWxError(e)
+        if (tip) alert(tip)
+      })
+    } else {
+      // 结束聆听：同步发起 stop，拿到 localId 后转文字回填
+      voiceActiveRef.current = false
+      setVoiceActive(false)
+      const stopPromise = wxStopRecordImmediate()
+      stopPromise.then(localId => {
+        if (localId) void translateAndFill(localId)
+      }).catch(() => { /* 录音未真正开始就再点，忽略 */ })
+    }
+  }
+
+  // 60秒自动结束：微信已停止录音并给出 localId，直接转写，不再调 stopRecord
+  const handleVoiceAutoEnd = (localId: string) => {
+    if (!voiceActiveRef.current) return
+    if (localId) void translateAndFill(localId)
+  }
+  const handleVoiceAutoEndRef = useRef<(id: string) => void>(() => {})
+  handleVoiceAutoEndRef.current = handleVoiceAutoEnd
   
   // 同步锁（按人独立），防止同一人物快速重复发送；不同人物可并发
   const isSendingMapRef = useRef<Map<number, boolean>>(new Map())
@@ -790,12 +807,12 @@ export default function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, person?.id])
 
-  // 微信语音预热：挂载即完成SDK加载+签名，避免首次按住说话时等待网络；
-  // 注册"录音满60秒自动结束"回调，等同用户松手
+  // 微信语音预热：挂载即完成SDK加载+签名，避免首次点话筒时等待网络；
+  // 注册"录音满60秒自动结束"回调（微信直接给localId，转写回填）
   useEffect(() => {
     if (!isWechatBrowser()) return
     ensureWxReady().catch((e) => logger.warn(`[Voice] 微信JS-SDK预热失败`, String(e)))
-    wxOnRecordEnd(() => finishVoiceRef.current())
+    wxOnRecordEnd((localId) => handleVoiceAutoEndRef.current(localId))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -980,6 +997,12 @@ export default function Chat() {
   const handleSend = async (overrideQuestion?: string) => {
     const callId = traceId()
     const pid = person?.id
+    // 聆听中直接发送：静默停录（不转写），避免麦克风一直占用
+    if (voiceActiveRef.current) {
+      voiceActiveRef.current = false
+      setVoiceActive(false)
+      wxStopRecordImmediate().catch(() => {})
+    }
     const isResume = !!overrideQuestion
     dlog(`handleSend入口 callId=${callId} pid=${pid} isResume=${isResume} inputLen=${(overrideQuestion ?? inputValue).length}`)
     logger.info(`[${callId}] handleSend 入口`, {
@@ -1522,25 +1545,30 @@ export default function Chat() {
             {isWechatBrowser() && (
               <button
                 type="button"
-                aria-label="按住说话"
-                disabled={!!person && isPersonGenerating(person.id)}
-                onPointerDown={(e) => { e.preventDefault(); handleVoiceStart() }}
-                onPointerUp={() => finishVoice()}
-                onPointerCancel={() => finishVoice()}
-                onPointerLeave={() => { if (voiceRecordingRef.current) finishVoice() }}
-                style={{ touchAction: 'none' }}
-                className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full border transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${voiceRecording ? 'border-brand-gold bg-amber-50' : 'border-brand-inputBorder bg-brand-bgInput'}`}
+                aria-label={voiceActive ? '结束语音输入' : '语音输入'}
+                disabled={voiceTranslating || (!!person && isPersonGenerating(person.id))}
+                onClick={toggleVoice}
+                title={voiceActive ? '点击结束，转成文字' : '点击开始语音输入'}
+                className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full border transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${voiceActive ? 'border-green-500 bg-green-500 text-white' : 'border-brand-inputBorder bg-brand-bgInput text-brand-brown/60'}`}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={voiceRecording ? 'text-amber-700 animate-pulse' : 'text-brand-brown/60'}>
-                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" x2="12" y1="19" y2="22" />
-                </svg>
+                {voiceTranslating ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="animate-spin" style={{ animationDuration: '0.9s' }}>
+                    <path d="M21 12a9 9 0 1 1-6.2-8.55" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={voiceActive ? 'animate-pulse' : ''}>
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" x2="12" y1="19" y2="22" />
+                  </svg>
+                )}
               </button>
             )}
             <input
+              ref={inputRef}
               type="text"
               value={inputValue}
+              placeholder={voiceActive ? '正在聆听…点击话筒结束' : voiceTranslating ? '正在转文字…' : '输入你的问题…'}
               disabled={!!person && isPersonGenerating(person.id)}
               onChange={(e) => {
                 // 实时移除换行符，防止长文本中间的换行导致内容被截断
@@ -1560,7 +1588,6 @@ export default function Chat() {
                   handleSend()
                 }
               }}
-              placeholder="追问，如：算一下今日运势/工作/财运/子女等"
               className="flex-1 px-4 py-2.5 border border-brand-inputBorder rounded-full focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition-all bg-brand-bgInput text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             {(user?.points ?? 0) < 40 && !isRetryOfUnanswered ? (
@@ -1595,59 +1622,11 @@ export default function Chat() {
         </div>
       )}
 
-      {/* 语音录音/转写中的提示浮层：pointer-events-none，不挡松手事件 */}
-      {(voiceRecording || voiceTranslating) && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center" style={{ pointerEvents: 'none', backgroundColor: 'rgba(0,0,0,0.25)' }}>
-          <div className="bg-black/70 text-white rounded-2xl px-6 py-5 flex flex-col items-center gap-2">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" x2="12" y1="19" y2="22" />
-            </svg>
-            <span className="text-sm">{voiceTranslating ? '正在转文字…' : '正在录音，松开转文字'}</span>
-          </div>
-        </div>
-      )}
-
-      {/* 语音转文字确认弹窗：可修改后发送 */}
-      {voiceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }} onClick={() => setVoiceModalOpen(false)}>
-          <div className="bg-white w-full rounded-t-2xl px-4 pt-4 pb-6" style={{ maxWidth: '820px' }} onClick={(e) => e.stopPropagation()}>
-            <p className="text-xs text-brand-muted mb-2">✨ 已把语音转成文字，可修改后发送（40积分/次）</p>
-            <textarea
-              autoFocus
-              value={voiceText}
-              onChange={(e) => setVoiceText(e.target.value)}
-              rows={3}
-              maxLength={500}
-              placeholder="识别结果"
-              className="w-full border border-brand-inputBorder rounded-xl p-3 text-sm focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none bg-brand-bgInput"
-            />
-            <div className="flex justify-end gap-2 mt-3">
-              <button
-                type="button"
-                onClick={() => setVoiceModalOpen(false)}
-                className="px-5 h-10 rounded-full text-sm border border-brand-inputBorder text-brand-brown/70 bg-white"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={!voiceText.trim() || (!!person && isPersonGenerating(person.id))}
-                onClick={() => {
-                  const q = voiceText.replace(/[\r\n]+/g, ' ').trim()
-                  if (!q) return
-                  setVoiceModalOpen(false)
-                  setVoiceText('')
-                  handleSend(q)
-                }}
-                className="px-5 h-10 rounded-full text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
-              >
-                发送
-              </button>
-            </div>
-          </div>
+      {/* 聆听中细提示条：嵌在底部面板内，不遮挡操作 */}
+      {voiceActive && (
+        <div className="px-4 pb-1 text-center text-xs text-green-600 flex items-center justify-center gap-1.5">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+          正在聆听，再点一下话筒结束并转成文字（最长60秒）
         </div>
       )}
 

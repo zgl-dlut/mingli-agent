@@ -224,10 +224,12 @@ export async function wxTranslateVoice(localId: string): Promise<string> {
   throw new Error('没听清，请靠近一点再说一次')
 }
 
-/** 注册"录音超过60秒自动结束"回调（等同用户松手，complete 返回 localId） */
-export function wxOnRecordEnd(onComplete: () => void): void {
+/** 注册"录音超过60秒自动结束"回调（complete 直接返回 localId，无需再调 stopRecord） */
+export function wxOnRecordEnd(onComplete: (localId: string) => void): void {
   loadSdk().then(wx => {
-    wx.onVoiceRecordEnd({ complete: () => onComplete() })
+    wx.onVoiceRecordEnd({
+      complete: (res: any) => onComplete(String(res?.localId || '')),
+    })
   }).catch(() => { /* 非微信环境静默 */ })
 }
 
