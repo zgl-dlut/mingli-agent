@@ -144,24 +144,72 @@ async function invokeWxWithRetry<T>(
   throw lastErr
 }
 
-/** 开始录音（需已 ensureWxReady；权限被拒会 reject 友好提示） */
-export async function wxStartRecord(): Promise<void> {
-  try {
-    await invokeWxWithRetry('startRecord', {}, 2)
-  } catch (err: any) {
-    const msg = String(err?.errMsg || err?.message || '')
-    if (msg.includes('auth') || msg.includes('deny') || msg.includes('permission')) {
-      throw new Error('请在微信中允许使用麦克风后重试（右上角…→设置）')
-    }
-    // 保留微信原始 errMsg，便于定位具体平台问题
-    throw new Error(`录音启动失败：${msg || '未知错误'}`)
-  }
+/** config 是否已完成（同步读取；用于在用户手势中判断能否立即发起录音） */
+export function isWxReadySync(): boolean {
+  return configDone && !!window.wx
 }
 
-/** 结束录音，返回 localId */
-export async function wxStopRecord(): Promise<string> {
-  const res = await invokeWxWithRetry<{ localId: string }>('stopRecord', {}, 2)
-  return res.localId
+/**
+ * 同步发起录音：必须在 pointerdown/touchstart 的【直接同步调用栈】中执行。
+ * iOS 微信首次录音要弹系统麦克风授权，原生 bridge 只认用户触摸事件的同步
+ * 调用栈——任何 await/setTimeout/wx.ready 回调都会让调用脱离手势，直接
+ * 返回 startRecord:fail。Promise 的 executor 是同步执行的，所以返回 Promise
+ * 只收结果、不延后发起。未 config 完成时 reject NOT_READY（不在内部等待，
+ * 否则同样脱离手势），由调用方提示"再按一次"。
+ */
+export function wxStartRecordImmediate(): Promise<void> {
+  const wx = window.wx
+  if (!configDone || !wx) {
+    // 未就绪：顺手触发/重试预热，本次不等待
+    void ensureWxReady().catch(() => {})
+    return Promise.reject(new Error('NOT_READY'))
+  }
+  return new Promise<void>((resolve, reject) => {
+    try {
+      wx.startRecord({
+        success: () => resolve(),
+        fail: (err: any) => reject(err),
+        cancel: (err: any) => reject(err || { errMsg: 'startRecord:cancel' }),
+      })
+    } catch (e) {
+      reject(e)
+    }
+  })
+}
+
+/**
+ * 同步结束录音（同理须在 pointerup 手势栈内同步发起），Promise 收 localId。
+ */
+export function wxStopRecordImmediate(): Promise<string> {
+  const wx = window.wx
+  if (!configDone || !wx) return Promise.reject(new Error('NOT_READY'))
+  return new Promise<string>((resolve, reject) => {
+    try {
+      wx.stopRecord({
+        success: (res: any) => resolve(String(res.localId || '')),
+        fail: (err: any) => reject(err),
+        cancel: (err: any) => reject(err || { errMsg: 'stopRecord:cancel' }),
+      })
+    } catch (e) {
+      reject(e)
+    }
+  })
+}
+
+/** 微信原始错误 → 用户可读提示 */
+export function friendlyWxError(err: any): string {
+  const msg = String(err?.errMsg || err?.message || '')
+  if (msg === 'NOT_READY') {
+    return '录音功能准备中，请再按一次'
+  }
+  if (msg.includes('auth') || msg.includes('deny') || msg.includes('permission')) {
+    return '请允许微信使用麦克风后重试（手机设置→微信→麦克风）'
+  }
+  if (msg.includes('cancel')) {
+    return ''
+  }
+  // 裸 startRecord:fail 多为手势栈脱离或系统权限问题，提示再按+检查系统权限
+  return '录音启动失败，请再按一次；若多次失败，请到手机设置检查微信的麦克风权限'
 }
 
 /** 语音转文字：传录音 localId，返回识别文本 */

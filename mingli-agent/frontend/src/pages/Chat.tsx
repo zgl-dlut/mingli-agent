@@ -15,7 +15,7 @@ import { normalizeReportContent } from '../utils/reportFormat'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { createLogger, traceId } from '../utils/logger'
-import { isWechatBrowser, ensureWxReady, wxStartRecord, wxStopRecord, wxTranslateVoice, wxOnRecordEnd } from '../utils/wxSdk'
+import { isWechatBrowser, ensureWxReady, isWxReadySync, wxStartRecordImmediate, wxStopRecordImmediate, wxTranslateVoice, wxOnRecordEnd, friendlyWxError } from '../utils/wxSdk'
 
 const logger = createLogger('ChatPage')
 const sseLogger = createLogger('SSE')
@@ -195,17 +195,24 @@ export default function Chat() {
   const [voiceText, setVoiceText] = useState('')
   const voiceRecordingRef = useRef(false)
 
-  const handleVoiceStart = async () => {
+  // 必须【同步】发起 startRecord：iOS 微信麦克风授权只认按下手势的直接调用栈，
+  // 函数体内不能有 await；结果用 Promise.then/catch 异步收。
+  const handleVoiceStart = () => {
     if (voiceRecordingRef.current || voiceTranslating) return
+    if (!isWxReadySync()) {
+      // 预热未完成（进页面立刻按了/预热失败）：触发一次签名，提示再按
+      ensureWxReady().catch(() => {})
+      alert('录音功能准备中，请再按一次')
+      return
+    }
     voiceRecordingRef.current = true
     setVoiceRecording(true)
-    try {
-      await wxStartRecord()
-    } catch (e: any) {
+    wxStartRecordImmediate().catch((e: any) => {
       voiceRecordingRef.current = false
       setVoiceRecording(false)
-      alert(e?.message || String(e))
-    }
+      const tip = friendlyWxError(e)
+      if (tip) alert(tip)
+    })
   }
 
   // 松手/60秒到时：结束录音 → 转文字 → 打开确认弹窗
@@ -214,10 +221,12 @@ export default function Chat() {
     voiceRecordingRef.current = false
     setVoiceRecording(false)
     setVoiceTranslating(true)
+    // stopRecord 同样必须在松手手势栈内【同步发起】，await 只能放在发起之后
+    const stopPromise = wxStopRecordImmediate()
     try {
       let localId = ''
       try {
-        localId = await wxStopRecord()
+        localId = await stopPromise
       } catch {
         return  // 录音还没真正开始就松手，忽略
       }
@@ -225,7 +234,8 @@ export default function Chat() {
       setVoiceText(text)
       setVoiceModalOpen(true)
     } catch (e: any) {
-      alert(e?.message || String(e))
+      const tip = friendlyWxError(e)
+      if (tip) alert(tip)
     } finally {
       setVoiceTranslating(false)
     }
