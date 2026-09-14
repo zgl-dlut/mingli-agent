@@ -53,7 +53,7 @@ export default function Header({ onToggleHistory, isDesktop = false, isHistoryOp
             style={{ backgroundColor: 'rgba(244,242,240,0.15)', padding: '5px 10px', color: '#f4f2f0', fontSize: '13px' }}
           >
             <span style={{ fontSize: '12px' }}>🎁</span>
-            <span>分享赚积分</span>
+            <span>分享得积分</span>
           </button>
         )}
         <div className="rounded-full flex items-center" style={{ backgroundColor: 'rgba(244,242,240,0.15)', padding: '5px 10px' }}>

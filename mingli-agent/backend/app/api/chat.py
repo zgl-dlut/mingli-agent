@@ -21,6 +21,7 @@ from app.models.usage_log import AiUsageLog
 from app.models.user import User
 from app.services.ai_service import generate_first_reading_structured
 from app.services.followup_structured import generate_followup_structured
+from app.services.date_select_agent import generate_date_select, is_date_select_intent
 from app.services.payment_service import deduct_points
 from app.services.skill_prompts import validate_user_question
 from app.services.format_normalizer import normalize_output  # 首次报告仍用
@@ -390,29 +391,44 @@ async def _generate_and_save(
     latitude: float,
     user_id: int,
 ) -> None:
-    """后台生成追问报告并存库，独立于 SSE 连接。客户端断开后任务继续运行。"""
+    """后台生成追问报告并存库，独立于 SSE 连接。客户端断开后任务继续运行。
+
+    意图分流：用户问题含择日关键词时走 date_select_agent（Agent 链路），
+    否则走 generate_followup_structured（常规追问）。
+    """
     import traceback
-    print(f"[_generate_and_save] 开始 session_id={session_id} question={question[:30]}", flush=True)
+    is_date_select = is_date_select_intent(question)
+    print(f"[_generate_and_save] 开始 session_id={session_id} question={question[:30]} is_date_select={is_date_select}", flush=True)
     t0 = time.time()
     usage_holder: dict = {}
     try:
         # 独立 db session，不依赖请求级 session（请求结束后请求级 session 会关闭）
         async with async_session() as db:
             full_json = ""
-            async for chunk in generate_followup_structured(
-                analysis_data=bazi_data,
-                gender=gender,
-                birth_date=birth_date,
-                birth_time=birth_time,
-                location=location,
-                user_question=question,
-                history=history,
-                longitude=longitude,
-                latitude=latitude,
-                usage_holder=usage_holder,
-            ):
-                full_json += chunk
-                await queue.put(chunk)
+            if is_date_select:
+                # 择日 Agent 链路
+                async for chunk in generate_date_select(
+                    user_question=question,
+                    analysis_data=bazi_data,
+                    usage_holder=usage_holder,
+                ):
+                    full_json += chunk
+                    await queue.put(chunk)
+            else:
+                async for chunk in generate_followup_structured(
+                    analysis_data=bazi_data,
+                    gender=gender,
+                    birth_date=birth_date,
+                    birth_time=birth_time,
+                    location=location,
+                    user_question=question,
+                    history=history,
+                    longitude=longitude,
+                    latitude=latitude,
+                    usage_holder=usage_holder,
+                ):
+                    full_json += chunk
+                    await queue.put(chunk)
             # 存库：content 存 JSON 字符串（前端解析后用 React 组件渲染）
             assistant_message = ChatMessage(
                 session_id=session_id,
@@ -424,8 +440,9 @@ async def _generate_and_save(
             await queue.put("\n\n__SAVED__")  # 存库完成标记，前端收到后拉取消息
             print(f"[_generate_and_save] 完成 session_id={session_id} json_len={len(full_json)}", flush=True)
 
-            # ─ 生产监控：智能采样 ──
-            try:
+            # ─ 生产监控：智能采样（择日 Agent 跳过常规报告评测） ──
+            if not is_date_select:
+              try:
                 from app.services.eval.production_monitor import should_deep_eval, save_monitor_result
                 import json as _json
 
@@ -458,7 +475,7 @@ async def _generate_and_save(
                     prompt_version=PROMPT_VERSION,
                     history_user_qs=_hist_qs,
                 )
-            except Exception as mon_e:
+              except Exception as mon_e:
                 print(f"[_generate_and_save] 生产监控异常: {mon_e}", flush=True)
     except Exception as e:
         import traceback as _tb

@@ -60,6 +60,12 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
   }
 
   const handleClose = () => {
+    // 重置所有子弹窗/菜单状态，确保侧边栏关闭时弹窗不残留
+    setShowDeleteAccount(false)
+    setShowNicknameModal(false)
+    setUserMenuOpen(false)
+    setDeleteConfirmId(null)
+    setExpandedMenuId(null)
     setIsExiting(true)
     setTimeout(() => {
       setIsExiting(false)
@@ -130,8 +136,17 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
   }
 
   const handleLogout = () => {
-    logout()
-    navigate('/login', { replace: true })
+    setUserMenuOpen(false)
+    if (isDesktop) {
+      logout()
+      navigate('/login', { replace: true })
+    } else {
+      handleClose()
+      setTimeout(() => {
+        logout()
+        navigate('/login', { replace: true })
+      }, 260)
+    }
   }
 
   const handleGoRecharge = () => {
@@ -480,7 +495,7 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
       {/* 自定义删除确认弹窗（底部弹出，不显示来源地址） */}
       {deleteConfirmId !== null && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30"
           onClick={() => setDeleteConfirmId(null)}
         >
           <div
@@ -513,7 +528,7 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
       {/* 修改昵称弹窗 */}
       {showNicknameModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30"
           onClick={() => setShowNicknameModal(false)}
         >
           <div
@@ -554,7 +569,7 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
       {/* 注销账号弹窗 */}
       {showDeleteAccount && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30"
           onClick={() => !deleting && setShowDeleteAccount(false)}
         >
           <div
