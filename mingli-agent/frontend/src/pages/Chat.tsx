@@ -1397,7 +1397,14 @@ export default function Chat() {
                     {msg.role === 'user' ? (
                       <div className="whitespace-pre-wrap">{msg.content}</div>
                     ) : (
-                      <HtmlContent content={msg.content || ''} />
+                      <>
+                        {/* AI 生成内容显著标识（《人工智能生成合成内容标识办法》要求） */}
+                        <div className="inline-flex items-center gap-1 mb-2 px-2 py-0.5 rounded-md text-[11px] font-medium leading-5" style={{ backgroundColor: '#8b6f5a', color: '#faf6ef' }}>
+                          <span style={{ fontSize: '10px' }}>✦</span>
+                          <span>AI 生成 · 仅供传统文化体验与娱乐参考</span>
+                        </div>
+                        <HtmlContent content={msg.content || ''} />
+                      </>
                     )}
                   </div>
                 </div>

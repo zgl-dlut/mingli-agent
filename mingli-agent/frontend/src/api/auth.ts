@@ -51,4 +51,8 @@ export const authApi = {
   /** 获取专属邀请码（懒生成，首次打开分享弹窗时创建） */
   getInviteCode: () =>
     apiClient.get<{ invite_code: string }>('/user/invite-code'),
+
+  /** 注销账号（手机号账号需短信验证码；微信临时账号传 null） */
+  deleteAccount: (code: string | null) =>
+    apiClient.post<{ message: string }>('/user/delete-account', { code }),
 }

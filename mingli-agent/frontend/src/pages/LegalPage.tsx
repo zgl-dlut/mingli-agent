@@ -110,7 +110,7 @@ export default function LegalPage({ type }: LegalPageProps) {
           {/* Footer */}
           <div className="mt-10 pt-6 border-t border-gray-100 text-center text-sm text-gray-400">
             <p>如您对本{type === 'terms' ? '协议' : '政策'}有任何疑问，可联系：</p>
-            <p className="mt-1">support@shisuansuan.com</p>
+            <p className="mt-1">support@qusuansuan.com</p>
           </div>
         </div>
       </main>

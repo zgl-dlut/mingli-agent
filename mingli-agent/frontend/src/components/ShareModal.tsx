@@ -54,7 +54,7 @@ export default function ShareModal({ onClose }: ShareModalProps) {
 
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-5 pb-3">
-          <h2 className="text-lg font-bold text-gray-800">🎁 分享赚积分</h2>
+          <h2 className="text-lg font-bold text-gray-800">🎁 分享得积分</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
 

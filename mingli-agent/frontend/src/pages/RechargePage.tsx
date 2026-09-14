@@ -323,6 +323,9 @@ export default function RechargePage() {
           {isLoading ? '处理中...' : qrCodeUrl ? '请使用微信扫码支付' : effectivePoints > 0 ? `充值 ${effectivePoints} 积分 (¥${(effectivePoints / 10).toFixed(1)})` : '请选择或输入积分'}
         </button>
         <div className="mt-2 text-center text-gray-400 text-xs">1元 = 10积分（自定义范围 {MIN_POINTS}~{MAX_POINTS}）</div>
+        <div className="mt-2 text-center text-gray-400 text-[11px] leading-relaxed">
+          未成年人请在监护人指导下使用本服务，充值需经监护人同意。本服务仅供传统文化体验与娱乐参考，不构成任何决策建议。
+        </div>
       </div>
 
       {/* Native 支付二维码 */}

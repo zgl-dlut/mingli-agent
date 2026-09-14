@@ -1,6 +1,6 @@
 """
 管理后台 API - AI 用量记录 / 充值订单（仅查看）/ 管理员充值
-访问控制由 nginx BasicAuth（admin.shisuansuan.com）保障，与反馈后台一致
+访问控制由 nginx BasicAuth（admin.qusuansuan.com）保障，与反馈后台一致
 """
 import logging
 import re

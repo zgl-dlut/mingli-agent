@@ -21,7 +21,7 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
   const navigate = useNavigate()
   const location = useLocation()
   const { persons, deletePerson, renamePerson } = usePersonStore()
-  const { user, logout, setUser } = useUserStore()
+  const { user, logout, setUser, sendSmsCode } = useUserStore()
   const { deletePersonChat } = useChatStore()
   const [isExiting, setIsExiting] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -33,6 +33,17 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
   const [showContact, setShowContact] = useState(false)
   const [nickname, setNickname] = useState('')
   const [savingNickname, setSavingNickname] = useState(false)
+  // 账号注销
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false)
+  const [deleteCode, setDeleteCode] = useState('')
+  const [smsSending, setSmsSending] = useState(false)
+  const [smsCountdown, setSmsCountdown] = useState(0)
+  const [deleting, setDeleting] = useState(false)
+
+  const isMobileAccount = /^1\d{10}$/.test(user?.phone || '')
+  const maskedPhone = user?.phone && user.phone.length === 11
+    ? `${user.phone.slice(0, 3)}****${user.phone.slice(-4)}`
+    : user?.phone || ''
 
   // 根据用户原始历法，返回展示用的生辰日期字符串（农历用户需把公历日期还原）
   const getDisplayBirthDate = (person: Person): string => {
@@ -163,6 +174,63 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
       alert(err?.response?.data?.detail || '昵称修改失败')
     } finally {
       setSavingNickname(false)
+    }
+  }
+
+  const handleOpenDeleteModal = () => {
+    setUserMenuOpen(false)
+    setDeleteCode('')
+    setSmsCountdown(0)
+    setShowDeleteAccount(true)
+  }
+
+  const handleSendDeleteSms = async () => {
+    if (!user?.phone || smsSending || smsCountdown > 0) return
+    setSmsSending(true)
+    try {
+      const res = await sendSmsCode(user.phone)
+      // 开发模式后端直接回传验证码，自动填入方便测试
+      if (res?.dev_mode && res.code) setDeleteCode(res.code)
+      setSmsCountdown(60)
+      const timer = setInterval(() => {
+        setSmsCountdown((c) => {
+          if (c <= 1) {
+            clearInterval(timer)
+            return 0
+          }
+          return c - 1
+        })
+      }, 1000)
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || '验证码发送失败')
+    } finally {
+      setSmsSending(false)
+    }
+  }
+
+  const handleConfirmDelete = async () => {
+    if (deleting) return
+    if (isMobileAccount && !deleteCode.trim()) {
+      alert('请输入短信验证码')
+      return
+    }
+    if (!window.confirm('最后确认：注销后所有人物档案与对话将永久删除，确定继续吗？')) return
+    setDeleting(true)
+    try {
+      await authApi.deleteAccount(isMobileAccount ? deleteCode.trim() : null)
+      setShowDeleteAccount(false)
+      logout()
+      if (isDesktop) {
+        navigate('/login', { replace: true })
+      } else {
+        handleClose()
+        setTimeout(() => navigate('/login', { replace: true }), 260)
+      }
+      alert('账号已注销，您的个人数据已删除')
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || '注销失败，请稍后重试')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -386,6 +454,15 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
+                      handleOpenDeleteModal()
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-red-400"
+                  >
+                    注销账号
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
                       setUserMenuOpen(false)
                       handleLogout()
                     }}
@@ -468,6 +545,77 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
                 style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
               >
                 {savingNickname ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 注销账号弹窗 */}
+      {showDeleteAccount && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          onClick={() => !deleting && setShowDeleteAccount(false)}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-2xl p-5 shadow-xl max-h-[85vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-gray-800 text-base font-medium mb-3">注销账号</h3>
+            <div className="bg-red-50 rounded-xl p-3 mb-4">
+              <p className="text-red-700 text-sm font-medium mb-2">注销后以下数据将被永久删除，不可恢复：</p>
+              <ul className="text-red-600/80 text-xs space-y-1 list-disc pl-4">
+                <li>所有人物档案、出生信息与排盘数据</li>
+                <li>全部对话与 AI 解读记录</li>
+                <li>账号剩余积分将被清零</li>
+              </ul>
+              <p className="text-gray-500 text-xs mt-2 leading-relaxed">
+                充值订单与积分流水将按法律法规要求匿名化保留，不再关联您的真实身份。注销后原手机号可重新注册。
+              </p>
+            </div>
+
+            {isMobileAccount ? (
+              <div className="mb-4">
+                <p className="text-gray-600 text-xs mb-2">
+                  为确认是本人操作，将向手机号 <span className="font-medium">{maskedPhone}</span> 发送验证码
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="tel"
+                    maxLength={6}
+                    value={deleteCode}
+                    onChange={(e) => setDeleteCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="请输入6位验证码"
+                    className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendDeleteSms}
+                    disabled={smsSending || smsCountdown > 0}
+                    className="px-3 py-2.5 rounded-lg border border-red-300 text-red-500 text-sm whitespace-nowrap disabled:opacity-50"
+                  >
+                    {smsSending ? '发送中…' : smsCountdown > 0 ? `${smsCountdown}s 后重发` : '发送验证码'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-gray-500 text-xs mb-4">当前账号未绑定手机号，确认后将直接注销。</p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteAccount(false)}
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 text-sm hover:bg-gray-50 transition-all disabled:opacity-50"
+              >
+                再想想
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={deleting || (isMobileAccount && deleteCode.trim().length !== 6)}
+                className="flex-1 py-2.5 rounded-lg bg-red-500 text-white text-sm hover:bg-red-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleting ? '注销中…' : '确认注销'}
               </button>
             </div>
           </div>
