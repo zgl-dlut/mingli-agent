@@ -93,50 +93,87 @@ export async function ensureWxReady(): Promise<void> {
   return configPromise
 }
 
-/** 开始录音（需已 ensureWxReady；权限被拒会 reject 友好提示） */
-export async function wxStartRecord(): Promise<void> {
+/**
+ * 在 wx.ready 回调内调用 JSSDK 接口。
+ * 官方对 iOS 首次调用报 "the permission value is offline verifying" 的建议：
+ * 接口必须在 ready 之后调用；自定义交互场景下 fail 后应在 ready 中重试。
+ */
+async function invokeWx<T = any>(api: string, params: Record<string, any> = {}): Promise<T> {
   await ensureWxReady()
   const wx = await loadSdk()
-  return new Promise((resolve, reject) => {
-    wx.startRecord({
-      success: () => resolve(),
-      fail: (err: any) => {
-        const msg = String(err?.errMsg || '')
-        reject(new Error(msg.includes('auth') || msg.includes('deny') ? '请在微信设置中允许本页使用麦克风' : '录音启动失败，请重试'))
-      },
-      cancel: () => reject(new Error('录音已取消')),
+  return new Promise<T>((resolve, reject) => {
+    wx.ready(() => {
+      try {
+        wx[api]({
+          ...params,
+          success: (res: any) => resolve(res),
+          fail: (err: any) => reject(err),
+          cancel: (err: any) => reject(err || { errMsg: `${api}:cancel` }),
+        })
+      } catch (e) {
+        reject(e)
+      }
     })
   })
+}
+
+const sleep = (ms: number) => new Promise(r => window.setTimeout(r, ms))
+
+/**
+ * 带自愈重试的接口调用：iOS 微信首次调用常返回 offline verifying
+ * （权限值正在向微信服务器离线校验），等待后重试即可成功。
+ */
+async function invokeWxWithRetry<T>(
+  api: string,
+  params: Record<string, any>,
+  retries = 2,
+): Promise<T> {
+  let lastErr: any
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await invokeWx<T>(api, params)
+    } catch (err: any) {
+      lastErr = err
+      const msg = String(err?.errMsg || err?.message || '')
+      const isVerifying = msg.includes('offline verifying') || msg.includes('verify')
+      // 非权限校验类错误（如用户拒绝授权）不重试
+      if (!isVerifying && i > 0) throw err
+      if (i < retries) await sleep(500)
+    }
+  }
+  throw lastErr
+}
+
+/** 开始录音（需已 ensureWxReady；权限被拒会 reject 友好提示） */
+export async function wxStartRecord(): Promise<void> {
+  try {
+    await invokeWxWithRetry('startRecord', {}, 2)
+  } catch (err: any) {
+    const msg = String(err?.errMsg || err?.message || '')
+    if (msg.includes('auth') || msg.includes('deny') || msg.includes('permission')) {
+      throw new Error('请在微信中允许使用麦克风后重试（右上角…→设置）')
+    }
+    // 保留微信原始 errMsg，便于定位具体平台问题
+    throw new Error(`录音启动失败：${msg || '未知错误'}`)
+  }
 }
 
 /** 结束录音，返回 localId */
 export async function wxStopRecord(): Promise<string> {
-  await ensureWxReady()
-  const wx = await loadSdk()
-  return new Promise((resolve, reject) => {
-    wx.stopRecord({
-      success: (res: any) => resolve(res.localId as string),
-      fail: () => reject(new Error('录音结束失败，请重试')),
-    })
-  })
+  const res = await invokeWxWithRetry<{ localId: string }>('stopRecord', {}, 2)
+  return res.localId
 }
 
 /** 语音转文字：传录音 localId，返回识别文本 */
 export async function wxTranslateVoice(localId: string): Promise<string> {
-  await ensureWxReady()
-  const wx = await loadSdk()
-  return new Promise((resolve, reject) => {
-    wx.translateVoice({
-      localId,
-      isShowProgressTips: 0,  // 用应用内弹窗展示加载态
-      success: (res: any) => {
-        const text = String(res.translateResult || '').trim()
-        if (text) resolve(text)
-        else reject(new Error('没听清，请靠近一点再说一次'))
-      },
-      fail: () => reject(new Error('语音识别失败，请重试')),
-    })
-  })
+  const res = await invokeWxWithRetry<{ translateResult: string }>(
+    'translateVoice',
+    { localId, isShowProgressTips: 0 },  // 用应用内弹窗展示加载态
+    2,
+  )
+  const text = String(res.translateResult || '').trim()
+  if (text) return text
+  throw new Error('没听清，请靠近一点再说一次')
 }
 
 /** 注册"录音超过60秒自动结束"回调（等同用户松手，complete 返回 localId） */
