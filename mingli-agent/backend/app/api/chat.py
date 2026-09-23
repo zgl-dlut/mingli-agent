@@ -21,7 +21,7 @@ from app.models.usage_log import AiUsageLog
 from app.models.user import User
 from app.services.ai_service import generate_first_reading_structured
 from app.services.followup_structured import generate_followup_structured
-from app.services.date_select_agent import generate_date_select, is_date_select_intent
+from app.services.date_select_agent import generate_date_select, is_date_select_intent_async
 from app.services.payment_service import deduct_points
 from app.services.skill_prompts import validate_user_question
 from app.services.format_normalizer import normalize_output  # 首次报告仍用
@@ -134,8 +134,18 @@ async def send_message(
     if not person or person.user_id != current_user.id:
         raise PermissionDenied("无权访问")
     
-    # 验证用户问题是否有效；拦截时也落库（user + assistant 拦截文案），方便后续排查，不扣费
-    is_valid, error_msg = validate_user_question(request.content)
+    # 择日意图提前检查：命中择日关键词直接放行，跳过 validate_user_question（择日本身就是命理服务）
+    from app.services.date_select_agent import _keyword_match as _is_date_select_kw
+    if _is_date_select_kw(request.content):
+        is_valid, error_msg = True, ""
+    else:
+        # 关键词没命中但可能是择日的口语表达，先用 validate 拦截无关问题
+        is_valid, error_msg = validate_user_question(request.content)
+        # 如果被拦截了，再让 LLM 做最后一道择日语义判定（1-2秒）
+        if not is_valid:
+            from app.services.date_select_agent import is_date_select_intent_async as _is_ds_async
+            if await _is_ds_async(request.content):
+                is_valid, error_msg = True, ""
     if not is_valid:
         print(f"[chat][拦截] 开始落库 session_id={session_id} question={request.content!r}", flush=True)
         print(f"[chat][拦截] 拦截回复文案={error_msg[:80]!r}", flush=True)
@@ -170,7 +180,7 @@ async def send_message(
             yield error_msg
             yield "\n\n__SAVED__"
 
-        return StreamingResponse(reject_stream(), media_type="text/event-stream")
+        return StreamingResponse(reject_stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
     # 重试判定：上一条消息是相同内容的 user 消息（中断后重问），免重复扣费、不存重复 user 消息
     last_msg_result = await db.execute(
@@ -245,6 +255,13 @@ async def send_message(
     # 优先从 Person 读取已持久化的排盘数据
     if person.bazi_data_json:
         bazi_data = person.bazi_data_json
+        # 数据库 JSON 字段可能是字符串，需要反序列化
+        if isinstance(bazi_data, str):
+            import json as _json
+            try:
+                bazi_data = _json.loads(bazi_data)
+            except (TypeError, ValueError):
+                bazi_data = None
         # 旧版排盘落库数据缺流月十神字段（shishen_tian/shishen_di），双重危害：
         # ①评测端基准（person.bazi_data_json 构建）无十神名，LLM 正确引用生成端
         #   现算十神也会被误判"自行推演十神"（编造误报）；
@@ -278,6 +295,13 @@ async def send_message(
     elif session.bazi_data_json:
         # Person 没有，但 session 有，同步回 Person
         bazi_data = session.bazi_data_json
+        # 数据库 JSON 字段可能是字符串
+        if isinstance(bazi_data, str):
+            import json as _json2
+            try:
+                bazi_data = _json2.loads(bazi_data)
+            except (TypeError, ValueError):
+                bazi_data = None
         person.bazi_data_json = bazi_data
         await db.commit()
         print(f"[chat] 排盘数据来源: session.bazi_data_json, session_id={session_id}", flush=True)
@@ -344,7 +368,7 @@ async def send_message(
                 break
             yield chunk
 
-    return StreamingResponse(stream_response(), media_type="text/event-stream")
+    return StreamingResponse(stream_response(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
 async def _record_usage_log(
@@ -397,7 +421,7 @@ async def _generate_and_save(
     否则走 generate_followup_structured（常规追问）。
     """
     import traceback
-    is_date_select = is_date_select_intent(question)
+    is_date_select = await is_date_select_intent_async(question)
     print(f"[_generate_and_save] 开始 session_id={session_id} question={question[:30]} is_date_select={is_date_select}", flush=True)
     t0 = time.time()
     usage_holder: dict = {}
@@ -406,15 +430,30 @@ async def _generate_and_save(
         async with async_session() as db:
             full_json = ""
             if is_date_select:
-                # 择日 Agent 链路
+                # 择日 Agent 链路：立即推一个前置进度标记，避免 LLM 首次调用前的空窗期
+                await queue.put("__PROGRESS__正在分析需求\n")
                 async for chunk in generate_date_select(
                     user_question=question,
                     analysis_data=bazi_data,
                     usage_holder=usage_holder,
                 ):
-                    full_json += chunk
-                    await queue.put(chunk)
+                    # 过滤 progress 标记：只进 SSE 推给前端，不进存库的 full_json
+                    if chunk.startswith("__PROGRESS__"):
+                        await queue.put(chunk)
+                    else:
+                        full_json += chunk
+                        await queue.put(chunk)
             else:
+                # 临时生辰抽取+排盘：用户消息里临时提"别人生辰"时真实排盘注入，
+                # 避免 LLM 拿不到命盘自行编造五行/十神（如"满盘是水"）。
+                from app.services.birth_extractor import build_extra_chart_block
+                extra_chart_block = build_extra_chart_block(
+                    question, exclude_birth_date=birth_date, exclude_birth_time=birth_time
+                )
+                if extra_chart_block:
+                    print(f"[chat] 检测到临时生辰，已排盘注入 session_id={session_id}", flush=True)
+                # 进度标记由 generate_followup_structured 内部 yield，这里过滤：
+                # __PROGRESS__ 标记只推送给前端，不进存库的 full_json
                 async for chunk in generate_followup_structured(
                     analysis_data=bazi_data,
                     gender=gender,
@@ -426,9 +465,13 @@ async def _generate_and_save(
                     longitude=longitude,
                     latitude=latitude,
                     usage_holder=usage_holder,
+                    extra_chart_block=extra_chart_block,
                 ):
-                    full_json += chunk
-                    await queue.put(chunk)
+                    if chunk.startswith("__PROGRESS__"):
+                        await queue.put(chunk)
+                    else:
+                        full_json += chunk
+                        await queue.put(chunk)
             # 存库：content 存 JSON 字符串（前端解析后用 React 组件渲染）
             assistant_message = ChatMessage(
                 session_id=session_id,
@@ -557,6 +600,10 @@ async def get_first_reading(
     # 优先从 Person 读取已持久化的排盘数据
     if person.bazi_data_json:
         bazi_data = person.bazi_data_json
+        if isinstance(bazi_data, str):
+            import json as _json3
+            try: bazi_data = _json3.loads(bazi_data)
+            except (TypeError, ValueError): bazi_data = None
         # 同步到 session（如果 session 没有）
         if not session.bazi_data_json:
             session.bazi_data_json = bazi_data
@@ -564,6 +611,10 @@ async def get_first_reading(
     elif session.bazi_data_json:
         # Person 没有，但 session 有，同步回 Person
         bazi_data = session.bazi_data_json
+        if isinstance(bazi_data, str):
+            import json as _json4
+            try: bazi_data = _json4.loads(bazi_data)
+            except (TypeError, ValueError): bazi_data = None
         person.bazi_data_json = bazi_data
         await db.commit()
     else:
@@ -665,7 +716,7 @@ async def get_first_reading(
                 break
             yield chunk
 
-    return StreamingResponse(stream_response(), media_type="text/event-stream")
+    return StreamingResponse(stream_response(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
 async def _generate_and_save_first_reading(

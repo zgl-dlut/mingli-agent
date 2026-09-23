@@ -8,7 +8,6 @@ import { personApi } from '../api/person'
 import RechargeModal from '../components/RechargeModal'
 import type { Person } from '../types'
 import { analyzeBazi, AnalyzeResult } from '../api/bazi'
-import Logo from '../components/Logo'
 import { FollowupReportView, isStructuredReport } from '../components/FollowupReportView'
 import { DateSelectCard, isDateSelectReport } from '../components/DateSelectCard'
 import { normalizeReportContent } from '../utils/reportFormat'
@@ -174,7 +173,9 @@ export default function Chat() {
   const [cardPhase, setCardPhase] = useState<'loading' | 'ready' | 'done' | 'error'>('loading')
   const [isRechargeOpen, setIsRechargeOpen] = useState(false)
   // 生成进度相关状态（按人独立，支持并发生成）
-  const [progressMap, setProgressMap] = useState<Record<number, { percent: number; time: string }>>({})
+  const [, setProgressMap] = useState<Record<number, { percent: number; time: string }>>({})
+  // Agent 步骤进度状态（按人）：择日 Agent 执行时展示工具步骤列表，可折叠
+  const [agentSteps, setAgentSteps] = useState<Record<number, { steps: string[]; expanded: boolean }>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   // 滚动控制状态
@@ -451,6 +452,10 @@ export default function Chat() {
     setPersonGenerating(personId, false)
     isSendingMapRef.current.set(personId, false)
     abortControllersRef.current.delete(personId)
+    setAgentSteps(prev => {
+      const { [personId]: _, ...rest } = prev
+      return rest
+    })
   }
 
   // 启动生成状态轮询（刷新后恢复用）：每 3 秒查后端任务是否完成，完成后拉取消息
@@ -1152,6 +1157,28 @@ export default function Chat() {
       let sseError: string | null = null
       await parseSSEStream(response, (chunk) => {
         acc += chunk
+        // 拦截 __PROGRESS__ 标记：Agent 工具步骤进度，不累积到 acc
+        // progress 标记可能独占一行或和 JSON 在同一 chunk 里，逐行清理
+        const lines = acc.split('\n')
+        const cleanLines: string[] = []
+        for (const line of lines) {
+          if (line.startsWith('__PROGRESS__')) {
+            const step = line.slice('__PROGRESS__'.length).trim()
+            if (step) {
+              setAgentSteps(prev => {
+                const cur = prev[pid] || { steps: [], expanded: false }
+                // 同一步骤不重复追加
+                if (cur.steps[cur.steps.length - 1] !== step) {
+                  return { ...prev, [pid]: { ...cur, steps: [...cur.steps, step] } }
+                }
+                return prev
+              })
+            }
+          } else {
+            cleanLines.push(line)
+          }
+        }
+        acc = cleanLines.join('\n')
         const errorIdx = acc.indexOf('__ERROR__:')
         if (errorIdx >= 0) {
           // 后端任务异常：提取错误信息，显示提示
@@ -1377,15 +1404,16 @@ export default function Chat() {
         {/* 对话消息区域 */}
         {(cardPhase === 'done' || hasGenerated) && (
           <div className="space-y-3">
-            {messages.filter(Boolean).map((msg) => (
-              <div key={msg.id} data-role={msg.role} className="flex items-start gap-2">
-                {/* 左侧头像 */}
-                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }}>
-                  {msg.role === 'assistant' ? (
-                    <Logo dark className="logo-sm" showText={false} />
-                  ) : null}
-                </div>
-                {/* 气泡 - flex-1 占满头像之间的空间，所有气泡左右边缘严格对齐 */}
+            {messages.filter(Boolean)
+              .filter(m => {
+                // 生成中：与 pendingUserMsg 内容相同的 user 消息由乐观气泡单独渲染，避免重复
+                if (isPersonGenerating(person.id) && pendingUserMsg && m.role === 'user'
+                    && normText(m.content) === normText(pendingUserMsg)) return false
+                return true
+              })
+              .map((msg) => (
+              <div key={msg.id} data-role={msg.role} className={`flex items-start gap-2 ${msg.role === 'user' ? 'ml-9' : ''}`}>
+                {/* 气泡 */}
                 <div className="flex-1">
                   <div
                     className={`px-4 py-3 rounded-2xl ${
@@ -1408,32 +1436,57 @@ export default function Chat() {
                     )}
                   </div>
                 </div>
-                {/* 右侧头像 */}
-                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }}>
-                  {msg.role === 'user' ? (
-                    <div
-                      className="flex items-center justify-center rounded-full text-white font-bold"
-                      style={{ backgroundColor: '#8b6f5a', width: 36, height: 36, fontSize: 14 }}
-                    >
-                      {user?.name?.[0] || '?'}
-                    </div>
-                  ) : null}
-                </div>
               </div>
             ))}
 
-            {/* optimistic用户消息（真实问题已落库则隐藏，避免重复渲染） */}
-            {pendingUserMsg && pendingUserMsgPid === person.id && !optimisticDup && (
-              <div className="flex items-start gap-2">
-                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }} />
+            {/* 推荐追问 Chip 条：紧跟AI回答气泡外，浅金背景独立块 + 上滑淡入动画 */}
+            {(() => {
+              if (!showSuggested) return null
+              const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
+              if (!lastAssistant || isPersonGenerating(person.id) || inputValue) return null
+              const raw = extractSuggestedQuestions(lastAssistant.content)
+              if (!raw) return null
+              const filtered = filterAsked(raw, messages).slice(0, 6)  // 最多 6 个
+              if (filtered.length === 0) return null
+              return (
+                <div className="bg-amber-50/70 rounded-xl border border-amber-200/60 p-3 shadow-[0_1px_3px_rgba(160,128,114,0.08)] chip-slide-up">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1 text-sm font-semibold text-amber-700/80">
+                      <span className="text-base">✨</span>
+                      <span>试试追问</span>
+                      <span className="font-normal text-xs text-brand-muted/80 ml-1">（点击直接发送）</span>
+                    </div>
+                    <span className="text-[11px] text-brand-muted/60 flex-shrink-0">
+                      {isRetryOfUnanswered
+                        ? <>重新生成·不扣积分</>
+                        : <>40积分/次</>
+                      }
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {filtered.map((q, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleSend(q)}
+                        className="flex items-center justify-between gap-1.5 px-3 py-2 rounded-lg border border-amber-300/50 bg-white text-brand-brown text-sm text-left active:scale-95 transition-all hover:border-amber-500/60 hover:bg-amber-50 min-h-[36px]"
+                      >
+                        <span className="whitespace-normal text-left">{q}</span>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600 flex-shrink-0 mt-0.5"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* optimistic用户消息：生成中始终展示（messages.map 已过滤掉同内容重复项），
+                生成结束后由 optimisticDup 判断是否隐藏（避免与落库消息重复） */}
+            {pendingUserMsg && pendingUserMsgPid === person.id && (!optimisticDup || isPersonGenerating(person.id)) && (
+              <div className="flex items-start gap-2 ml-9">
                 <div className="flex-1">
                   <div className="px-4 py-3 rounded-2xl rounded-br-sm bg-[#8b6f5a] text-[#f4f2f0] ml-auto w-fit">
                     <div className="whitespace-pre-wrap">{pendingUserMsg}</div>
-                  </div>
-                </div>
-                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }}>
-                  <div className="flex items-center justify-center rounded-full text-white font-bold" style={{ backgroundColor: '#8b6f5a', width: 36, height: 36, fontSize: 14 }}>
-                    {user?.name?.[0] || '?'}
                   </div>
                 </div>
               </div>
@@ -1441,30 +1494,107 @@ export default function Chat() {
 
             {/* 正在生成提示 */}
             {isPersonGenerating(person.id) && (() => {
-              const p = progressMap[person.id]
-              const percent = p?.percent ?? 0
-              const time = p?.time ?? '预计1-2分钟'
+              const agentInfo = agentSteps[person.id]
+              const hasAgent = agentInfo && agentInfo.steps.length > 0
+              const latestStep = hasAgent ? agentInfo!.steps[agentInfo!.steps.length - 1] : null
+
+              // 豆包式：择日 Agent 有工具步骤时展示可折叠面板
+              if (hasAgent) {
+                const toggleExpand = () => {
+                  setAgentSteps(prev => ({
+                    ...prev,
+                    [person.id]: { ...agentInfo!, expanded: !agentInfo!.expanded }
+                  }))
+                }
+                return (
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1">
+                      <div className="rounded-2xl rounded-bl-sm bg-white/90 backdrop-blur-sm shadow-sm border border-brand-gold/20 overflow-hidden">
+                        {/* 头部：当前步骤 + 折叠按钮 */}
+                        <button
+                          onClick={toggleExpand}
+                          className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm animate-pulse text-brand-button">
+                              {latestStep ? `正在${latestStep}…` : 'AI 处理中…'}
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-400">
+                            {agentInfo!.expanded ? '收起 ▲' : `${agentInfo!.steps.length}步 展开 ▼`}
+                          </span>
+                        </button>
+                        {/* 折叠内容：已完成步骤列表 */}
+                        {agentInfo!.expanded && (
+                          <div className="px-5 pb-3 space-y-1">
+                            {agentInfo!.steps.map((s, i) => (
+                              <div key={i} className="flex items-center gap-2 text-xs text-gray-600">
+                                <span className={i === agentInfo!.steps.length - 1 ? 'text-amber-500' : 'text-green-500'}>
+                                  {i === agentInfo!.steps.length - 1 ? '●' : '✓'}
+                                </span>
+                                <span>{s}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+
+              // 普通追问：折叠面板 + 步骤列表（和择日 Agent 统一样式）
+              if (agentInfo && agentInfo.steps.length > 0) {
+                const toggleExpand = () => {
+                  setAgentSteps(prev => ({
+                    ...prev,
+                    [person.id]: { ...agentInfo!, expanded: !agentInfo!.expanded }
+                  }))
+                }
+                return (
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1">
+                      <div className="rounded-2xl rounded-bl-sm bg-white/90 backdrop-blur-sm shadow-sm border border-brand-gold/20 overflow-hidden">
+                        <button
+                          onClick={toggleExpand}
+                          className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-gray-50 transition-colors"
+                        >
+                          <span className="text-sm animate-pulse text-brand-button">
+                            {latestStep ? `正在${latestStep}…` : '正在分析中，请稍后…'}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {agentInfo!.expanded ? '收起 ▲' : `${agentInfo!.steps.length}步 展开 ▼`}
+                          </span>
+                        </button>
+                        {agentInfo!.expanded && (
+                          <div className="px-5 pb-3 space-y-1">
+                            {agentInfo!.steps.map((s, i) => (
+                              <div key={i} className="flex items-center gap-2 text-xs text-gray-600">
+                                <span className={i === agentInfo!.steps.length - 1 ? 'text-amber-500' : 'text-green-500'}>
+                                  {i === agentInfo!.steps.length - 1 ? '●' : '✓'}
+                                </span>
+                                <span>{s}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+
+              // 兜底：还没收到任何 progress 标记时（后端还在排盘/准备），显示简易进度条
               return (
-              <div className="flex items-start gap-2">
-                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }}>
-                  <Logo dark className="logo-sm" showText={false} />
-                </div>
-                <div className="flex-1">
-                  <div className="px-6 py-5 rounded-2xl bg-white/90 backdrop-blur-sm rounded-bl-sm shadow-sm border border-brand-gold/20">
-                    <div className="flex items-center gap-2 mb-4">
-                      <span className="text-brand-button text-sm animate-pulse">正在分析中，请稍后…</span>
-                    </div>
-                    <div className="w-full h-3 bg-brand-bgCard rounded-full overflow-hidden mb-3">
-                      <div className="h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${percent}%`, backgroundColor: '#a7876f' }} />
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <p className="text-brand-button text-sm">{percent}%</p>
-                      <p className="text-brand-brown/50 text-sm">{time}</p>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <div className="rounded-2xl rounded-bl-sm bg-white/90 backdrop-blur-sm shadow-sm border border-brand-gold/20 overflow-hidden">
+                      <div className="px-5 py-3 flex items-center gap-2">
+                        <span className="text-sm animate-pulse text-brand-button">正在准备…</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="flex-shrink-0 mt-1" style={{ width: '36px' }} />
-              </div>
               )
             })()}
             <div ref={messagesEndRef} />
@@ -1505,47 +1635,6 @@ export default function Chat() {
       {/* 底部输入栏 */}
       {(hasGenerated || cardPhase === 'done') && (
         <div className="bg-white/90 backdrop-blur-sm border-t border-brand-inputBorder/40 flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
-
-          {/* 推荐追问 Chip 条：浅金背景独立块 + 上滑淡入动画 */}
-          {(() => {
-            if (!showSuggested) return null
-            const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
-            if (!lastAssistant || isPersonGenerating(person.id) || inputValue) return null
-            const raw = extractSuggestedQuestions(lastAssistant.content)
-            if (!raw) return null
-            const filtered = filterAsked(raw, messages)
-            if (filtered.length === 0) return null
-            return (
-              <div className="mx-3 mt-3 mb-2 bg-amber-50/70 rounded-xl border border-amber-200/60 p-3 shadow-[0_1px_3px_rgba(160,128,114,0.08)] chip-slide-up">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-1 text-sm font-semibold text-amber-700/80">
-                    <span className="text-base">✨</span>
-                    <span>试试追问</span>
-                    <span className="font-normal text-xs text-brand-muted/80 ml-1">（点击直接发送）</span>
-                  </div>
-                  <span className="text-[11px] text-brand-muted/60 flex-shrink-0">
-                    {isRetryOfUnanswered
-                      ? <>重新生成·不扣积分</>
-                      : <>40积分/次</>
-                    }
-                  </span>
-                </div>
-                <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                  {filtered.map((q, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => handleSend(q)}
-                      className="flex-shrink-0 flex items-center gap-1.5 pl-3.5 pr-2.5 py-2 rounded-full border border-amber-300/50 bg-white text-brand-brown text-sm whitespace-nowrap active:scale-95 transition-all hover:border-amber-500/60 hover:bg-amber-50"
-                    >
-                      <span>{q}</span>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600 flex-shrink-0"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
 
           {/* 输入行 */}
           <div className="flex items-center space-x-2 px-4 py-2">

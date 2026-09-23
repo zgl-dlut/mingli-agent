@@ -68,8 +68,10 @@ def _collect_used_styles(history_messages: List[dict], window: int) -> Tuple[set
         if not isinstance(data, dict):
             continue
         parsed += 1
-        opening_key = (data.get("opening") or {}).get("style_key")
-        summary_key = (data.get("summary") or {}).get("style_key")
+        opening = data.get("opening")
+        summary = data.get("summary")
+        opening_key = opening.get("style_key") if isinstance(opening, dict) else None
+        summary_key = summary.get("style_key") if isinstance(summary, dict) else None
         if opening_key and opening_key in OPENING_STYLES:
             used_opening.append(opening_key)
         if summary_key and summary_key in SUMMARY_STYLES:

@@ -1,9 +1,8 @@
-import React, { useState } from 'react'
+import React from 'react'
 
 interface DateSelectData {
   type?: string
   error?: string
-  steps?: Array<{ action: string; detail: string }>
   recommended_dates?: Array<{
     date: string
     ganzhi: string
@@ -28,8 +27,6 @@ export function isDateSelectReport(content: string): boolean {
 }
 
 export const DateSelectCard = React.memo(({ content }: { content: string }) => {
-  const [showSteps, setShowSteps] = useState(false)
-
   let data: DateSelectData = {}
   try {
     data = JSON.parse(content)
@@ -47,39 +44,9 @@ export const DateSelectCard = React.memo(({ content }: { content: string }) => {
   }
 
   const dates = data.recommended_dates || []
-  const steps = data.steps || []
 
   return (
     <div className="space-y-3">
-      {/* 过程条 */}
-      {steps.length > 0 && (
-        <div className="bg-gray-50 rounded-lg overflow-hidden">
-          <button
-            onClick={() => setShowSteps(!showSteps)}
-            className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-100 transition-colors"
-          >
-            <span className="text-xs text-gray-500 flex items-center gap-1">
-              <span className="text-sm">🔍</span>
-              Agent 执行了 {steps.length} 步
-            </span>
-            <span className="text-xs text-gray-400">{showSteps ? '收起 ▲' : '展开 ▼'}</span>
-          </button>
-          {showSteps && (
-            <div className="px-3 py-2 space-y-1.5 border-t border-gray-100">
-              {steps.map((s, i) => (
-                <div key={i} className="flex gap-2 text-xs">
-                  <span className="text-gray-400 font-mono shrink-0">{i + 1}.</span>
-                  <div>
-                    <span className="text-gray-700 font-medium">{s.action}</span>
-                    <span className="text-gray-400 ml-1">— {s.detail}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* 无推荐日期 */}
       {dates.length === 0 && !data.error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">

@@ -132,8 +132,16 @@ LIST_DAYS_TOOL = {
     },
 }
 
-def _format_list_days_result(year: int, month: int, weekday_filter: str = "all") -> str:
-    """列出某月候选日期 + 干支。"""
+def _format_list_days_result(year: int, month: int, weekday_filter: str = "all", analysis_data: Dict | None = None) -> str:
+    """列出某月候选日期 + 干支，并标注每个日期与日柱的冲合关系（减少后续 check_day_chart 调用）。"""
+    # 提取日柱地支（择日不可冲）
+    user_day_di = ""
+    if analysis_data:
+        pillars = analysis_data.get("四柱", {})
+        day_pillar = pillars.get("日", {}) if isinstance(pillars, dict) else {}
+        if isinstance(day_pillar, dict):
+            user_day_di = day_pillar.get("di", "")
+
     cal = calendar.Calendar()
     days = []
     for d in cal.itermonthdates(year, month):
@@ -143,6 +151,7 @@ def _format_list_days_result(year: int, month: int, weekday_filter: str = "all")
         base_date = date(1900, 1, 31)
         day_num = (d - base_date).days
         ganzhi = get_ganzhi(day_num)
+        day_di = ganzhi[1]
         weekday_names = ["一", "二", "三", "四", "五", "六", "日"]
         weekday_cn = weekday_names[d.weekday()]
         is_weekend = d.weekday() >= 5
@@ -152,20 +161,33 @@ def _format_list_days_result(year: int, month: int, weekday_filter: str = "all")
         if weekday_filter == "weekday" and is_weekend:
             continue
 
+        # 标注冲/合日柱
+        tags = []
+        if user_day_di:
+            if _check_chong(day_di, user_day_di):
+                tags.append("冲日柱❌")
+            elif _check_he(day_di, user_day_di):
+                tags.append("合日柱✓")
+
         days.append({
             "date": d.isoformat(),
             "weekday": f"周{weekday_cn}",
             "ganzhi": ganzhi,
             "is_weekend": is_weekend,
+            "tags": tags,
         })
 
     if not days:
         return f"{year}年{month}月无符合筛选条件的日期"
 
-    lines = [f"{year}年{month}月候选日期（{weekday_filter}）："]
+    # 统计冲日柱数量
+    chong_count = sum(1 for d in days if "冲日柱❌" in d["tags"])
+    lines = [f"{year}年{month}月候选日期（{weekday_filter}，共{len(days)}天，其中冲日柱{chong_count}天需排除）："]
     for d in days:
         tag = "周末" if d["is_weekend"] else "工作日"
-        lines.append(f"  {d['date']} {d['weekday']} {d['ganzhi']} [{tag}]")
+        extra = f" [{','.join(d['tags'])}]" if d["tags"] else ""
+        lines.append(f"  {d['date']} {d['weekday']} {d['ganzhi']} [{tag}]{extra}")
+    lines.append(f"\n提示：标注「冲日柱❌」的日期不可用，无需再调 check_day_chart；其余日期可精选后再调 check_day_chart 确认。")
     return "\n".join(lines)
 
 
@@ -480,13 +502,49 @@ ALL_TOOLS = [GET_CHART_TOOL, LIST_DAYS_TOOL, CHECK_DAY_TOOL, CHECK_SHENSHA_TOOL,
 
 def dispatch_tool(tool_name: str, args: dict, analysis_data: Dict) -> str:
     """调度工具函数，返回结果文本。"""
+    # 兜底反序列化（保险：防止 chat.py 里反序列化漏网）
+    import json as _j
+    if isinstance(analysis_data, str):
+        try:
+            analysis_data = _j.loads(analysis_data)
+        except Exception:
+            pass
+
+    # 兼容旧版排盘格式：四柱是字符串 "己亥 丙寅 癸巳 壬子" → 转成 dict
+    pillars = analysis_data.get("四柱") if isinstance(analysis_data, dict) else None
+    if isinstance(pillars, str):
+        pillar_names = ("年", "月", "日", "时")
+        parts = pillars.split()
+        if len(parts) == 4:
+            new_pillars = {}
+            for name, gz in zip(pillar_names, parts):
+                if len(gz) >= 2:
+                    new_pillars[name] = {"tian": gz[0], "di": gz[1]}
+            if new_pillars:
+                analysis_data = dict(analysis_data)
+                analysis_data["四柱"] = new_pillars
+        logger.info(f"[dispatch_tool] 旧版四柱字符串已转换为 dict: {pillars}")
+
+    # 兼容旧版日主格式："癸水" → 只取天干 "癸"
+    dm = analysis_data.get("日主") if isinstance(analysis_data, dict) else None
+    if isinstance(dm, str) and len(dm) >= 2:
+        analysis_data = dict(analysis_data)
+        analysis_data["日主"] = dm[0]
     if tool_name == "get_chart":
         return _format_chart_result(analysis_data)
     elif tool_name == "list_candidate_days":
+        # 防御性校验：LLM 可能传过期年份/月份，自动纠正到当前年月，避免选出过去的日期
+        _year = args.get("year", date.today().year)
+        _month = args.get("month", date.today().month)
+        _today = date.today()
+        if (_year, _month) < (_today.year, _today.month):
+            logger.info(f"[DateSelectAgent] list_candidate_days 收到过期年月 {_year}-{_month}，纠正为当前 {_today.year}-{_today.month}")
+            _year, _month = _today.year, _today.month
         return _format_list_days_result(
-            args.get("year", 2026),
-            args.get("month", 11),
+            _year,
+            _month,
             args.get("weekday_filter", "all"),
+            analysis_data,
         )
     elif tool_name == "check_day_chart":
         return _format_check_day_result(args.get("date_str", ""), analysis_data)
@@ -513,11 +571,16 @@ AGENT_SYSTEM_PROMPT = """你是命理择日顾问。用户需要你帮忙挑选�
 
 # 工作流程（必须遵循）
 1. 先调 get_chart 获取用户命盘
-2. 用 list_candidate_days 列出用户指定月份范围的候选日
-3. 对每个候选日调 check_day_chart 检查冲合关系——**冲日柱的日直接排除**
-4. 对剩余吉日调 check_shensha 查宜忌
-5. 调 explain_choice 生成推荐理由
-6. 输出最终结果
+2. 确定择日的时间范围和偏好（**绝对不要停下来问用户！** 按以下默认值自行补全）：
+   - **时间范围默认值**：用户没说具体月份 → 默认从**当前月到未来2个月**（共3个月），范围太广则收窄为未来30天
+   - **工作日/周末默认值**：用户没说偏好 → weekday_filter="all"（全部都可以）
+   - **事件类型**：从用户问题推断（领证/结婚/搬家/开业/签约/出行/动土等），用于 check_shensha 时匹配宜忌
+3. 用 list_candidate_days 列出候选日（按步骤2确定的范围和筛选）
+   - **重要**：list_candidate_days 返回的每个日期已标注「冲日柱❌」或「合日柱✓」。**冲日柱的日期直接排除，不要再调 check_day_chart 检查它们！**
+4. 从剩余日期中精选 3-5 个最优候选（优先选「合日柱✓」、用神当令、周末/节假日的日期），只对这几个精选日期调 check_day_chart 检查冲合关系
+5. 对精选吉日调 check_shensha 查宜忌
+6. 调 explain_choice 生成推荐理由
+7. 输出最终结果
 
 # 冲突重规划规则（重要）
 - 如果所有候选日都冲日柱，不要返回空结果！应：
@@ -530,12 +593,6 @@ AGENT_SYSTEM_PROMPT = """你是命理择日顾问。用户需要你帮忙挑选�
 最终输出纯JSON（不要用```json包裹），结构如下：
 {
   "type": "date_select",
-  "steps": [
-    {"action": "获取命盘", "detail": "日主壬水，用神火..."},
-    {"action": "列出候选日", "detail": "2026年11月共30天，其中周末8天..."},
-    {"action": "逐日筛选", "detail": "排除冲日柱6天，排除忌神当令3天..."},
-    {"action": "查询宜忌", "detail": "剩余4日均宜嫁娶/入宅..."}
-  ],
   "recommended_dates": [
     {
       "date": "2026-11-15",
@@ -551,6 +608,9 @@ AGENT_SYSTEM_PROMPT = """你是命理择日顾问。用户需要你帮忙挑选�
 }
 
 # 硬约束
+- **只能推荐今天及未来的日期**，过去的日期绝对不能出现在 recommended_dates 里。调用 list_candidate_days 时 year/month 必须 >= 当前年月。
+- **绝对不要在输出中反问用户或请求补充信息**（如"请告诉我您的出生年月日"、"请问偏好周末还是工作日"、"计划在哪月"）。所有缺失参数按上述默认值自行补全。
+- **不要以"命盘获取失败"为借口停止**，get_chart 失败时也要继续用用户问题里的时间范围走下去，尽量返回日期结果。
 - recommended_dates 必须包含真实的干支和十神（由工具计算，禁止编造）
 - 冲日柱的日期绝对不能出现在 recommended_dates 里
 - reason 必须基于工具返回的数据（冲合关系、用忌神、建除宜忌），禁止编造
@@ -585,12 +645,18 @@ async def generate_date_select(
     model_config = model_pool[0]
     client = await get_client(model_config)
 
-    messages = [{"role": "user", "content": user_question}]
+    # 注入当前真实日期，防止 LLM 用训练数据里的旧年份导致选到过去的日期
+    today = date.today()
+    today_str = f"{today.year}年{today.month}月{today.day}日"
+    messages = [{
+        "role": "user",
+        "content": f"当前日期是 {today.isoformat()}（{today_str}）。\n用户请求：{user_question}",
+    }]
     all_messages = build_cache_control_messages(AGENT_SYSTEM_PROMPT, messages)
 
     start = time.time()
     tool_call_count = 0
-    max_tool_rounds = 5
+    max_tool_rounds = 8
 
     logger.info(f"[DateSelectAgent] 开始, 模型={model_config.name}, 问题: {user_question[:80]}")
 
@@ -642,13 +708,26 @@ async def generate_date_select(
                             "result_preview": result[:200],
                         })
                 except Exception as e:
-                    result = f"工具调用失败: {type(e).__name__}: {e}"
                     logger.error(f"[DateSelectAgent] 工具 {tool_call.function.name} 异常: {e}")
+                    if tool_call.function.name == "get_chart":
+                        # 命盘获取失败时，给 LLM 一个降级提示让它继续，不要停下来问用户
+                        result = "命盘数据暂不可用。请继续用后续工具（list_candidate_days / check_day_chart / check_shensha）按传统通胜宜忌和干支择日，优先避开冲日柱的日期。用户的生辰八字信息已在系统中，请不要要求用户重新提供。"
+                    else:
+                        result = f"工具调用失败: {type(e).__name__}: {e}"
                 all_messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": result,
                 })
+                # 实时推送进度给前端（格式：__PROGRESS__简短工具名:描述）
+                _tool_label = {
+                    "get_chart": "获取命盘数据",
+                    "list_candidate_days": "列出候选日期",
+                    "check_day_chart": "逐日筛选冲合关系",
+                    "check_shensha": "查询建除宜忌",
+                    "explain_choice": "生成推荐理由",
+                }.get(tool_call.function.name, tool_call.function.name)
+                yield f"__PROGRESS__{_tool_label}\n"
             continue  # 继续下一轮 LLM 调用
 
         # 无工具调用，获取最终响应
@@ -659,7 +738,6 @@ async def generate_date_select(
         raw_content = json.dumps({
             "type": "date_select",
             "error": "Agent超过最大工具调用轮次",
-            "steps": usage_holder.get("agent_steps", []) if usage_holder else [],
         }, ensure_ascii=False)
 
     elapsed = time.time() - start
@@ -700,19 +778,64 @@ async def generate_date_select(
 # ============================================================
 
 _DATE_SELECT_KEYWORDS = [
-    "择日", "挑日子", "选日子", "挑个日子", "选个好日子",
-    "领证", "结婚日期", "婚期",
-    "搬家吉日", "入宅吉日", "搬迁",
-    "开业吉日", "开张吉日", "开店",
-    "面试日期", "签约吉日",
-    "黄道吉日",
+    "择日", "挑日子", "选日子", "挑个好日子", "选个好日子",
+    "领证", "结婚日期", "婚期", "结婚日子",
+    "搬家", "入宅", "搬迁", "乔迁", "搬屋",
+    "开业", "开张", "开店", "开市",
+    "面试日期", "签约吉日", "签约",
+    "黄道吉日", "吉日", "好日子",
     "哪天适合", "哪天好", "几号好", "什么日子",
+    "什么时候搬家", "什么时候领证", "什么时候开业",
+    "挑个.*日子", "选个.*日子",
 ]
 
-def is_date_select_intent(question: str) -> bool:
-    """判断用户问题是否是择日请求（轻量规则匹配）。"""
+def _keyword_match(question: str) -> bool:
+    """关键词快速匹配（0延迟）。"""
+    import re
     q = question.strip().lower()
     for kw in _DATE_SELECT_KEYWORDS:
-        if kw in q:
+        if ".*" in kw:
+            if re.search(kw, q):
+                return True
+        elif kw in q:
             return True
     return False
+
+# LLM 兜底分类的提示词
+_INTENT_CLASSIFY_PROMPT = """判断用户的问题是否在请求"挑选日期/选择吉日"。
+
+判定标准：用户想让你帮他从日历中选出具体的日期（某天/某几天），用于做某件事（领证、搬家、开业、签约、出行、动土等）。
+不判定的情况：用户只是问运势/事业/感情/财运趋势，或问某个时间段的情况，或问性格/能力，没有"选日期"的意图。
+
+只回答JSON：{"is_date_select": true} 或 {"is_date_select": false}"""
+
+async def is_date_select_intent_async(question: str) -> bool:
+    """判断用户问题是否是择日请求（关键词快速命中 + LLM 兜底分类）。"""
+    # 第一层：关键词快速命中
+    if _keyword_match(question):
+        return True
+    # 第二层：LLM 兜底分类
+    if not model_pool:
+        return False
+    try:
+        model_config = model_pool[-1]  # 用最小的模型
+        client = await get_client(model_config)
+        response = await client.chat.completions.create(
+            model=model_config.name,
+            messages=[
+                {"role": "system", "content": _INTENT_CLASSIFY_PROMPT},
+                {"role": "user", "content": question},
+            ],
+            temperature=0,
+            max_tokens=20,
+            response_format={"type": "json_object"},
+            timeout=10,
+            extra_body=build_llm_extra_body(model_config.name),
+        )
+        result = json.loads(response.choices[0].message.content)
+        is_ds = result.get("is_date_select", False)
+        logger.info(f"[DateSelectAgent] LLM兜底分类: 问题='{question[:40]}' => {is_ds}")
+        return is_ds
+    except Exception as e:
+        logger.warning(f"[DateSelectAgent] LLM兜底分类失败,回退False: {e}")
+        return False
