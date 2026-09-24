@@ -68,12 +68,18 @@ echo ""
 echo "【6/6】验证部署..."
 sleep 5
 ssh $USER@$SERVER_IP "
+  cd $PROJECT_DIR
   echo '  Nginx 配置测试:'
   docker exec mingli-nginx nginx -t 2>&1
 
   echo ''
-  echo '  后端健康检查:'
-  curl -s -o /dev/null -w '  HTTP %{http_code}' http://localhost:8000/api/health || echo '  (后端未就绪，请稍后检查)'
+  echo '  后端健康检查（走nginx，等就绪）:'
+  for i in 1 2 3 4 5 6 7 8; do
+    code=\$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/)
+    if [ \"\$code\" = '200' ]; then echo \"  HTTP \$code (就绪)\"; break; fi
+    echo \"  尝试\$i: HTTP \$code，等待3秒...\"
+    sleep 3
+  done
 
   echo ''
   echo ''
