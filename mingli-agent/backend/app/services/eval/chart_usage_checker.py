@@ -104,6 +104,61 @@ def extract_chart_data_entities(chart_data: dict) -> Dict[str, Set[str]]:
     return entities
 
 
+def detect_cross_level_inference(report: dict, chart_data: dict) -> List[Dict]:
+    """检测跨层级推演：模型把低层级(流月)实体/关系升级到高层级(流年/大运)定性。
+
+    命盘「重点流年」只给 年份+干支+吉凶+原因，无流年十神字段；
+    十神只在流月明细(get_liuyue_detail)按月给出（shishen_tian/shishen_di）。
+    因此流年语境出现「十神 + 当值/当令/主事」即越级编造。
+
+    大运-流年关系以命盘「大运解读」栏为准；冲合属流月局部现象，
+    正文出现「大运/流年 + 合绊」即把流月冲合升级成高层级关系，属越级编造。
+
+    这类违规的特征是「实体真实存在但层级错」——十神/冲合确实在命盘里，
+    只是放错了层级，实体存在性检查天然抓不住，是结构性盲区。
+    """
+    all_text = json.dumps(report, ensure_ascii=False)
+    violations = []
+
+    shishen = "七杀|正官|偏印|正印|伤官|食神|比肩|劫财|偏财|正财"
+
+    # 模式1：流年十神越级
+    # 匹配「年份/年干支 后紧跟十神+当值/当令/主事」，中间字符排除"月"以避开
+    # 合法流月写法「9月(庚戌月，伤官当值)」——合法流月中间必有"月"字。
+    pat_year_shishen = re.compile(
+        r"(\d{4}年|[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥](?:年|流年))"
+        r"([^月，。、；\n]{0,8})"
+        r"(" + shishen + r")"
+        r"[^，。、；\n]{0,4}"
+        r"(当值|当令|主事)"
+    )
+    for m in pat_year_shishen.finditer(all_text):
+        violations.append({
+            "type": "跨层级推演",
+            "entity": m.group(0),
+            "detail": f"流年语境出现十神'{m.group(3)}'当值/当令/主事，但命盘流年无十神字段（十神仅流月明细按月给出）",
+            "location": "report_text",
+            "expected": "流年只能用命盘给的年份+干支+吉凶+原因，不得给流年配十神当值；十神当值仅限流月明细",
+            "reason": "把流月层级的十神升级成流年层级定性，属结构性编造，会误导用户对整年吉凶的判断",
+        })
+
+    # 模式2：流月冲合越级
+    # 大运/流年 语境出现「合绊」即越级（大运-流年关系以命盘大运解读栏为准）。
+    # 用「合绊」连写而非单字「绊」，避免误伤"羁绊""绊倒"等无关词。
+    pat_dayun_heban = re.compile(r"(大运|流年)[^，。、；\n]{0,20}合绊")
+    for m in pat_dayun_heban.finditer(all_text):
+        violations.append({
+            "type": "跨层级推演",
+            "entity": m.group(0),
+            "detail": f"{m.group(1)}语境出现冲合关系词'合绊'，但冲合属流月局部现象，大运/流年关系应以命盘大运解读栏为准",
+            "location": "report_text",
+            "expected": "大运/流年关系以命盘大运解读栏为准，不得把流月冲合升级成大运/流年级别定性",
+            "reason": "把流月局部冲合升级成大运/流年关系，属跨层级编造，会夸大或扭曲高层级判断",
+        })
+
+    return violations
+
+
 def check_chart_usage(report: dict, chart_data: dict) -> List[Dict]:
     """检查 LLM 输出是否编造了命盘未提供的数据。
 
@@ -179,5 +234,9 @@ def check_chart_usage(report: dict, chart_data: dict) -> List[Dict]:
                 "expected": f"忌神应与命盘一致（命盘忌神：'{chart_data.get('忌神', '')}'）",
                 "reason": "用神/忌神是命理分析的核心依据，与命盘不一致会导致整个分析方向错误",
             })
+
+    # 4. 跨层级推演：实体真实存在但层级错（流月十神/冲合升级到流年/大运层级）
+    # 实体存在性检查抓不住这类违规，是结构性盲区，需用层级关系正则补检
+    violations.extend(detect_cross_level_inference(report, chart_data))
 
     return violations

@@ -252,7 +252,7 @@ async def save_eval_result(result: Dict, dataset_id: str = "") -> None:
                                "支神错误", "大运方向错误", "起运年龄错误", "大运列表错误",
                                "大运天干五行错误", "大运地支五行错误", "大运综合判断错误",
                                "流年天干五行错误", "流年地支五行错误", "流年判断错误", "流年缺失",
-                               "流月干支错误", "流月吉凶错误"}
+                               "流月干支错误", "流月吉凶错误", "跨层级推演"}
                 has_l3_error = any(t in l3_keywords for t in v_types)
 
                 if not has_l1_error:

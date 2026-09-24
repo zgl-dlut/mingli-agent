@@ -258,5 +258,46 @@
     "description": "支出/破财类问题 - 应通过",
     "user_question": "今年会不会有大额破财",
     "expected_pass": true
+  },
+  {
+    "id": "eval_008",
+    "category": "命盘使用检查",
+    "description": "跨层级推演-流年十神越级+流月冲合越级",
+    "user_question": "未来5年要不要卖房，负债能否还完",
+    "report": {
+      "subtopics": [
+        {
+          "title": "未来5年卖房时机",
+          "blocks": [
+            {"type": "keyword", "keyword": "2027年压力", "narrative": "2027丁未年丁火偏印当值，事业压力陡增，此年不宜卖房，容易贱卖。"},
+            {"type": "keyword", "keyword": "2028年转机", "narrative": "2028戊申年运势回暖，适合挂牌出手，能卖到合理价位。"}
+          ]
+        },
+        {
+          "title": "负债能否还清",
+          "blocks": [
+            {"type": "keyword", "keyword": "还债阻力", "narrative": "当前大运未土跟流年午火合绊，未来三年还债压力较大，需精打细算。"},
+            {"type": "keyword", "keyword": "还债节奏", "narrative": "建议2029年起逐步偿还，分三年清偿，避免一次性压力过大。"}
+          ]
+        }
+      ],
+      "summary": {
+        "title": "总结",
+        "items": [
+          {"keyword": "2028年卖房", "text": "戊申年回暖适合出手"},
+          {"keyword": "分三年还债", "text": "2029年起逐步清偿"}
+        ]
+      }
+    },
+    "chart_data": {
+      "四柱": "庚午 丁亥 己卯 戊辰",
+      "日主": "己土",
+      "用神": "火",
+      "忌神": "水",
+      "当前大运": "癸未",
+      "重点流年": ["2026年丙午：吉", "2027年丁未：平", "2028年戊申：吉"]
+    },
+    "expected_pass": false,
+    "expected_violations": ["跨层级推演"]
   }
 ]
