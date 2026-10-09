@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>趣算算 V1.3 设计稿 · 画廊</title>
+<style>
+:root {
+  --bg: #F7F5F0;
+  --card: #FFFFFF;
+  --brand: #4A4E8F;
+  --brand-soft: #EEEFF9;
+  --gold: #C9A86A;
+  --ink: #2B2B33;
+  --ink-2: #8A8A93;
+  --success: #2E9E6B;
+  --danger: #D9534F;
+  --radius-card: 16px; --radius-pill: 999px;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#141419; min-height:100vh; padding:52px 40px 64px; }
+.head { text-align:center; margin-bottom:44px; }
+.head h1 { font-size:30px; font-weight:800; color:#FFFFFF; letter-spacing:2px; display:flex; align-items:center; justify-content:center; gap:12px; }
+.head .stage-tag { font-size:12px; font-weight:600; color:var(--gold); border:1px solid rgba(201,168,106,.5); background:rgba(201,168,106,.1); border-radius:999px; padding:4px 13px; letter-spacing:1px; }
+.head .sub { font-size:13px; color:#8A8A93; margin-top:10px; letter-spacing:1px; }
+.head .sub b { color:var(--gold); font-weight:600; }
+.gallery { display:grid; grid-template-columns:repeat(4, 236px); gap:40px 32px; justify-content:center; }
+.frame { display:flex; flex-direction:column; align-items:center; }
+.thumb { width:214.5px; height:600px; overflow:hidden; border-radius:22px; box-shadow:0 14px 40px rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.09); background:#17171C; }
+.thumb iframe { width:390px; height:1091px; border:0; transform:scale(0.55); transform-origin:top left; }
+.label { margin-top:14px; font-size:13px; color:#B9B9C2; letter-spacing:.5px; }
+.label b { color:#FFFFFF; font-weight:700; margin-right:6px; }
+.label .tag { font-size:10px; color:var(--gold); border:1px solid rgba(201,168,106,.5); border-radius:999px; padding:1px 7px; margin-left:7px; vertical-align:1px; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>趣算算 V1.3 设计稿 <span class="stage-tag">含中期运势阶梯4页</span></h1>
+    <div class="sub">八字命理 APP · 高保真 HTML 设计稿 · <b>11 页</b> · 2026-09-24</div>
+    <div class="sub" style="margin-top:6px; font-size:12px;">体验动线：今日页点〔周〕→周运预览→解锁卡→会员中心→支付 ｜ 我的页→报告中心→年运报告</div>
+  </div>
+
+  <div class="gallery">
+    <div class="frame">
+      <div class="thumb"><iframe src="01-today.html"></iframe></div>
+      <div class="label"><b>01</b>今日页<span class="tag">Tab</span></div>
+    </div>
+    <div class="frame">
+      <div class="thumb"><iframe src="02-chat.html"></iframe></div>
+      <div class="label"><b>02</b>对话页 · 命理问答<span class="tag">Tab</span></div>
+    </div>
+    <div class="frame">
+      <div class="thumb"><iframe src="03-chat-mood.html"></iframe></div>
+      <div class="label"><b>03</b>对话页 · 情绪模式<span class="tag">Tab</span></div>
+    </div>
+    <div class="frame">
+      <div class="thumb"><iframe src="04-profile.html"></iframe></div>
+      <div class="label"><b>04</b>我的页<span class="tag">Tab</span></div>
+    </div>
+    <div class="frame">
+      <div class="thumb"><iframe src="05-membership.html"></iframe></div>
+      <div class="label"><b>05</b>会员中心<span class="tag">二级页</span></div>
+    </div>
+    <div class="frame">
+      <div class="thumb"><iframe src="06-pay.html"></iframe></div>
+      <div class="label"><b>06</b>订阅支付<span class="tag">二级页</span></div>
+    </div>
+    <div class="frame">
+      <div class="thumb"><iframe src="07-onboarding.html"></iframe></div>
+      <div class="label"><b>07</b>建档引导<span class="tag">二级页</span></div>
+    </div>
+    <div class="frame">
+      <div class="thumb"><iframe src="08-week.html"></iframe></div>
+      <div class="label"><b>08</b>今日页 · 周运态<span class="tag">中期</span></div>
+    </div>
+    <div class="frame">
+      <div class="thumb"><iframe src="09-month.html"></iframe></div>
+      <div class="label"><b>09</b>今日页 · 月运态<span class="tag">中期</span></div>
+    </div>
+    <div class="frame">
+      <div class="thumb"><iframe src="10-year.html"></iframe></div>
+      <div class="label"><b>10</b>年运报告<span class="tag">中期</span></div>
+    </div>
+    <div class="frame">
+      <div class="thumb"><iframe src="11-report-center.html"></iframe></div>
+      <div class="label"><b>11</b>报告中心<span class="tag">中期</span></div>
+    </div>
+  </div>
+</body>
+</html>

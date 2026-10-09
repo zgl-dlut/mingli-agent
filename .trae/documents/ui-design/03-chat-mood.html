@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>03 对话页·情绪模式 · 趣算算</title>
+<style>
+:root {
+  --bg: #F7F5F0;          /* 宣纸暖白，页面底 */
+  --card: #FFFFFF;         /* 卡片 */
+  --brand: #4A4E8F;        /* 黛蓝紫，主色/Tab选中/主CTA */
+  --brand-soft: #EEEFF9;   /* 主色浅底 */
+  --gold: #C9A86A;         /* 金色点缀：会员/吉/高亮边框 */
+  --ink: #2B2B33;          /* 主文字 */
+  --ink-2: #8A8A93;        /* 次文字 */
+  --success: #2E9E6B;      /* 宜/吉 */
+  --danger: #D9534F;       /* 忌/凶 */
+  --radius-card: 16px; --radius-pill: 999px;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#17171C; min-height:100vh; display:flex; justify-content:center; align-items:flex-start; padding:32px 0; }
+.phone { width:390px; min-height:844px; background:var(--bg); border:11px solid #101014; border-radius:44px; box-shadow:0 30px 80px rgba(0,0,0,.55); display:flex; flex-direction:column; position:relative; overflow:hidden; }
+/* 状态栏 */
+.statusbar { height:46px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 26px 0 30px; }
+.statusbar .time { font-size:15px; font-weight:600; color:var(--ink); letter-spacing:.2px; }
+.statusbar .icons { display:flex; align-items:center; gap:6px; }
+/* 内容区 */
+.screen { flex:1; display:flex; flex-direction:column; padding:0 16px; }
+/* 顶栏：档案切换+额度 */
+.chat-top { display:flex; justify-content:space-between; align-items:center; padding:4px 4px 0; }
+.profile-switch { display:flex; align-items:center; gap:5px; font-size:16px; font-weight:700; color:var(--ink); }
+.profile-switch .caret { color:var(--ink-2); display:inline-flex; }
+.quota { display:flex; align-items:center; gap:5px; background:var(--brand-soft); color:var(--brand); font-size:12px; font-weight:600; border-radius:var(--radius-pill); padding:5px 12px; }
+/* 卡片通用 */
+.card { background:var(--card); border-radius:var(--radius-card); padding:12px 14px; margin-top:10px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
+/* 命盘速览卡（折叠态：仅一行人设词+展开箭头） */
+.cq-folded { display:flex; justify-content:space-between; align-items:center; }
+.cq-tags { font-size:12px; color:var(--brand); font-weight:600; }
+.cq-unfold { color:var(--ink-2); display:inline-flex; align-items:center; gap:4px; font-size:11px; }
+/* 对话流 */
+.chat-flow { flex:1; display:flex; flex-direction:column; gap:12px; padding:14px 2px 6px; }
+.msg-user { align-self:flex-end; max-width:78%; background:var(--brand); color:#fff; font-size:14px; line-height:1.65; padding:10px 14px; border-radius:16px 16px 4px 16px; }
+.ai-card { align-self:flex-start; width:100%; background:var(--card); border-radius:16px 16px 16px 4px; padding:13px 14px; box-shadow:0 1px 4px rgba(43,43,51,.05); }
+.ai-pill { display:inline-block; background:var(--brand-soft); color:var(--brand); font-size:10px; font-weight:700; border-radius:var(--radius-pill); padding:2.5px 9px; letter-spacing:.5px; }
+.empathy { font-size:14px; color:var(--ink); line-height:1.7; margin-top:9px; }
+.energy { font-size:13px; color:var(--ink-2); line-height:1.7; margin-top:8px; }
+.act-box { margin-top:10px; background:var(--brand-soft); border-radius:12px; padding:10px 12px; }
+.act-title { font-size:12px; font-weight:700; color:var(--brand); }
+.act-item { font-size:13.5px; color:var(--ink); line-height:1.65; margin-top:5px; }
+.act-item .star { color:var(--gold); margin-right:4px; }
+.mood-foot { display:flex; justify-content:space-between; align-items:center; margin-top:11px; }
+.basis { font-size:12px; color:var(--ink-2); }
+.poster-btn { font-size:12px; font-weight:600; color:var(--gold); border:1px solid var(--gold); border-radius:var(--radius-pill); padding:5px 13px; background:#FBF7EF; }
+/* 快捷问题栏 */
+.quick { flex:none; display:flex; gap:8px; padding:2px 2px 10px; }
+.q-item { flex:1; text-align:center; font-size:12px; color:var(--ink); background:var(--card); border:1px solid #EAE7DF; border-radius:var(--radius-pill); padding:7px 0; white-space:nowrap; }
+/* 输入框 */
+.inputbar { flex:none; display:flex; align-items:center; gap:8px; background:var(--card); border-radius:var(--radius-pill); padding:6px 6px 6px 16px; box-shadow:0 1px 4px rgba(43,43,51,.06); margin-bottom:4px; }
+.placeholder { flex:1; font-size:13px; color:var(--ink-2); }
+.send { background:var(--brand); color:#fff; font-size:13px; font-weight:600; border-radius:var(--radius-pill); padding:8px 18px; }
+/* 免责声明 */
+.disclaimer { flex:none; text-align:center; font-size:11px; color:var(--ink-2); padding:8px 0 10px; }
+/* Tab栏 */
+.tabbar { flex:none; background:var(--card); border-top:1px solid #ECEAE4; display:flex; padding:7px 0 24px; }
+.tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:10px; color:var(--ink-2); }
+.tab.active { color:var(--brand); font-weight:600; }
+.home-indicator { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:#111; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span class="time">9:41</span>
+    <span class="icons">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="#2B2B33"><rect x="0" y="6.5" width="3" height="4.5" rx="1"/><rect x="4.6" y="4.5" width="3" height="6.5" rx="1"/><rect x="9.2" y="2.2" width="3" height="8.8" rx="1"/><rect x="13.8" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="#2B2B33" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 3.6a10.5 10.5 0 0 1 13 0"/><path d="M3.9 6.3a7 7 0 0 1 8.2 0"/><circle cx="8" cy="9.2" r="1.4" fill="#2B2B33" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3.2" fill="none" stroke="#2B2B33" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="1.8" fill="#2B2B33"/><path d="M23.2 3.8v4.4c1-.3 1.6-1.2 1.6-2.2s-.6-1.9-1.6-2.2z" fill="#2B2B33" fill-opacity="0.4"/></svg>
+    </span>
+  </div>
+
+  <div class="screen">
+    <!-- 顶栏：档案切换 + 剩余额度 -->
+    <div class="chat-top">
+      <div class="profile-switch">小玲
+        <span class="caret"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg></span>
+      </div>
+      <div class="quota">额度 8/10</div>
+    </div>
+
+    <!-- 命盘速览卡（折叠态：一行人设词+展开箭头） -->
+    <div class="card">
+      <div class="cq-folded">
+        <span class="cq-tags">外柔内刚 · 大器晚成 · 桃花旺</span>
+        <span class="cq-unfold">展开
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg>
+        </span>
+      </div>
+    </div>
+
+    <!-- 对话流：用户倾诉 + 情绪回应卡 -->
+    <div class="chat-flow">
+      <!-- 用户倾诉消息 -->
+      <div class="msg-user">最近项目黄了还被同事甩锅，天天加班到半夜，真的好委屈，感觉自己快撑不住了……</div>
+
+      <!-- 情绪回应卡（AI标识常驻） -->
+      <div class="ai-card">
+        <span class="ai-pill">AI回应</span>
+        <p class="empathy">这些委屈不展开说也能被听见。连轴转还要替人背锅，换谁都会觉得憋屈。</p>
+        <p class="energy">今日食神当值，金气收敛，情绪容易闷着——今天不适合硬顶，先把自己照顾好更要紧。</p>
+        <div class="act-box">
+          <div class="act-title">今晚的小行动</div>
+          <div class="act-item"><span class="star">✦</span>给自己泡杯热茶，10点前放下手机</div>
+        </div>
+        <div class="mood-foot">
+          <span class="basis">▸ 查看命理依据</span>
+          <span class="poster-btn">生成海报</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 快捷问题栏 -->
+    <div class="quick">
+      <span class="q-item">今日运势</span>
+      <span class="q-item">财运</span>
+      <span class="q-item">事业</span>
+      <span class="q-item">感情</span>
+    </div>
+
+    <!-- 输入框 -->
+    <div class="inputbar">
+      <span class="placeholder">输入问题…</span>
+      <span class="send">发送</span>
+    </div>
+
+    <!-- 免责声明 -->
+    <div class="disclaimer">内容由AI生成，仅供自我梳理参考</div>
+  </div>
+
+  <!-- Tab栏 -->
+  <div class="tabbar">
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.5 1.5M17.2 17.2l1.5 1.5M18.7 5.3l-1.5 1.5M6.8 17.2l-1.5 1.5"/></svg>
+      今日
+    </div>
+    <div class="tab active">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H5.6L3 21.2V11.5A7.5 7.5 0 0 1 10.5 4h2A7.5 7.5 0 0 1 20 11.5z"/></svg>
+      对话
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c1.2-3.4 4-5 7.5-5s6.3 1.6 7.5 5"/></svg>
+      我的
+    </div>
+  </div>
+  <div class="home-indicator"></div>
+</div>
+</body>
+</html>

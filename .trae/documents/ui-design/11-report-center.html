@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>11 报告中心 · 趣算算</title>
+<style>
+:root {
+  --bg: #F7F5F0;          /* 宣纸暖白，页面底 */
+  --card: #FFFFFF;         /* 卡片 */
+  --brand: #4A4E8F;        /* 黛蓝紫，主色/Tab选中/主CTA */
+  --brand-soft: #EEEFF9;   /* 主色浅底 */
+  --gold: #C9A86A;         /* 金色点缀：会员/吉/高亮边框 */
+  --ink: #2B2B33;          /* 主文字 */
+  --ink-2: #8A8A93;        /* 次文字 */
+  --success: #2E9E6B;      /* 宜/吉 */
+  --danger: #D9534F;       /* 忌/凶 */
+  --radius-card: 16px; --radius-pill: 999px;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#17171C; min-height:100vh; display:flex; justify-content:center; align-items:flex-start; padding:32px 0; }
+.phone { width:390px; min-height:844px; background:var(--bg); border:11px solid #101014; border-radius:44px; box-shadow:0 30px 80px rgba(0,0,0,.55); display:flex; flex-direction:column; position:relative; overflow:hidden; }
+/* 状态栏 */
+.statusbar { height:46px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 26px 0 30px; }
+.statusbar .time { font-size:15px; font-weight:600; color:var(--ink); letter-spacing:.2px; }
+.statusbar .icons { display:flex; align-items:center; gap:6px; }
+/* 内容区 */
+.screen { flex:1; display:flex; flex-direction:column; padding:0 16px; }
+/* 顶部导航：返回+标题 */
+.navbar { display:flex; align-items:center; gap:8px; padding:6px 4px 0; }
+.navbar .title { font-size:17px; font-weight:700; color:var(--ink); }
+/* 卡片 */
+.card { background:var(--card); border-radius:var(--radius-card); padding:16px; margin-top:12px; box-shadow:0 1px 4px rgba(43,43,51,.04); position:relative; overflow:hidden; }
+/* 年运报告入口卡 */
+.rc-badge { position:absolute; top:0; right:0; background:var(--gold); color:#fff; font-size:11px; font-weight:700; border-radius:0 14px 0 12px; padding:4px 12px; }
+.entry { display:flex; align-items:center; gap:14px; }
+.entry-info { flex:1; }
+.entry-title { font-size:16px; font-weight:800; color:var(--ink); }
+.entry-sub { font-size:12px; color:var(--ink-2); margin-top:5px; }
+.entry-sub .daymaster { color:var(--brand); font-weight:600; }
+.entry-btn { flex:none; font-size:12.5px; font-weight:600; color:#fff; background:var(--brand); border-radius:var(--radius-pill); padding:9px 16px; }
+.entry-gz { margin-top:9px; display:inline-flex; align-items:center; gap:6px; }
+.entry-gz .gz { font-size:15px; font-weight:800; color:var(--gold); letter-spacing:2px; }
+.entry-gz .pill { font-size:10.5px; color:var(--brand); background:var(--brand-soft); border-radius:var(--radius-pill); padding:2.5px 9px; font-weight:600; }
+/* 区块标题 */
+.sec-title { font-size:15px; font-weight:700; color:var(--ink); margin-top:18px; padding:0 2px; }
+/* 深度报告横滑卡 */
+.shelf { display:flex; gap:10px; margin-top:11px; padding:2px 2px 6px; overflow-x:auto; }
+.sku { flex:none; width:150px; background:var(--card); border:1.5px solid #EAE7DF; border-radius:14px; padding:14px 13px 13px; position:relative; display:flex; flex-direction:column; }
+.sku.rec { border:2px solid var(--gold); background:#FFFDF8; }
+.sku .rec-badge { position:absolute; top:-9px; left:50%; transform:translateX(-50%); background:var(--gold); color:#fff; font-size:10px; font-weight:700; border-radius:var(--radius-pill); padding:2px 10px; white-space:nowrap; }
+.sku .s-ic { margin-bottom:9px; }
+.sku .s-title { font-size:14px; font-weight:700; color:var(--ink); }
+.sku .s-desc { font-size:11px; color:var(--ink-2); line-height:1.6; margin-top:5px; flex:1; }
+.sku .s-btn { margin-top:11px; text-align:center; font-size:12.5px; font-weight:700; color:#fff; background:var(--brand); border-radius:var(--radius-pill); padding:8px 0; }
+.sku.rec .s-btn { background:var(--gold); }
+.sku .s-btn .rmb { font-weight:500; }
+/* 已购报告列表 */
+.list { padding:3px 16px; }
+.item { display:flex; justify-content:space-between; align-items:center; padding:13px 0; border-bottom:1px solid #F5F3ED; }
+.item:last-child { border-bottom:none; }
+.item .l { font-size:13.5px; color:var(--ink); }
+.item .l small { display:block; font-size:11px; color:var(--ink-2); margin-top:2px; }
+.item .st { font-size:11.5px; font-weight:600; color:var(--success); background:#E7F4EE; border-radius:var(--radius-pill); padding:3px 10px; }
+.item .arr { color:#C6C4BD; font-size:15px; margin-left:8px; }
+/* 底部说明 */
+.foot-note { text-align:center; font-size:11.5px; color:var(--ink-2); margin:18px 0 26px; }
+.home-indicator { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:#111; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span class="time">9:41</span>
+    <span class="icons">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="#2B2B33"><rect x="0" y="6.5" width="3" height="4.5" rx="1"/><rect x="4.6" y="4.5" width="3" height="6.5" rx="1"/><rect x="9.2" y="2.2" width="3" height="8.8" rx="1"/><rect x="13.8" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="#2B2B33" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 3.6a10.5 10.5 0 0 1 13 0"/><path d="M3.9 6.3a7 7 0 0 1 8.2 0"/><circle cx="8" cy="9.2" r="1.4" fill="#2B2B33" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3.2" fill="none" stroke="#2B2B33" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="1.8" fill="#2B2B33"/><path d="M23.2 3.8v4.4c1-.3 1.6-1.2 1.6-2.2s-.6-1.9-1.6-2.2z" fill="#2B2B33" fill-opacity="0.4"/></svg>
+    </span>
+  </div>
+
+  <div class="screen">
+    <!-- 顶部导航：返回+标题 -->
+    <div class="navbar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+      <span class="title">报告中心</span>
+    </div>
+
+    <!-- ① 年运报告入口卡（右上2027角标） -->
+    <a href="10-year.html" style="text-decoration:none;color:inherit">
+      <div class="card">
+        <span class="rc-badge">2027</span>
+        <div class="entry">
+          <div class="entry-info">
+            <div class="entry-title">丁未年·流年运势报告</div>
+            <div class="entry-sub">档案 小玲 · <span class="daymaster">辛金日主</span> · 2000+字深度解读</div>
+          </div>
+          <span class="entry-btn">查看报告</span>
+        </div>
+        <div class="entry-gz">
+          <span class="gz">丁未</span>
+          <span class="pill">已解锁</span>
+          <span class="pill">破立 · 蓄势 · 正名</span>
+        </div>
+      </div>
+    </a>
+
+    <!-- ② 人生深度报告区：3张档位卡横滑 -->
+    <div class="sec-title">人生深度报告</div>
+    <div class="shelf">
+      <div class="sku">
+        <div class="s-ic">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4A4E8F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+        </div>
+        <div class="s-title">事业报告</div>
+        <div class="s-desc">十年大运走势×事业宫深度拆解，找准发力窗口</div>
+        <div class="s-btn"><span class="rmb">¥</span>25</div>
+      </div>
+      <div class="sku">
+        <div class="s-ic">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4A4E8F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.5S3.5 15 3.5 9.2A4.7 4.7 0 0 1 12 6.6a4.7 4.7 0 0 1 8.5 2.6C20.5 15 12 20.5 12 20.5z"/></svg>
+        </div>
+        <div class="s-title">感情报告</div>
+        <div class="s-desc">婚恋缘分×桃花应期全解析，看懂感情节奏</div>
+        <div class="s-btn"><span class="rmb">¥</span>58</div>
+      </div>
+      <div class="sku rec">
+        <div class="rec-badge">荐</div>
+        <div class="s-ic">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#C9A86A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg>
+        </div>
+        <div class="s-title">全盘人生报告</div>
+        <div class="s-desc">事业·财富·感情·健康一册通览，一生格局总览</div>
+        <div class="s-btn"><span class="rmb">¥</span>178</div>
+      </div>
+    </div>
+
+    <!-- ③ 已购报告列表 -->
+    <div class="card list">
+      <div class="item">
+        <span class="l">2026丙午流年报告<small>2026-02-04 购买</small></span>
+        <span style="display:flex;align-items:center"><span class="st">已解锁</span><span class="arr">›</span></span>
+      </div>
+      <div class="item">
+        <span class="l">2025乙巳流年报告<small>2025-02-11 购买</small></span>
+        <span style="display:flex;align-items:center"><span class="st">已解锁</span><span class="arr">›</span></span>
+      </div>
+    </div>
+
+    <!-- ④ 底部说明 -->
+    <div class="foot-note">报告一次购买永久回看</div>
+  </div>
+  <div class="home-indicator"></div>
+</div>
+</body>
+</html>

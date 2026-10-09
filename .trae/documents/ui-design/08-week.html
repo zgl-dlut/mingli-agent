@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>08 今日页·周运态（会员视角） · 趣算算</title>
+<style>
+:root {
+  --bg: #F7F5F0;          /* 宣纸暖白，页面底 */
+  --card: #FFFFFF;         /* 卡片 */
+  --brand: #4A4E8F;        /* 黛蓝紫，主色/Tab选中/主CTA */
+  --brand-soft: #EEEFF9;   /* 主色浅底 */
+  --gold: #C9A86A;         /* 金色点缀：会员/吉/高亮边框 */
+  --ink: #2B2B33;          /* 主文字 */
+  --ink-2: #8A8A93;        /* 次文字 */
+  --success: #2E9E6B;      /* 宜/吉 */
+  --danger: #D9534F;       /* 忌/凶 */
+  --radius-card: 16px; --radius-pill: 999px;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#17171C; min-height:100vh; display:flex; justify-content:center; align-items:flex-start; padding:32px 0; }
+.wrap { display:flex; flex-direction:column; align-items:center; gap:14px; }
+.shell-tag { font-size:12px; color:#8A8A93; letter-spacing:.5px; }
+.phone { width:390px; min-height:844px; background:var(--bg); border:11px solid #101014; border-radius:44px; box-shadow:0 30px 80px rgba(0,0,0,.55); display:flex; flex-direction:column; position:relative; overflow:hidden; }
+/* 状态栏 */
+.statusbar { height:46px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 26px 0 30px; }
+.statusbar .time { font-size:15px; font-weight:600; color:var(--ink); letter-spacing:.2px; }
+.statusbar .icons { display:flex; align-items:center; gap:6px; }
+/* 内容区 */
+.screen { flex:1; display:flex; flex-direction:column; padding:0 16px; }
+/* 顶栏 */
+.topbar { display:flex; justify-content:space-between; align-items:flex-start; padding:6px 4px 0; }
+.greet { font-size:20px; font-weight:700; color:var(--ink); }
+.lunar { font-size:12px; color:var(--ink-2); margin-top:3px; }
+.top-right { text-align:right; }
+.date { font-size:13px; color:var(--ink); font-weight:500; }
+.bell { margin-top:6px; display:inline-flex; }
+/* 时间维度切换：周选中（会员解锁·金色） */
+.seg { display:flex; background:#ECEAE3; border-radius:var(--radius-pill); padding:3px; margin:12px 0 10px; }
+.seg-item { flex:1; text-align:center; padding:7px 0; font-size:13px; color:var(--ink-2); border-radius:var(--radius-pill); display:flex; align-items:center; justify-content:center; gap:4px; }
+.seg-item.active-week { background:var(--card); color:var(--gold); font-weight:700; box-shadow:0 1px 3px rgba(0,0,0,.06); border:1.5px solid var(--gold); }
+.seg-item .lock { color:#B9B7AF; display:inline-flex; }
+/* 卡片通用 */
+.card { background:var(--card); border-radius:var(--radius-card); padding:14px 16px; margin-top:10px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
+/* 本周总评卡 */
+.overview { border:1.5px solid var(--brand); }
+.ov-head { display:flex; justify-content:space-between; align-items:center; }
+.level { font-size:20px; font-weight:800; color:var(--ink); display:flex; align-items:center; gap:8px; }
+.level .em { color:var(--success); }
+.badge-ji { font-size:12px; font-weight:700; color:#fff; background:var(--success); border-radius:8px; padding:2px 7px; }
+.rizhu-tag { font-size:12px; color:var(--brand); background:var(--brand-soft); border-radius:var(--radius-pill); padding:4px 10px; font-weight:600; }
+.gz-row { margin-top:10px; font-size:13px; color:var(--ink-2); display:flex; align-items:center; gap:8px; }
+.gz-row b { color:var(--ink); font-size:14px; letter-spacing:1px; }
+.range-row { display:flex; align-items:center; gap:10px; margin-top:12px; }
+.range-label { font-size:12px; color:var(--ink-2); flex:none; }
+.bar { flex:1; height:8px; background:#EFEDE6; border-radius:var(--radius-pill); position:relative; }
+.bar .band { position:absolute; left:38%; width:14%; top:0; bottom:0; background:var(--brand); border-radius:var(--radius-pill); }
+.range-num { font-size:12px; font-weight:700; color:var(--brand); flex:none; }
+.week-span { margin-top:10px; font-size:11.5px; color:var(--ink-2); text-align:right; }
+/* 7日节奏条 */
+.week-title-row { display:flex; justify-content:space-between; align-items:center; }
+.card-title { font-size:15px; font-weight:700; color:var(--ink); }
+.week-title-row .hint { font-size:11px; color:var(--ink-2); }
+.days7 { display:flex; gap:6px; margin-top:11px; }
+.day { flex:1; background:#FAF9F5; border:1.5px solid transparent; border-radius:12px; padding:9px 0 8px; display:flex; flex-direction:column; align-items:center; gap:5px; }
+.day.today { border-color:var(--gold); background:#FFFDF8; position:relative; }
+.day.today::after { content:"今天"; position:absolute; top:-8px; left:50%; transform:translateX(-50%); font-size:9px; color:#fff; background:var(--gold); border-radius:var(--radius-pill); padding:1px 7px; white-space:nowrap; }
+.day .d-name { font-size:10.5px; color:var(--ink-2); }
+.day .d-dot { width:8px; height:8px; border-radius:50%; }
+.dot-good { background:var(--success); }
+.dot-mid { background:var(--gold); }
+.dot-bad { background:var(--danger); }
+.day .d-word { font-size:14px; font-weight:800; }
+.word-good { color:var(--success); }
+.word-mid { color:var(--gold); }
+.word-bad { color:var(--danger); }
+.day.today .d-name { color:var(--gold); font-weight:600; }
+/* 重点日提示卡 */
+.key-day { display:flex; align-items:center; gap:10px; }
+.key-day + .key-day { margin-top:10px; }
+.kd-badge { flex:none; font-size:11px; font-weight:700; border-radius:8px; padding:3px 8px; }
+.kd-badge.good { color:#fff; background:var(--success); }
+.kd-badge.bad { color:#fff; background:var(--danger); }
+.kd-text { font-size:13px; color:var(--ink); line-height:1.5; }
+.kd-text small { display:block; font-size:11px; color:var(--ink-2); margin-top:1px; }
+/* 本周行动建议（复用AI报告卡行动建议区块样式） */
+.act-block { background:var(--brand-soft); border-radius:12px; padding:11px 13px; }
+.act-head { display:flex; align-items:center; gap:5px; font-size:13px; font-weight:700; color:var(--brand); }
+.act-head .arrow { color:var(--ink-2); display:inline-flex; margin-left:auto; }
+.act-block p { font-size:12.5px; color:var(--ink); line-height:1.7; margin-top:6px; }
+/* 付费墙：模糊预览 + 解锁卡 */
+.paywall { position:relative; margin-top:10px; }
+.paywall .blurred { filter:blur(4px); opacity:.6; pointer-events:none; }
+.paywall .mask { position:absolute; inset:0; background:linear-gradient(180deg, rgba(247,245,240,0) 0%, rgba(247,245,240,.55) 45%, rgba(247,245,240,.94) 100%); }
+.unlock { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:78%; background:var(--card); border:1.5px solid var(--gold); border-radius:var(--radius-card); box-shadow:0 12px 32px rgba(43,43,51,.18); padding:15px 18px 13px; text-align:center; z-index:2; }
+.unlock .u-ic { display:inline-flex; margin-bottom:7px; }
+.unlock .u-title { font-size:15px; font-weight:800; color:var(--ink); }
+.unlock .u-line { font-size:11px; color:var(--ink-2); line-height:1.7; margin-top:5px; }
+.unlock .u-line .gold { color:var(--gold); font-weight:600; }
+.unlock .u-btn { display:block; margin-top:11px; background:var(--gold); color:#fff; font-size:13.5px; font-weight:700; border-radius:var(--radius-pill); padding:11px 0; box-shadow:0 5px 14px rgba(201,168,106,.4); }
+.unlock .u-login { font-size:10px; color:var(--ink-2); margin-top:8px; }
+/* 免责声明 */
+.disclaimer { text-align:center; font-size:11px; color:var(--ink-2); margin:14px 0 10px; }
+/* Tab栏 */
+.tabbar { flex:none; background:var(--card); border-top:1px solid #ECEAE4; display:flex; padding:7px 0 24px; }
+.tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:10px; color:var(--ink-2); }
+.tab.active { color:var(--brand); font-weight:600; }
+.home-indicator { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:#111; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="phone">
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span class="time">9:41</span>
+    <span class="icons">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="#2B2B33"><rect x="0" y="6.5" width="3" height="4.5" rx="1"/><rect x="4.6" y="4.5" width="3" height="6.5" rx="1"/><rect x="9.2" y="2.2" width="3" height="8.8" rx="1"/><rect x="13.8" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="#2B2B33" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 3.6a10.5 10.5 0 0 1 13 0"/><path d="M3.9 6.3a7 7 0 0 1 8.2 0"/><circle cx="8" cy="9.2" r="1.4" fill="#2B2B33" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3.2" fill="none" stroke="#2B2B33" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="1.8" fill="#2B2B33"/><path d="M23.2 3.8v4.4c1-.3 1.6-1.2 1.6-2.2s-.6-1.9-1.6-2.2z" fill="#2B2B33" fill-opacity="0.4"/></svg>
+    </span>
+  </div>
+
+  <div class="screen">
+    <!-- 顶栏：问候+日期农历+通知 -->
+    <div class="topbar">
+      <div>
+        <div class="greet">早安，小玲</div>
+        <div class="lunar">农历八月十四</div>
+      </div>
+      <div class="top-right">
+        <div class="date">9月23日 周三</div>
+        <span class="bell">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5a6 6 0 0 1 12 0c0 5 1.8 6.5 1.8 6.5H4.2S6 14.5 6 9.5z"/><path d="M10.2 19.5a2 2 0 0 0 3.6 0"/></svg>
+        </span>
+      </div>
+    </div>
+
+    <!-- 时间维度切换：日 / 周·选中金色 / 月🔒 -->
+    <div class="seg">
+      <div class="seg-item">日</div>
+      <div class="seg-item active-week">周</div>
+      <div class="seg-item">月
+        <span class="lock"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg></span>
+      </div>
+    </div>
+
+    <!-- ① 本周总评卡 -->
+    <div class="card overview">
+      <div class="ov-head">
+        <div class="level">本周<span class="em">小吉</span> · 稳中有进 <span class="badge-ji">吉</span></div>
+        <div class="rizhu-tag">辛金日主</div>
+      </div>
+      <div class="gz-row">本周贯穿 <b>辛亥·食神当值</b> 周三换丙戌日，旺气最盛</div>
+      <div class="range-row">
+        <span class="range-label">压力区间</span>
+        <div class="bar"><span class="band"></span></div>
+        <span class="range-num">38~52</span>
+      </div>
+      <div class="week-span">2026-09-21 ～ 09-27</div>
+    </div>
+
+    <!-- ②③④ 预览模糊区：7日节奏 / 重点日 / 行动建议 -->
+    <div class="paywall">
+      <div class="blurred">
+      <div class="card" style="margin-top:0">
+        <div class="week-title-row">
+          <span class="card-title">7日节奏</span>
+          <span class="hint">点开每天看流日详情</span>
+        </div>
+        <div class="days7">
+          <div class="day"><span class="d-name">周一</span><span class="d-dot dot-mid"></span><span class="d-word word-mid">平</span></div>
+          <div class="day"><span class="d-name">周二</span><span class="d-dot dot-good"></span><span class="d-word word-good">吉</span></div>
+          <div class="day today"><span class="d-name">周三</span><span class="d-dot dot-good"></span><span class="d-word word-good">旺</span></div>
+          <div class="day"><span class="d-name">周四</span><span class="d-dot dot-good"></span><span class="d-word word-good">吉</span></div>
+          <div class="day"><span class="d-name">周五</span><span class="d-dot dot-bad"></span><span class="d-word word-bad">冲</span></div>
+          <div class="day"><span class="d-name">周六</span><span class="d-dot dot-mid"></span><span class="d-word word-mid">平</span></div>
+          <div class="day"><span class="d-name">周日</span><span class="d-dot dot-good"></span><span class="d-word word-good">吉</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">重点日提示</div>
+        <div style="margin-top:11px">
+          <div class="key-day">
+            <span class="kd-badge good">周三 9/23</span>
+            <span class="kd-text">最旺 · 宜谈判签约<small>丙戌日财官相生，重要事项放在上午</small></span>
+          </div>
+          <div class="key-day">
+            <span class="kd-badge bad">周五 9/25</span>
+            <span class="kd-text">冲兔 · 忌远行变动<small>日辰相冲，行程与合同改动提前确认</small></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="act-block">
+          <div class="act-head">〔本周行动建议〕<span class="arrow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg></span></div>
+          <p>把签约、谈薪这类要紧事集中排在周三上午；周五只做收尾与复盘，不开启新合作。周日适合静养读书，为下周蓄力。</p>
+        </div>
+      </div>
+      </div>
+
+      <div class="mask"></div>
+      <!-- 解锁卡（浮层，不模糊） -->
+      <div class="unlock">
+        <span class="u-ic">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C9A86A" stroke-width="1.9" stroke-linecap="round"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.4" fill="#C9A86A" stroke="none"/></svg>
+        </span>
+        <div class="u-title">解锁完整周运</div>
+        <div class="u-line">周运/月运每周更新 · <span class="gold">含年度报告券</span></div>
+        <a href="05-membership.html" style="text-decoration:none;color:inherit"><span class="u-btn">开通会员查看完整版</span></a>
+        <div class="u-login">已是会员？登录后自动解锁</div>
+      </div>
+    </div>
+
+    <!-- ⑤ 免责声明 -->
+    <div class="disclaimer">内容由AI生成，仅供自我梳理参考</div>
+  </div>
+
+  <!-- Tab栏 -->
+  <div class="tabbar">
+    <div class="tab active">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.5 1.5M17.2 17.2l1.5 1.5M18.7 5.3l-1.5 1.5M6.8 17.2l-1.5 1.5"/></svg>
+      今日
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H5.6L3 21.2V11.5A7.5 7.5 0 0 1 10.5 4h2A7.5 7.5 0 0 1 20 11.5z"/></svg>
+      对话
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c1.2-3.4 4-5 7.5-5s6.3 1.6 7.5 5"/></svg>
+      我的
+    </div>
+  </div>
+  <div class="home-indicator"></div>
+</div>
+<div class="shell-tag">非会员预览态 · 会员登录后自动显示全部</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>07 建档引导 · 趣算算</title>
+<style>
+:root {
+  --bg: #F7F5F0;          /* 宣纸暖白，页面底 */
+  --card: #FFFFFF;         /* 卡片 */
+  --brand: #4A4E8F;        /* 黛蓝紫，主色/Tab选中/主CTA */
+  --brand-soft: #EEEFF9;   /* 主色浅底 */
+  --gold: #C9A86A;         /* 金色点缀：会员/吉/高亮边框 */
+  --ink: #2B2B33;          /* 主文字 */
+  --ink-2: #8A8A93;        /* 次文字 */
+  --success: #2E9E6B;      /* 宜/吉 */
+  --danger: #D9534F;       /* 忌/凶 */
+  --radius-card: 16px; --radius-pill: 999px;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#17171C; min-height:100vh; display:flex; justify-content:center; align-items:flex-start; padding:32px 0; }
+.phone { width:390px; min-height:844px; background:var(--bg); border:11px solid #101014; border-radius:44px; box-shadow:0 30px 80px rgba(0,0,0,.55); display:flex; flex-direction:column; position:relative; overflow:hidden; }
+/* 状态栏 */
+.statusbar { height:46px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 26px 0 30px; }
+.statusbar .time { font-size:15px; font-weight:600; color:var(--ink); letter-spacing:.2px; }
+.statusbar .icons { display:flex; align-items:center; gap:6px; }
+/* 内容区 */
+.screen { flex:1; display:flex; flex-direction:column; padding:0 16px; }
+/* 页头 */
+.ob-head { padding:18px 6px 0; }
+.ob-title { font-size:24px; font-weight:800; color:var(--ink); }
+.ob-sub { font-size:13px; color:var(--ink-2); margin-top:8px; line-height:1.6; }
+/* 表单卡 */
+.card { background:var(--card); border-radius:var(--radius-card); padding:6px 16px; margin-top:18px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
+.f-row { display:flex; align-items:center; padding:15px 0; border-bottom:1px solid #F5F3ED; }
+.f-row:last-child { border-bottom:none; }
+.f-label { flex:none; width:76px; font-size:14px; color:var(--ink); font-weight:500; }
+.f-value { flex:1; display:flex; align-items:center; justify-content:flex-end; gap:6px; font-size:14px; color:var(--ink); }
+.f-value .caret { color:#C6C4BD; display:inline-flex; }
+.f-value.dim { color:#B9B7AF; }
+.gender { display:flex; gap:8px; }
+.g { font-size:13px; color:var(--ink-2); background:#F1EFE9; border-radius:var(--radius-pill); padding:6px 20px; }
+.g.sel { background:var(--brand); color:#fff; font-weight:600; }
+/* 时辰不确定勾选 */
+.check-box { margin-top:14px; background:var(--card); border-radius:var(--radius-card); padding:14px 16px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
+.check-row { display:flex; align-items:center; gap:9px; }
+.checkbox { width:18px; height:18px; border-radius:6px; background:var(--brand); color:#fff; font-size:11px; display:inline-flex; align-items:center; justify-content:center; flex:none; }
+.check-row b { font-size:14px; color:var(--ink); font-weight:600; }
+.tip { font-size:12px; color:var(--ink-2); line-height:1.65; margin-top:8px; padding-left:27px; }
+.tip .hl { color:var(--gold); }
+/* 底部按钮 */
+.bottom-cta { margin-top:auto; padding:20px 0 30px; }
+.cta-btn { background:var(--brand); color:#fff; font-size:16px; font-weight:700; text-align:center; border-radius:var(--radius-pill); padding:15px 0; box-shadow:0 6px 16px rgba(74,78,143,.35); }
+.foot-note { text-align:center; font-size:11.5px; color:var(--ink-2); margin-top:11px; }
+.home-indicator { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:#111; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span class="time">9:41</span>
+    <span class="icons">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="#2B2B33"><rect x="0" y="6.5" width="3" height="4.5" rx="1"/><rect x="4.6" y="4.5" width="3" height="6.5" rx="1"/><rect x="9.2" y="2.2" width="3" height="8.8" rx="1"/><rect x="13.8" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="#2B2B33" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 3.6a10.5 10.5 0 0 1 13 0"/><path d="M3.9 6.3a7 7 0 0 1 8.2 0"/><circle cx="8" cy="9.2" r="1.4" fill="#2B2B33" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3.2" fill="none" stroke="#2B2B33" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="1.8" fill="#2B2B33"/><path d="M23.2 3.8v4.4c1-.3 1.6-1.2 1.6-2.2s-.6-1.9-1.6-2.2z" fill="#2B2B33" fill-opacity="0.4"/></svg>
+    </span>
+  </div>
+
+  <div class="screen">
+    <!-- 页头 -->
+    <div class="ob-head">
+      <div class="ob-title">建档排盘</div>
+      <div class="ob-sub">填写出生信息，生成你的专属命盘<br>排盘完成后即可开始对话提问</div>
+    </div>
+
+    <!-- 出生信息表单 -->
+    <div class="card">
+      <div class="f-row">
+        <span class="f-label">昵称</span>
+        <span class="f-value">小玲</span>
+      </div>
+      <div class="f-row">
+        <span class="f-label">性别</span>
+        <span class="f-value"><span class="gender"><span class="g">男</span><span class="g sel">女</span></span></span>
+      </div>
+      <div class="f-row">
+        <span class="f-label">出生日期</span>
+        <span class="f-value">1996-08-23
+          <span class="caret"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg></span>
+        </span>
+      </div>
+      <div class="f-row">
+        <span class="f-label">出生时间</span>
+        <span class="f-value dim">时辰不确定
+          <span class="caret"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg></span>
+        </span>
+      </div>
+      <div class="f-row">
+        <span class="f-label">出生地</span>
+        <span class="f-value">浙江 杭州
+          <span class="caret"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg></span>
+        </span>
+      </div>
+    </div>
+
+    <!-- 「时辰不确定？」勾选项 -->
+    <div class="check-box">
+      <div class="check-row">
+        <span class="checkbox">✓</span>
+        <b>时辰不确定？</b>
+      </div>
+      <div class="tip">勾选后按<span class="hl">三柱（年·月·日）</span>排盘，时辰确认后可随时校准补充，命盘将自动更新。</div>
+    </div>
+
+    <!-- 排盘按钮 -->
+    <div class="bottom-cta">
+      <div class="cta-btn">开始排盘</div>
+      <div class="foot-note">排盘完成后即可进入对话提问</div>
+    </div>
+  </div>
+  <div class="home-indicator"></div>
+</div>
+</body>
+</html>

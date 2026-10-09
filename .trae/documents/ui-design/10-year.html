@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>10 年运报告 · 趣算算</title>
+<style>
+:root {
+  --bg: #F7F5F0;          /* 宣纸暖白，页面底 */
+  --card: #FFFFFF;         /* 卡片 */
+  --brand: #4A4E8F;        /* 黛蓝紫，主色/Tab选中/主CTA */
+  --brand-soft: #EEEFF9;   /* 主色浅底 */
+  --gold: #C9A86A;         /* 金色点缀：会员/吉/高亮边框 */
+  --ink: #2B2B33;          /* 主文字 */
+  --ink-2: #8A8A93;        /* 次文字 */
+  --success: #2E9E6B;      /* 宜/吉 */
+  --danger: #D9534F;       /* 忌/凶 */
+  --radius-card: 16px; --radius-pill: 999px;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#17171C; min-height:100vh; display:flex; justify-content:center; align-items:flex-start; padding:32px 0; }
+.phone { width:390px; min-height:844px; background:var(--bg); border:11px solid #101014; border-radius:44px; box-shadow:0 30px 80px rgba(0,0,0,.55); display:flex; flex-direction:column; position:relative; overflow:hidden; }
+/* 状态栏 */
+.statusbar { height:46px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 26px 0 30px; }
+.statusbar .time { font-size:15px; font-weight:600; color:var(--ink); letter-spacing:.2px; }
+.statusbar .icons { display:flex; align-items:center; gap:6px; }
+/* 内容区 */
+.screen { flex:1; display:flex; flex-direction:column; padding:0 16px; }
+/* 顶部导航：返回+标题+AI生成pill+已解锁 */
+.navbar { display:flex; align-items:center; gap:8px; padding:6px 4px 0; }
+.navbar .title { font-size:15px; font-weight:700; color:var(--ink); }
+.ai-pill { background:var(--brand-soft); color:var(--brand); font-size:10px; font-weight:700; border-radius:var(--radius-pill); padding:2.5px 9px; letter-spacing:.5px; flex:none; }
+.unlocked { margin-left:auto; flex:none; font-size:10.5px; font-weight:700; color:var(--gold); border:1px solid var(--gold); background:#FBF7EF; border-radius:var(--radius-pill); padding:3px 10px; display:flex; align-items:center; gap:4px; }
+/* 报告卡 */
+.report-card { background:var(--card); border-radius:var(--radius-card); padding:16px; margin-top:12px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
+/* ① 报告头 */
+.rep-head { display:flex; align-items:center; gap:14px; padding-bottom:14px; border-bottom:1px solid #F0EEE7; }
+.rep-meta { flex:1; }
+.rep-owner { font-size:13px; color:var(--ink-2); }
+.rep-owner b { color:var(--ink); font-weight:600; }
+.rep-owner .daymaster { color:var(--brand); font-weight:600; }
+.rep-year { font-size:15px; font-weight:700; color:var(--ink); margin-top:4px; }
+.ganzhi-big { flex:none; width:78px; height:78px; border-radius:14px; background:linear-gradient(135deg, #3E4278, var(--brand)); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; }
+.ganzhi-big .gz { font-size:26px; font-weight:800; color:var(--gold); letter-spacing:3px; text-indent:3px; }
+.ganzhi-big .lb { font-size:9.5px; color:#E9E9F4; letter-spacing:2px; text-indent:2px; }
+/* ② verdict段 */
+.verdict { font-size:14px; font-weight:600; color:var(--ink); line-height:1.75; margin-top:14px; }
+.verdict .hl { color:var(--brand); }
+/* ③ 年度关键词pill */
+.kw-row { display:flex; gap:8px; margin-top:12px; }
+.kw { flex:1; text-align:center; font-size:13px; font-weight:700; color:var(--gold); background:#FBF7EF; border:1px solid var(--gold); border-radius:var(--radius-pill); padding:7px 0; letter-spacing:2px; }
+/* 区块标题 */
+.sec-title { font-size:14px; font-weight:700; color:var(--ink); margin-top:16px; }
+/* ④ 四季度节奏卡 */
+.qtr { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+.q-row { display:flex; align-items:center; gap:9px; background:#FAF9F5; border-radius:11px; padding:9px 11px; }
+.q-tag { flex:none; font-size:11px; font-weight:800; color:var(--brand); background:var(--brand-soft); border-radius:7px; padding:3px 7px; }
+.q-kw { flex:none; font-size:12.5px; font-weight:700; color:var(--ink); width:34px; }
+.q-jj { flex:none; font-size:11.5px; font-weight:700; width:32px; text-align:center; border-radius:var(--radius-pill); padding:2px 0; }
+.jj-good { color:var(--success); background:#E7F4EE; }
+.jj-mid { color:var(--gold); background:#FBF7EF; }
+.q-desc { font-size:11.5px; color:var(--ink-2); line-height:1.5; }
+/* ⑤ 大运交接提示卡 */
+.dayun { margin-top:16px; border:1.5px solid var(--gold); background:#FDF9F0; border-radius:12px; padding:12px 14px; display:flex; gap:10px; align-items:flex-start; }
+.dayun .ic { flex:none; margin-top:1px; }
+.dayun .t { font-size:13px; font-weight:700; color:var(--ink); line-height:1.55; }
+.dayun .t .gold { color:var(--gold); }
+.dayun .d { font-size:11.5px; color:var(--ink-2); line-height:1.6; margin-top:3px; }
+/* ⑥ 年度行动建议 */
+.act-block { background:var(--brand-soft); border-radius:12px; padding:11px 13px; margin-top:10px; }
+.act-item { display:flex; gap:7px; font-size:12.5px; color:var(--ink); line-height:1.7; }
+.act-item + .act-item { margin-top:6px; }
+.act-item .star { color:var(--gold); flex:none; }
+/* ⑦ 命盘依据折叠条（复用02页样式） */
+.fold { background:#FAF9F5; border-radius:12px; padding:9px 12px; margin-top:16px; }
+.fold-head { display:flex; align-items:center; gap:5px; font-size:13px; font-weight:700; color:var(--brand); }
+.fold-head .arrow { color:var(--ink-2); display:inline-flex; margin-left:auto; }
+.fold p { font-size:12.5px; color:var(--ink); line-height:1.7; margin-top:5px; }
+/* ⑧ 免责声明 */
+.disclaimer { text-align:center; font-size:11px; color:var(--ink-2); margin:16px 0 26px; }
+.home-indicator { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:#111; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span class="time">9:41</span>
+    <span class="icons">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="#2B2B33"><rect x="0" y="6.5" width="3" height="4.5" rx="1"/><rect x="4.6" y="4.5" width="3" height="6.5" rx="1"/><rect x="9.2" y="2.2" width="3" height="8.8" rx="1"/><rect x="13.8" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="#2B2B33" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 3.6a10.5 10.5 0 0 1 13 0"/><path d="M3.9 6.3a7 7 0 0 1 8.2 0"/><circle cx="8" cy="9.2" r="1.4" fill="#2B2B33" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3.2" fill="none" stroke="#2B2B33" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="1.8" fill="#2B2B33"/><path d="M23.2 3.8v4.4c1-.3 1.6-1.2 1.6-2.2s-.6-1.9-1.6-2.2z" fill="#2B2B33" fill-opacity="0.4"/></svg>
+    </span>
+  </div>
+
+  <div class="screen">
+    <!-- 顶部导航：返回 + 标题 + AI生成pill + 已解锁 -->
+    <div class="navbar">
+      <a href="11-report-center.html" style="text-decoration:none;color:inherit"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg></a>
+      <span class="title">2027丁未年·流年运势报告</span>
+      <span class="ai-pill">AI生成</span>
+      <span class="unlocked">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4.5 12.5 10 18 19.5 7"/></svg>
+        已解锁
+      </span>
+    </div>
+
+    <!-- 报告卡 -->
+    <div class="report-card">
+      <!-- ① 报告头（AI标识常驻） -->
+      <div class="rep-head">
+        <span class="ai-pill">AI回应</span>
+        <div class="rep-meta">
+          <div class="rep-owner">档案 <b>小玲</b> · <span class="daymaster">辛金日主</span></div>
+          <div class="rep-year">2027 · 流年运势报告</div>
+        </div>
+        <div class="ganzhi-big">
+          <span class="gz">丁未</span>
+          <span class="lb">流年干支</span>
+        </div>
+      </div>
+
+      <!-- ② 年度verdict -->
+      <p class="verdict">丁火七杀透干，与辛金日主相制相成，<span class="hl">2027整体呈先破后立之势</span>。上半年旧局松动，外环境推你走出舒适区；入秋贵人显，事业与名分迎来正名窗口。财运稳中有升，感情宜主动沟通、忌意气用事。</p>
+
+      <!-- ③ 年度关键词 -->
+      <div class="kw-row">
+        <span class="kw">破立</span>
+        <span class="kw">蓄势</span>
+        <span class="kw">正名</span>
+      </div>
+
+      <!-- ④ 四季度节奏 -->
+      <div class="sec-title">四季度节奏</div>
+      <div class="qtr">
+        <div class="q-row">
+          <span class="q-tag">Q1</span><span class="q-kw">蓄势</span><span class="q-jj jj-good">小吉</span>
+          <span class="q-desc">木旺生火，宜学新技能、布人脉，为全年打底。</span>
+        </div>
+        <div class="q-row">
+          <span class="q-tag">Q2</span><span class="q-kw">破立</span><span class="q-jj jj-mid">平</span>
+          <span class="q-desc">火旺炼金，压力峰值；重大决策缓行，防人际波动。</span>
+        </div>
+        <div class="q-row">
+          <span class="q-tag">Q3</span><span class="q-kw">正名</span><span class="q-jj jj-good">大吉</span>
+          <span class="q-desc">比劫帮身，事业突破窗口，宜主动争取牵头机会。</span>
+        </div>
+        <div class="q-row">
+          <span class="q-tag">Q4</span><span class="q-kw">收藏</span><span class="q-jj jj-good">小吉</span>
+          <span class="q-desc">伤官泄秀，宜复盘输出、稳收不扩张，静待换运。</span>
+        </div>
+      </div>
+
+      <!-- ⑤ 大运交接提示卡 -->
+      <div class="dayun">
+        <span class="ic">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C9A86A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/></svg>
+        </span>
+        <div>
+          <div class="t"><span class="gold">2027年3月起换甲辰大运</span>，压力期收尾</div>
+          <div class="d">癸未大运最后阶段，旧课题集中收束；换运前后三个月宜守不宜攻，命名分之事秋后自见分晓。</div>
+        </div>
+      </div>
+
+      <!-- ⑥ 年度行动建议 -->
+      <div class="sec-title">年度行动建议</div>
+      <div class="act-block">
+        <div class="act-item"><span class="star">✦</span><span>上半年把证书、资质考出来，Q3正名窗口直接兑现；</span></div>
+        <div class="act-item"><span class="star">✦</span><span>Q2压力峰值期不跳槽、不合伙，合同条款逐条过；</span></div>
+        <div class="act-item"><span class="star">✦</span><span>立秋后主动请缨牵头项目，贵人应期多在酉月（9月）。</span></div>
+      </div>
+
+      <!-- ⑦ 命盘依据折叠条 -->
+      <div class="fold">
+        <div class="fold-head">命盘依据<span class="arrow"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg></span></div>
+        <p>乾造对照：丁火为七杀透年干，未土偏印藏库；辛金坐酉得禄，秋令帮身有力。大运癸未转甲辰，财星破印，事业宫先难后易。</p>
+      </div>
+    </div>
+
+    <!-- ⑧ 免责声明 -->
+    <div class="disclaimer">内容由AI生成，仅供自我梳理参考</div>
+  </div>
+  <div class="home-indicator"></div>
+</div>
+</body>
+</html>

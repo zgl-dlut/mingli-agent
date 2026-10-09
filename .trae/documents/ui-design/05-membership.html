@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>05 会员中心 · 趣算算</title>
+<style>
+:root {
+  --bg: #F7F5F0;          /* 宣纸暖白，页面底 */
+  --card: #FFFFFF;         /* 卡片 */
+  --brand: #4A4E8F;        /* 黛蓝紫，主色/Tab选中/主CTA */
+  --brand-soft: #EEEFF9;   /* 主色浅底 */
+  --gold: #C9A86A;         /* 金色点缀：会员/吉/高亮边框 */
+  --ink: #2B2B33;          /* 主文字 */
+  --ink-2: #8A8A93;        /* 次文字 */
+  --success: #2E9E6B;      /* 宜/吉 */
+  --danger: #D9534F;       /* 忌/凶 */
+  --radius-card: 16px; --radius-pill: 999px;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#17171C; min-height:100vh; display:flex; justify-content:center; align-items:flex-start; padding:32px 0; }
+.phone { width:390px; min-height:844px; background:var(--bg); border:11px solid #101014; border-radius:44px; box-shadow:0 30px 80px rgba(0,0,0,.55); display:flex; flex-direction:column; position:relative; overflow:hidden; }
+/* 状态栏 */
+.statusbar { height:46px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 26px 0 30px; }
+.statusbar .time { font-size:15px; font-weight:600; color:var(--ink); letter-spacing:.2px; }
+.statusbar .icons { display:flex; align-items:center; gap:6px; }
+/* 内容区 */
+.screen { flex:1; display:flex; flex-direction:column; padding:0 16px; }
+/* 顶栏：返回+标题 */
+.navbar { display:flex; align-items:center; gap:8px; padding:6px 4px 0; }
+.navbar .title { font-size:17px; font-weight:700; color:var(--ink); }
+/* 权益Banner */
+.banner { margin-top:14px; border-radius:20px; padding:22px 20px 20px; background:linear-gradient(135deg, #3E4278 0%, var(--brand) 55%, #5A5EA6 100%); position:relative; overflow:hidden; }
+.banner .crown { margin-bottom:10px; }
+.b-title { font-size:24px; font-weight:800; color:var(--gold); letter-spacing:1px; }
+.b-sub { font-size:14px; color:#E9E9F4; margin-top:6px; font-weight:500; letter-spacing:2px; }
+.b-tags { display:flex; gap:6px; margin-top:14px; flex-wrap:wrap; }
+.b-tag { font-size:10.5px; color:#F5E9CE; background:rgba(201,168,106,.18); border:1px solid rgba(201,168,106,.45); border-radius:var(--radius-pill); padding:3.5px 10px; }
+.banner .glow { position:absolute; right:-38px; top:-38px; width:130px; height:130px; border-radius:50%; background:radial-gradient(circle, rgba(201,168,106,.35), transparent 70%); }
+/* 订阅档位卡 */
+.plans { display:flex; gap:9px; margin-top:14px; }
+.plan { flex:1; background:var(--card); border:1.5px solid #EAE7DF; border-radius:14px; padding:14px 6px 12px; text-align:center; position:relative; }
+.plan.sel { border:2px solid var(--gold); background:#FFFDF8; box-shadow:0 2px 8px rgba(201,168,106,.18); }
+.plan .p-badge { position:absolute; top:-9px; left:50%; transform:translateX(-50%); background:var(--gold); color:#fff; font-size:10px; font-weight:700; border-radius:var(--radius-pill); padding:2px 10px; }
+.plan .p-tag { position:absolute; top:-9px; left:50%; transform:translateX(-50%); background:var(--brand); color:#fff; font-size:10px; font-weight:700; border-radius:var(--radius-pill); padding:2px 9px; white-space:nowrap; }
+.plan .p-name { font-size:13px; color:var(--ink-2); margin-top:2px; }
+.plan.sel .p-name { color:var(--ink); font-weight:600; }
+.plan .p-price { font-size:22px; font-weight:800; color:var(--ink); margin-top:6px; }
+.plan .p-price .rmb { font-size:13px; font-weight:700; }
+.plan .p-unit { font-size:11px; color:var(--ink-2); margin-top:2px; }
+.plan.sel .p-price { color:var(--gold); }
+/* 权益对比表 */
+.card { background:var(--card); border-radius:var(--radius-card); padding:14px 16px; margin-top:14px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
+.card-title { font-size:15px; font-weight:700; color:var(--ink); }
+table { width:100%; border-collapse:collapse; margin-top:10px; }
+th { font-size:11px; color:var(--ink-2); font-weight:500; text-align:center; padding:7px 0; border-bottom:1px solid #F0EEE7; }
+th:first-child { text-align:left; }
+td { font-size:13px; color:var(--ink); text-align:center; padding:10px 0; border-bottom:1px solid #F5F3ED; }
+tr:last-child td { border-bottom:none; }
+td:first-child { text-align:left; color:var(--ink-2); }
+td.good { color:var(--brand); font-weight:700; }
+td.dim { color:var(--ink-2); }
+td .lockic { display:inline-flex; vertical-align:-2px; color:#B9B7AF; }
+/* 协议勾选 */
+.agree { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:16px; font-size:12px; color:var(--ink-2); }
+.checkbox { width:15px; height:15px; border-radius:50%; background:var(--brand); color:#fff; font-size:10px; display:inline-flex; align-items:center; justify-content:center; flex:none; }
+.agree a { color:var(--brand); }
+/* 底部固定按钮 */
+.bottom-cta { margin-top:auto; padding:14px 16px 30px; }
+.cta-btn { background:var(--brand); color:#fff; font-size:16px; font-weight:700; text-align:center; border-radius:var(--radius-pill); padding:15px 0; box-shadow:0 6px 16px rgba(74,78,143,.35); }
+.cta-btn .price { font-weight:600; }
+.home-indicator { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:#111; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span class="time">9:41</span>
+    <span class="icons">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="#2B2B33"><rect x="0" y="6.5" width="3" height="4.5" rx="1"/><rect x="4.6" y="4.5" width="3" height="6.5" rx="1"/><rect x="9.2" y="2.2" width="3" height="8.8" rx="1"/><rect x="13.8" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="#2B2B33" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 3.6a10.5 10.5 0 0 1 13 0"/><path d="M3.9 6.3a7 7 0 0 1 8.2 0"/><circle cx="8" cy="9.2" r="1.4" fill="#2B2B33" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3.2" fill="none" stroke="#2B2B33" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="1.8" fill="#2B2B33"/><path d="M23.2 3.8v4.4c1-.3 1.6-1.2 1.6-2.2s-.6-1.9-1.6-2.2z" fill="#2B2B33" fill-opacity="0.4"/></svg>
+    </span>
+  </div>
+
+  <div class="screen">
+    <!-- 顶栏：返回+标题 -->
+    <div class="navbar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+      <span class="title">会员中心</span>
+    </div>
+
+    <!-- 权益Banner -->
+    <div class="banner">
+      <div class="glow"></div>
+      <div class="crown">
+        <svg width="34" height="26" viewBox="0 0 34 26" fill="none"><path d="M3 22 1.5 8l8 5.5L17 2l7.5 11.5 8-5.5L31 22H3z" fill="#C9A86A" stroke="#E8D5AC" stroke-width="1.4" stroke-linejoin="round"/><circle cx="17" cy="16" r="2" fill="#FBF7EF"/></svg>
+      </div>
+      <div class="b-title">趣算算VIP</div>
+      <div class="b-sub">专属命理护航</div>
+      <div class="b-tags">
+        <span class="b-tag">每日10次对话</span>
+        <span class="b-tag">周运月运解锁</span>
+        <span class="b-tag">深度报告免费</span>
+      </div>
+    </div>
+
+    <!-- 订阅档位卡：月25 / 季58（荐）/ 年178（首月9.9，选中） -->
+    <div class="plans">
+      <div class="plan">
+        <div class="p-name">月卡</div>
+        <div class="p-price"><span class="rmb">¥</span>25</div>
+        <div class="p-unit">/月</div>
+      </div>
+      <div class="plan">
+        <div class="p-badge">荐</div>
+        <div class="p-name">季卡</div>
+        <div class="p-price"><span class="rmb">¥</span>58</div>
+        <div class="p-unit">/季</div>
+      </div>
+      <div class="plan sel">
+        <div class="p-tag">首月9.9</div>
+        <div class="p-name">年卡</div>
+        <div class="p-price"><span class="rmb">¥</span>178</div>
+        <div class="p-unit">/年</div>
+      </div>
+    </div>
+
+    <!-- 权益对比表 -->
+    <div class="card">
+      <div class="card-title">权益对比</div>
+      <table>
+        <tr><th>权益</th><th>会员</th><th>非会员</th></tr>
+        <tr><td>每日对话</td><td class="good">10次</td><td class="dim">扣分</td></tr>
+        <tr><td>每日运势</td><td class="good">免费</td><td class="dim">限免</td></tr>
+        <tr><td>周运月运</td><td class="good">解锁</td><td class="dim"><span class="lockic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg></span></td></tr>
+        <tr><td>深度报告</td><td class="good">解锁</td><td class="dim">单买</td></tr>
+        <tr><td>流年流月</td><td class="good">解锁</td><td class="dim">限免</td></tr>
+      </table>
+    </div>
+
+    <!-- 协议勾选 -->
+    <div class="agree">
+      <span class="checkbox">✓</span>
+      <span>同意<a>《会员协议》</a><a>《自动续费》</a></span>
+    </div>
+
+    <!-- 底部固定按钮 -->
+    <div class="bottom-cta">
+      <a href="06-pay.html" style="text-decoration:none;color:inherit">
+        <div class="cta-btn">立即订阅 <span class="price">178/年</span></div>
+      </a>
+    </div>
+  </div>
+  <div class="home-indicator"></div>
+</div>
+</body>
+</html>

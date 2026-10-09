@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>04 我的页 · 趣算算</title>
+<style>
+:root {
+  --bg: #F7F5F0;          /* 宣纸暖白，页面底 */
+  --card: #FFFFFF;         /* 卡片 */
+  --brand: #4A4E8F;        /* 黛蓝紫，主色/Tab选中/主CTA */
+  --brand-soft: #EEEFF9;   /* 主色浅底 */
+  --gold: #C9A86A;         /* 金色点缀：会员/吉/高亮边框 */
+  --ink: #2B2B33;          /* 主文字 */
+  --ink-2: #8A8A93;        /* 次文字 */
+  --success: #2E9E6B;      /* 宜/吉 */
+  --danger: #D9534F;       /* 忌/凶 */
+  --radius-card: 16px; --radius-pill: 999px;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#17171C; min-height:100vh; display:flex; justify-content:center; align-items:flex-start; padding:32px 0; }
+.phone { width:390px; min-height:844px; background:var(--bg); border:11px solid #101014; border-radius:44px; box-shadow:0 30px 80px rgba(0,0,0,.55); display:flex; flex-direction:column; position:relative; overflow:hidden; }
+/* 状态栏 */
+.statusbar { height:46px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 26px 0 30px; }
+.statusbar .time { font-size:15px; font-weight:600; color:var(--ink); letter-spacing:.2px; }
+.statusbar .icons { display:flex; align-items:center; gap:6px; }
+/* 内容区 */
+.screen { flex:1; display:flex; flex-direction:column; padding:0 16px; }
+/* 顶栏：设置 */
+.topbar { display:flex; justify-content:flex-end; padding:6px 4px 0; }
+/* 卡片通用 */
+.card { background:var(--card); border-radius:var(--radius-card); padding:16px; margin-top:12px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
+/* 用户卡 */
+.user-card { display:flex; align-items:center; gap:14px; margin-top:16px; }
+.avatar { width:56px; height:56px; border-radius:50%; background:linear-gradient(135deg, #6A6EB8, #4A4E8F); color:#fff; font-size:22px; font-weight:700; display:flex; align-items:center; justify-content:center; flex:none; }
+.name { font-size:18px; font-weight:700; color:var(--ink); display:flex; align-items:center; gap:8px; }
+.vip { font-size:10px; font-weight:800; color:#5C4A22; background:linear-gradient(135deg, #E8D5AC, var(--gold)); border-radius:var(--radius-pill); padding:2.5px 8px; letter-spacing:.5px; }
+.expire { font-size:12px; color:var(--ink-2); margin-top:5px; }
+/* 积分卡 */
+.pt-head { display:flex; justify-content:space-between; align-items:center; }
+.pt-label { font-size:13px; font-weight:700; color:var(--ink); }
+.recharge { font-size:12px; font-weight:600; color:#fff; background:var(--brand); border-radius:var(--radius-pill); padding:6px 18px; }
+.pt-num { font-size:34px; font-weight:800; color:var(--ink); margin-top:6px; }
+.pt-num small { font-size:13px; color:var(--ink-2); font-weight:400; margin-left:4px; }
+.pt-links { display:flex; gap:28px; margin-top:12px; padding-top:12px; border-top:1px solid #F0EEE7; }
+.pt-link { font-size:13px; color:var(--ink); }
+.pt-link .arr { color:var(--ink-2); margin-left:4px; }
+/* 功能列表 */
+.list { padding:4px 16px; }
+.item { display:flex; justify-content:space-between; align-items:center; padding:14px 0; font-size:14px; color:var(--ink); }
+.item .arr { color:#C6C4BD; font-size:16px; }
+.item .code { font-size:12px; color:var(--ink-2); margin-right:6px; }
+.rc { display:flex; align-items:center; gap:10px; }
+.rc-ic { width:30px; height:30px; border-radius:9px; background:#FBF7EF; border:1px solid var(--gold); display:flex; align-items:center; justify-content:center; flex:none; }
+.rc-txt { display:flex; flex-direction:column; }
+.rc-title { font-size:14px; color:var(--ink); font-weight:600; display:flex; align-items:center; gap:6px; }
+.rc-new { font-size:9px; font-weight:800; color:#fff; background:var(--gold); border-radius:var(--radius-pill); padding:1.5px 6px; letter-spacing:.5px; }
+.rc-sub { font-size:11px; color:var(--ink-2); margin-top:2px; }
+.sep { height:1px; background:#F0EEE7; }
+/* Tab栏 */
+.tabbar { flex:none; background:var(--card); border-top:1px solid #ECEAE4; display:flex; padding:7px 0 24px; }
+.tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:10px; color:var(--ink-2); }
+.tab.active { color:var(--brand); font-weight:600; }
+.home-indicator { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:#111; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span class="time">9:41</span>
+    <span class="icons">
+      <svg width="17" height="11" viewBox="0 0 17 11" fill="#2B2B33"><rect x="0" y="6.5" width="3" height="4.5" rx="1"/><rect x="4.6" y="4.5" width="3" height="6.5" rx="1"/><rect x="9.2" y="2.2" width="3" height="8.8" rx="1"/><rect x="13.8" y="0" width="3" height="11" rx="1"/></svg>
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="#2B2B33" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 3.6a10.5 10.5 0 0 1 13 0"/><path d="M3.9 6.3a7 7 0 0 1 8.2 0"/><circle cx="8" cy="9.2" r="1.4" fill="#2B2B33" stroke="none"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3.2" fill="none" stroke="#2B2B33" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="1.8" fill="#2B2B33"/><path d="M23.2 3.8v4.4c1-.3 1.6-1.2 1.6-2.2s-.6-1.9-1.6-2.2z" fill="#2B2B33" fill-opacity="0.4"/></svg>
+    </span>
+  </div>
+
+  <div class="screen">
+    <!-- 顶栏：设置 -->
+    <div class="topbar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7"/></svg>
+    </div>
+
+    <!-- 用户卡：头像+昵称+VIP+到期 -->
+    <div class="card user-card">
+      <div class="avatar">玲</div>
+      <div>
+        <div class="name">小玲 <span class="vip">VIP</span></div>
+        <div class="expire">到期 2027-09</div>
+      </div>
+    </div>
+
+    <!-- 积分卡 -->
+    <div class="card">
+      <div class="pt-head">
+        <span class="pt-label">积分余额</span>
+        <span class="recharge">充值</span>
+      </div>
+      <div class="pt-num">120<small>分</small></div>
+      <div class="pt-links">
+        <span class="pt-link">邀请赚积分<span class="arr">›</span></span>
+        <span class="pt-link">消费记录<span class="arr">›</span></span>
+      </div>
+    </div>
+
+    <!-- 功能列表 -->
+    <div class="card list">
+      <a href="11-report-center.html" style="text-decoration:none;color:inherit">
+        <div class="item">
+          <span class="rc">
+            <span class="rc-ic">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C9A86A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h9l4 4V20.5H6z"/><path d="M14.5 3.5v4.5H19"/><path d="M9 12h6M9 15.5h6"/></svg>
+            </span>
+            <span class="rc-txt">
+              <span class="rc-title">报告中心 <span class="rc-new">NEW</span></span>
+              <span class="rc-sub">年运·事业·感情·全盘报告</span>
+            </span>
+          </span>
+          <span class="arr">›</span>
+        </div>
+      </a>
+      <a href="05-membership.html" style="text-decoration:none;color:inherit">
+        <div class="item"><span>订阅管理</span><span class="arr">›</span></div>
+      </a>
+      <div class="item"><span>我的档案</span><span class="arr">›</span></div>
+      <div class="sep"></div>
+      <div class="item"><span>邀请好友<span class="code">（码：XL88）</span></span><span class="arr">›</span></div>
+      <div class="item"><span>消费记录</span><span class="arr">›</span></div>
+      <div class="sep"></div>
+      <div class="item"><span>帮助与反馈</span><span class="arr">›</span></div>
+      <div class="item"><span>关于</span><span class="arr">›</span></div>
+    </div>
+  </div>
+
+  <!-- Tab栏 -->
+  <div class="tabbar">
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.5 1.5M17.2 17.2l1.5 1.5M18.7 5.3l-1.5 1.5M6.8 17.2l-1.5 1.5"/></svg>
+      今日
+    </div>
+    <div class="tab">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H5.6L3 21.2V11.5A7.5 7.5 0 0 1 10.5 4h2A7.5 7.5 0 0 1 20 11.5z"/></svg>
+      对话
+    </div>
+    <div class="tab active">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c1.2-3.4 4-5 7.5-5s6.3 1.6 7.5 5"/></svg>
+      我的
+    </div>
+  </div>
+  <div class="home-indicator"></div>
+</div>
+</body>
+</html>

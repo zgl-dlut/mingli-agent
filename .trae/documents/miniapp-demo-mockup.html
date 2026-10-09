@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>趣算算 · 小程序类目预审 Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #f0ebe5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    gap: 30px;
+  }
+  h1 { font-size: 18px; color: #5a4a3a; margin-bottom: 5px; }
+  .subtitle { font-size: 13px; color: #9a8a7a; margin-bottom: 15px; }
+
+  /* Phone frame */
+  .phone {
+    width: 375px;
+    height: 720px;
+    background: #faf6ef;
+    border-radius: 40px;
+    border: 8px solid #3a2a1a;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.15);
+  }
+  .phone-screen {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    position: relative;
+  }
+  .phone-screen::-webkit-scrollbar { display: none; }
+
+  /* Notch */
+  .notch {
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 150px; height: 28px;
+    background: #3a2a1a;
+    border-radius: 0 0 18px 18px;
+    z-index: 100;
+  }
+
+  /* Status bar */
+  .status-bar {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px 0 24px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #3a2a1a;
+  }
+  .status-bar .right { display: flex; gap: 5px; align-items: center; font-size: 12px; }
+
+  /* Nav bar */
+  .nav-bar {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    border-bottom: 1px solid #f0ebe5;
+  }
+  .nav-bar .title { font-size: 17px; font-weight: 600; color: #3a2a1a; }
+  .nav-bar .back { position: absolute; left: 16px; font-size: 22px; color: #8b6f5a; }
+
+  /* Content area */
+  .content { padding: 16px; min-height: calc(100% - 132px); }
+
+  /* Bottom fixed bar */
+  .bottom-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 50px;
+    background: rgba(250,246,239,0.95);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid #f0ebe5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: #9a8a7a;
+    gap: 4px;
+    z-index: 50;
+  }
+
+  /* Brand colors */
+  .primary { color: #8b6f5a; }
+  .bg-primary { background: #8b6f5a; }
+  .text-primary { color: #8b6f5a; }
+  .bg-warm { background: #faf6ef; }
+  .border-warm { border-color: #f0ebe5; }
+
+  /* AI badge */
+  .ai-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: #8b6f5a;
+    color: #faf6ef;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  /* Cards */
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+
+  /* Buttons */
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 13px;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 500;
+    text-align: center;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-primary { background: #8b6f5a; color: #fff; }
+  .btn-outline { background: transparent; border: 1.5px solid #8b6f5a; color: #8b6f5a; }
+
+  /* Form fields */
+  .field { margin-bottom: 16px; }
+  .field-label { font-size: 14px; color: #6a5a4a; margin-bottom: 6px; font-weight: 500; }
+  .field-input {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1px solid #e8e0d8;
+    border-radius: 10px;
+    font-size: 15px;
+    background: #faf6ef;
+    color: #3a2a1a;
+  }
+  .field-note { font-size: 12px; color: #aa9a8a; margin-top: 4px; }
+  .field-select {
+    display: flex; gap: 0;
+    border: 1px solid #e8e0d8;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #faf6ef;
+  }
+  .field-select div {
+    flex: 1; text-align: center; padding: 11px;
+    font-size: 14px; color: #8a7a6a;
+    border-right: 1px solid #e8e0d8;
+    cursor: pointer;
+  }
+  .field-select div:last-child { border-right: none; }
+  .field-select .active { background: #8b6f5a; color: #fff; font-weight: 500; }
+
+  /* Bazi table */
+  .bazi-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    text-align: center;
+  }
+  .bazi-table th {
+    background: #8b6f5a;
+    color: #faf6ef;
+    padding: 8px 4px;
+    font-weight: 500;
+    font-size: 12px;
+  }
+  .bazi-table th:first-child { border-radius: 8px 0 0 0; }
+  .bazi-table th:last-child { border-radius: 0 8px 0 0; }
+  .bazi-table td {
+    padding: 8px 4px;
+    border-bottom: 1px solid #f0ebe5;
+    color: #3a2a1a;
+  }
+  .bazi-table td.label { color: #9a8a7a; font-size: 11px; }
+
+  /* Dayun list */
+  .dayun-row {
+    display: flex; gap: 10px; align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f5f0e8;
+    font-size: 13px;
+  }
+  .dayun-row .age { color: #8b6f5a; font-weight: 600; width: 50px; }
+  .dayun-row .gz { font-size: 15px; color: #3a2a1a; font-weight: 500; }
+  .dayun-row .dir { color: #aa9a8a; font-size: 12px; margin-left: auto; }
+
+  /* Chat bubbles */
+  .chat-user {
+    display: flex; justify-content: flex-end; margin-bottom: 12px;
+  }
+  .chat-user .bubble {
+    background: #8b6f5a;
+    color: #faf6ef;
+    padding: 10px 14px;
+    border-radius: 16px 16px 4px 16px;
+    font-size: 14px;
+    max-width: 75%;
+    line-height: 1.5;
+  }
+  .chat-ai { margin-bottom: 16px; }
+  .chat-ai .badge-row { margin-bottom: 6px; }
+  .chat-ai .bubble {
+    background: #fff;
+    padding: 12px 14px;
+    border-radius: 4px 16px 16px 16px;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #3a2a1a;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+
+  /* Suggested questions */
+  .suggested { margin-top: 12px; }
+  .suggested-title { font-size: 12px; color: #aa9a8a; margin-bottom: 8px; }
+  .suggested-item {
+    display: flex; align-items: center; gap: 6px;
+    background: #f5f0e8;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: #6a5a4a;
+  }
+
+  /* Report sections */
+  .report-section { margin-bottom: 14px; }
+  .report-section h4 {
+    font-size: 15px; color: #8b6f5a; margin-bottom: 6px;
+  }
+  .report-section p {
+    font-size: 14px; line-height: 1.7; color: #4a3a2a;
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+  }
+  .empty-state .icon {
+    font-size: 48px; margin-bottom: 16px;
+  }
+  .empty-state h3 {
+    font-size: 18px; color: #3a2a1a; margin-bottom: 8px;
+  }
+  .empty-state p {
+    font-size: 14px; color: #9a8a7a; line-height: 1.6; max-width: 260px; margin: 0 auto;
+  }
+
+  /* Person card */
+  .person-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  }
+  .person-card .avatar {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: #8b6f5a;
+    color: #faf6ef;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 600;
+  }
+  .person-card .info { flex: 1; }
+  .person-card .info .name { font-size: 15px; font-weight: 500; color: #3a2a1a; }
+  .person-card .info .meta { font-size: 12px; color: #aa9a8a; margin-top: 2px; }
+
+  /* Tab bar */
+  .tab-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 50px;
+    background: rgba(250,246,239,0.98);
+    border-top: 1px solid #f0ebe5;
+    display: flex;
+    z-index: 60;
+  }
+  .tab-bar .tab {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 2px;
+    font-size: 10px;
+    color: #9a8a7a;
+  }
+  .tab-bar .tab.active { color: #8b6f5a; }
+  .tab-bar .tab .icon { font-size: 18px; }
+
+  /* Input bar */
+  .input-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    display: flex; gap: 8px; align-items: center;
+    padding: 8px 12px;
+    background: rgba(250,246,239,0.98);
+    border-top: 1px solid #f0ebe5;
+    z-index: 60;
+  }
+  .input-bar input {
+    flex: 1;
+    padding: 8px 14px;
+    border: 1px solid #e8e0d8;
+    border-radius: 20px;
+    font-size: 14px;
+    background: #fff;
+    color: #3a2a1a;
+  }
+  .input-bar .mic {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: #8b6f5a;
+    color: #faf6ef;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+
+  /* Screen label */
+  .screen-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #5a4a3a;
+    margin-top: -15px;
+    margin-bottom: 5px;
+  }
+  .screen-desc {
+    font-size: 12px;
+    color: #9a8a7a;
+    max-width: 375px;
+    text-align: center;
+    margin-bottom: 10px;
+  }
+
+  /* Disclaimer footer in report */
+  .disclaimer-footer {
+    text-align: center;
+    font-size: 12px;
+    color: #aa9a8a;
+    padding: 16px 0 24px;
+    line-height: 1.6;
+  }
+
+  /* Pill tags */
+  .pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .pill-warm { background: #f5f0e8; color: #8b6f5a; }
+  .pill-green { background: #e8f5e9; color: #4a7a4a; }
+  .pill-blue { background: #e3f2fd; color: #4a6a8a; }
+
+  /* Time tags */
+  .time-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .time-cell {
+    text-align: center;
+    padding: 8px 2px;
+    border-radius: 8px;
+    font-size: 13px;
+    background: #f5f0e8;
+    color: #6a5a4a;
+  }
+  .time-cell .gz { font-size: 11px; color: #aa9a8a; display: block; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<h1>趣算算 · 小程序类目预审 Demo</h1>
+<p class="subtitle">以下 5 个页面为「去迷信化」包装后的交互截图，用于提交微信类目人工客服预审</p>
+
+<!-- ==================== 屏幕 1：首页 ==================== -->
+<div class="screen-label">屏幕 1 / 5 — 首页（人物列表）</div>
+<div class="screen-desc">空状态引导 + 已有人物卡片，底部固定栏标明 AI 生成与娱乐参考</div>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="phone-screen">
+    <div class="status-bar">
+      <span>9:41</span>
+      <span class="right">📶 🔋</span>
+    </div>
+    <div class="nav-bar">
+      <div class="title">趣算算</div>
+    </div>
+    <div style="padding: 8px 16px;">
+      <p style="font-size: 13px; color: #9a8a7a; text-align: center; margin: 4px 0 16px;">
+        传统干支历法文化的 AI 趣味解读
+      </p>
+
+      <!-- 已有人物卡片 -->
+      <div class="person-card">
+        <div class="avatar">张</div>
+        <div class="info">
+          <div class="name">小张的排盘</div>
+          <div class="meta">1990-08-15 14:30 · 北京</div>
+        </div>
+        <div style="font-size: 18px; color: #ddd;">›</div>
+      </div>
+      <div class="person-card">
+        <div class="avatar">李</div>
+        <div class="info">
+          <div class="name">老李的排盘</div>
+          <div class="meta">1985-03-22 子时 · 上海</div>
+        </div>
+        <div style="font-size: 18px; color: #ddd;">›</div>
+      </div>
+
+      <!-- 添加按钮 -->
+      <div style="margin-top: 20px;">
+        <button class="btn btn-outline" style="border-style: dashed; padding: 14px;">
+          + 添加生辰信息
+        </button>
+      </div>
+
+      <div style="margin-top: 20px; padding: 14px; background: #f5f0e8; border-radius: 10px;">
+        <p style="font-size: 13px; color: #6a5a4a; line-height: 1.6;">
+          添加生辰信息后，AI 将基于传统干支历法为你生成一份趣味文化解读报告。结果仅供传统文化体验与娱乐参考，不构成任何决策建议。
+        </p>
+      </div>
+    </div>
+
+    <div class="bottom-bar" style="bottom: 50px;">
+      <span class="ai-badge"><span style="font-size:10px">✦</span> AI 生成</span>
+      <span>· 结果仅供传统文化体验与娱乐参考</span>
+    </div>
+
+    <div class="tab-bar">
+      <div class="tab active">
+        <span class="icon">🏠</span>
+        首页
+      </div>
+      <div class="tab">
+        <span class="icon">👤</span>
+        我的
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 屏幕 2：创建人物 ==================== -->
+<div class="screen-label">屏幕 2 / 5 — 添加生辰信息</div>
+<div class="screen-desc">字段文案去迷信化，注明用途为排盘推演，不收集精确定位</div>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="phone-screen">
+    <div class="status-bar">
+      <span>9:41</span>
+      <span class="right">📶 🔋</span>
+    </div>
+    <div class="nav-bar">
+      <div class="back">‹</div>
+      <div class="title">添加生辰信息</div>
+    </div>
+
+    <div class="content" style="padding-bottom: 80px;">
+      <div class="field">
+        <div class="field-label">昵称（可选）</div>
+        <input class="field-input" placeholder="给自己起个名字" value="小张">
+      </div>
+
+      <div class="field">
+        <div class="field-label">性别</div>
+        <div class="field-select">
+          <div class="active">男</div>
+          <div>女</div>
+        </div>
+        <div class="field-note">用于传统干支排盘中的大运顺逆推演</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">出生日期</div>
+        <div class="field-select">
+          <div class="active">公历</div>
+          <div>农历</div>
+        </div>
+        <input class="field-input" style="margin-top: 8px;" value="1990-08-15">
+      </div>
+
+      <div class="field">
+        <div class="field-label">出生时间</div>
+        <input class="field-input" value="14:30（未时）">
+        <div class="field-note">用于传统干支时柱推演</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">出生地点</div>
+        <input class="field-input" value="北京市">
+        <div class="field-note">用于真太阳时换算，仅取省市级行政区，不收集精确定位</div>
+      </div>
+
+      <div style="padding: 12px; background: #f5f0e8; border-radius: 10px; margin-bottom: 16px;">
+        <p style="font-size: 12px; color: #8a7a6a; line-height: 1.6;">
+          生辰信息仅用于传统干支历法的排盘推演，不用于任何预测或占卜用途。你可以随时在「设置-注销账号」中删除全部数据。
+        </p>
+      </div>
+
+      <button class="btn btn-primary">添加</button>
+    </div>
+
+    <div class="bottom-bar">
+      <span class="ai-badge"><span style="font-size:10px">✦</span> AI 生成</span>
+      <span>· 结果仅供传统文化体验与娱乐参考</span>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 屏幕 3：排盘结果 ==================== -->
+<div class="screen-label">屏幕 3 / 5 — 干支排盘结果</div>
+<div class="screen-desc">四柱表格 + 大运序列，底部注明仅反映历法文化知识</div>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="phone-screen">
+    <div class="status-bar">
+      <span>9:41</span>
+      <span class="right">📶 🔋</span>
+    </div>
+    <div class="nav-bar">
+      <div class="back">‹</div>
+      <div class="title">干支排盘结果</div>
+    </div>
+
+    <div class="content" style="padding-bottom: 80px;">
+      <div style="text-align: center; margin-bottom: 16px;">
+        <h3 style="font-size: 16px; color: #3a2a1a;">小张的排盘</h3>
+        <p style="font-size: 12px; color: #aa9a8a; margin-top: 4px;">1990-08-15 14:30 · 北京</p>
+      </div>
+
+      <!-- 四柱 -->
+      <div class="card">
+        <p style="font-size: 13px; color: #8b6f5a; font-weight: 600; margin-bottom: 10px;">四柱干支</p>
+        <table class="bazi-table">
+          <tr>
+            <th>年柱</th>
+            <th>月柱</th>
+            <th>日柱</th>
+            <th>时柱</th>
+          </tr>
+          <tr>
+            <td style="font-size:18px; font-weight:600;">庚</td>
+            <td style="font-size:18px; font-weight:600;">甲</td>
+            <td style="font-size:18px; font-weight:600;">辛</td>
+            <td style="font-size:18px; font-weight:600;">乙</td>
+          </tr>
+          <tr>
+            <td style="font-size:18px; font-weight:600;">午</td>
+            <td style="font-size:18px; font-weight:600;">申</td>
+            <td style="font-size:18px; font-weight:600;">未</td>
+            <td style="font-size:18px; font-weight:600;">未</td>
+          </tr>
+          <tr><td class="label">藏干</td><td class="label">丁己</td><td class="label">己丁乙</td><td class="label">己丁乙</td></tr>
+          <tr><td class="label">地势</td><td class="label">沐浴</td><td class="label">衰</td><td class="label">冠带</td></tr>
+          <tr><td class="label">空亡</td><td class="label" colspan="3">戌亥</td></tr>
+        </table>
+      </div>
+
+      <!-- 大运 -->
+      <div class="card">
+        <p style="font-size: 13px; color: #8b6f5a; font-weight: 600; margin-bottom: 10px;">大运序列</p>
+        <div class="dayun-row">
+          <span class="age">3岁起</span>
+          <span class="gz">乙酉</span>
+          <span class="pill pill-warm">西方金</span>
+          <span class="dir">→</span>
+        </div>
+        <div class="dayun-row">
+          <span class="age">13岁</span>
+          <span class="gz">丙戌</span>
+          <span class="pill pill-warm">西方土</span>
+          <span class="dir">→</span>
+        </div>
+        <div class="dayun-row">
+          <span class="age">23岁</span>
+          <span class="gz">丁亥</span>
+          <span class="pill pill-warm">北方水</span>
+          <span class="dir">→</span>
+        </div>
+        <div class="dayun-row">
+          <span class="age">33岁</span>
+          <span class="gz">戊子</span>
+          <span class="pill pill-warm">北方水</span>
+          <span class="dir">→</span>
+        </div>
+        <div class="dayun-row">
+          <span class="age">43岁</span>
+          <span class="gz">己丑</span>
+          <span class="pill pill-warm">北方土</span>
+          <span class="dir">→</span>
+        </div>
+      </div>
+
+      <!-- 流年 -->
+      <div class="card">
+        <p style="font-size: 13px; color: #8b6f5a; font-weight: 600; margin-bottom: 10px;">2026 丙午年 · 流月干支</p>
+        <div class="time-grid">
+          <div class="time-cell">1月<span class="gz">庚寅</span></div>
+          <div class="time-cell">2月<span class="gz">辛卯</span></div>
+          <div class="time-cell">3月<span class="gz">壬辰</span></div>
+          <div class="time-cell">4月<span class="gz">癸巳</span></div>
+          <div class="time-cell">5月<span class="gz">甲午</span></div>
+          <div class="time-cell">6月<span class="gz">乙未</span></div>
+          <div class="time-cell">7月<span class="gz">丙申</span></div>
+          <div class="time-cell">8月<span class="gz">丁酉</span></div>
+          <div class="time-cell">9月<span class="gz">戊戌</span></div>
+          <div class="time-cell">10月<span class="gz">己亥</span></div>
+          <div class="time-cell">11月<span class="gz">庚子</span></div>
+          <div class="time-cell">12月<span class="gz">辛丑</span></div>
+        </div>
+      </div>
+
+      <div style="padding: 12px 14px; background: #f5f0e8; border-radius: 10px;">
+        <p style="font-size: 12px; color: #8a7a6a; line-height: 1.6;">
+          以上为传统干支历法的排盘推演结果，仅反映历法文化知识，不代表吉凶判断。
+        </p>
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <span class="ai-badge"><span style="font-size:10px">✦</span> AI 生成</span>
+      <span>· 结果仅供传统文化体验与娱乐参考</span>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 屏幕 4：AI 报告 ==================== -->
+<div class="screen-label">屏幕 4 / 5 — AI 文化解读报告</div>
+<div class="screen-desc">报告首尾均声明 AI 生成 + 娱乐参考，正文为文化视角解读</div>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="phone-screen">
+    <div class="status-bar">
+      <span>9:41</span>
+      <span class="right">📶 🔋</span>
+    </div>
+    <div class="nav-bar">
+      <div class="back">‹</div>
+      <div class="title">文化解读报告</div>
+    </div>
+
+    <div class="content" style="padding-bottom: 80px;">
+      <!-- AI 标识 -->
+      <div style="margin-bottom: 12px;">
+        <span class="ai-badge"><span style="font-size:10px">✦</span> AI 生成 · 仅供传统文化体验与娱乐参考</span>
+      </div>
+
+      <h3 style="font-size: 16px; color: #3a2a1a; margin-bottom: 12px;">你的干支文化解读报告</h3>
+
+      <!-- 开场段 -->
+      <div class="report-section">
+        <p style="font-size: 14px; line-height: 1.7; color: #4a3a2a;">
+          你好，这份报告基于你的生辰排盘，从传统干支历法文化的角度，为你做一次趣味解读。以下内容是 AI 生成的文化参考，<strong>不构成任何人生决策建议</strong>。
+        </p>
+      </div>
+
+      <!-- 性格特质 -->
+      <div class="card">
+        <div class="report-section" style="margin-bottom:0;">
+          <h4>性格特质</h4>
+          <p>
+            从日主五行与十神关系来看，你的排盘日主为辛金，生于申月金旺之时。在传统文化语境中，辛金常被比喻为「珠玉之金」，性格上可能偏向细腻、注重外表秩序。月柱甲木为正财，传统理解为对稳定资源有一定关注。
+          </p>
+        </div>
+      </div>
+
+      <!-- 流年参考 -->
+      <div class="card">
+        <div class="report-section" style="margin-bottom:0;">
+          <h4>2026 丙午年 · 流年干支参考</h4>
+          <p>
+            丙午年天干丙火为你的七杀，地支午火与日支未土形成六合关系。从文化角度，这一年可关注<strong>自我节奏管理</strong>方面的平衡，传统干支认为火旺之年适合收敛能量、稳扎稳打。
+          </p>
+          <div style="margin-top: 10px;">
+            <span class="pill pill-warm">春季：节奏平稳</span>
+            <span class="pill pill-blue">夏季：能量较旺</span>
+            <span class="pill pill-green">秋季：收束关注</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 结尾段 -->
+      <div class="report-section">
+        <p style="font-size: 14px; line-height: 1.7; color: #4a3a2a;">
+          以上内容均为 AI 基于传统干支历法文化生成的趣味参考，<strong>不预测未来、不指导决策</strong>。人生选择权始终在你手中。
+        </p>
+      </div>
+
+      <div class="disclaimer-footer">
+        本报告由 AI 生成，仅供传统文化体验与娱乐参考<br>
+        不构成任何专业建议或决策依据
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <span class="ai-badge"><span style="font-size:10px">✦</span> AI 生成</span>
+      <span>· 结果仅供传统文化体验与娱乐参考</span>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 屏幕 5：追问页 ==================== -->
+<div class="screen-label">屏幕 5 / 5 — 追问对话</div>
+<div class="screen-desc">AI 回答顶部带角标，禁用预测断语，推荐问题围绕文化解读</div>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="phone-screen">
+    <div class="status-bar">
+      <span>9:41</span>
+      <span class="right">📶 🔋</span>
+    </div>
+    <div class="nav-bar">
+      <div class="back">‹</div>
+      <div class="title">文化解读 · 对话</div>
+    </div>
+
+    <div class="content" style="padding-bottom: 70px;">
+
+      <!-- 用户提问 -->
+      <div class="chat-user">
+        <div class="bubble">2026 年适合换工作吗？</div>
+      </div>
+
+      <!-- AI 回答 -->
+      <div class="chat-ai">
+        <div class="badge-row">
+          <span class="ai-badge"><span style="font-size:10px">✦</span> AI 生成 · 仅供传统文化体验与娱乐参考</span>
+        </div>
+        <div class="bubble">
+          <p style="margin-bottom: 8px;">
+            从传统干支文化角度看，2026 丙午年你的流月排盘中，<strong>春季（寅卯辰月）</strong>的干支组合相对平稳，传统历法中常认为节奏稳定的时段适合做变动安排。
+          </p>
+          <p style="margin-bottom: 8px;">
+            夏季火旺，丙火七杀能量较强，传统文化建议此段以<strong>内省和积蓄</strong>为主，不宜急躁行动。
+          </p>
+          <p style="font-size: 12px; color: #aa9a8a; margin-top: 10px; padding-top: 8px; border-top: 1px solid #f0ebe5;">
+            需要说明的是，这只是一种历法文化视角的参考。真实职业决策应结合实际工作机会、个人能力与市场环境综合判断，AI 无法也不应替你做决定。
+          </p>
+        </div>
+      </div>
+
+      <!-- 推荐追问 -->
+      <div class="suggested">
+        <div class="suggested-title">✨ 试试继续探讨，点击直接发送：</div>
+        <div class="suggested-item">
+          <span>📜</span>
+          <span>我的排盘五行分布是怎样的？</span>
+          <span style="margin-left:auto; color:#c5a97a;">✈</span>
+        </div>
+        <div class="suggested-item">
+          <span>🌿</span>
+          <span>传统干支里"七杀"是什么意思？</span>
+          <span style="margin-left:auto; color:#c5a97a;">✈</span>
+        </div>
+        <div class="suggested-item">
+          <span>👥</span>
+          <span>我的性格在团队中适合什么角色？</span>
+          <span style="margin-left:auto; color:#c5a97a;">✈</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 输入栏（带语音按钮） -->
+    <div class="input-bar">
+      <input placeholder="输入你的问题…">
+      <div class="mic">🎙</div>
+      <div style="width: 36px; height: 36px; border-radius: 50%; background: #8b6f5a; color: #faf6ef; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600;">↑</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

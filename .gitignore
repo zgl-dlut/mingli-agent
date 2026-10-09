@@ -42,7 +42,10 @@ mingli-agent/frontend/.vite/
 # ===== IDE / 编辑器 =====
 .vscode/
 .idea/
-.trae/
+.trae/*
+!.trae/documents/
+!.trae/skills/
+mingli-agent/.trae/
 .workbuddy/
 .DS_Store
 *.swp
