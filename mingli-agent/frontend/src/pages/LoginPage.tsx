@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [code, setCode] = useState('')
   const [countdown, setCountdown] = useState(0)
   const [agreed, setAgreed] = useState(false)
+  const [devCodeFilled, setDevCodeFilled] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval>>()
 
   useEffect(() => {
@@ -31,8 +32,13 @@ export default function LoginPage() {
     if (!phone || phone.length !== 11) return
     clearError()
     try {
-      await sendSmsCode(phone)
+      const res = await sendSmsCode(phone)
       setCountdown(60)
+      // 后端 mock 模式（SMS_MOCK_MODE=true）不发真实短信，直接回填验证码
+      if (res?.dev_mode && res?.code) {
+        setCode(res.code)
+        setDevCodeFilled(true)
+      }
     } catch {
       // error is set in store
     }
@@ -108,6 +114,9 @@ export default function LoginPage() {
                 {countdown > 0 ? `${countdown}s` : '获取验证码'}
               </button>
             </div>
+            {devCodeFilled && (
+              <p className="text-xs mt-1.5" style={{ color: '#a7876f' }}>开发模式：验证码已自动填入，直接登录即可</p>
+            )}
           </div>
 
           {/* Error Message */}
