@@ -32,6 +32,7 @@ htmlcov/
 .ruff_cache/
 mingli-agent/backend/feedback.db
 mingli-agent/backend/feedback.db-journal
+mingli-agent/backend/mingli_dev.db
 *.db-journal
 
 # ===== 前端 =====
