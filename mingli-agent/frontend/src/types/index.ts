@@ -1,116 +1,27 @@
-export interface User {
-  id: number
-  phone: string
-  email?: string
-  name: string
-  avatar: string | null
-  points: number
-  created_at: string
-}
+/**
+ * 前端领域模型
+ *
+ * 命名契约（单一事实来源）：
+ * - 传输层字段一律由 `src/api/*.ts` 的接口定义，本文件不重复声明字段
+ * - 本文件只做 re-export，保证前后端 + 前后端内部各层只有一套字段名
+ * - 字段命名统一英文 snake_case；排盘数据 `bazi_data` 内部为中文键（历史遗留，冻结不改）
+ */
 
-export interface Person {
-  id: number
-  name: string
-  gender: 'male' | 'female'
-  birth_date: string
-  birth_time: string
-  birth_place: string
-  province: string
-  city: string
-  calendar_type: 'solar' | 'lunar'
-  longitude?: number
-  latitude?: number
-  bazi: BaziResult | null
-  astrology: AstrologyResult | null
-  bazi_data?: Record<string, unknown>
-  created_at: string
-  updated_at: string
-}
+import type { PersonResponse, CreatePersonRequest } from '../api/person'
+import type { ChatMessage as ApiChatMessage, ChatSession as ApiChatSession } from '../api/chat'
+import type { Transaction as ApiTransaction } from '../api/payment'
 
-export interface BaziResult {
-  year_gan: string
-  year_zhi: string
-  month_gan: string
-  month_zhi: string
-  day_gan: string
-  day_zhi: string
-  hour_gan: string
-  hour_zhi: string
-  gan_zhi_str: string
-  wuxing: {
-    metal: number
-    wood: number
-    water: number
-    fire: number
-    earth: number
-  }
-  shishen: {
-    year: { ten_god: string; gan: string; zhi: string }
-    month: { ten_god: string; gan: string; zhi: string }
-    day: { ten_god: string; gan: string; zhi: string }
-    hour: { ten_god: string; gan: string; zhi: string }
-  }
-  zonghe_analysis: string
-}
+/** 人物：与后端 GET /api/persons 响应同构 */
+export type Person = PersonResponse
 
-export interface AstrologyResult {
-  sun_sign: string
-  moon_sign: string
-  rising_sign: string
-  planets: {
-    name: string
-    sign: string
-    degree: number
-    house: number
-  }[]
-  houses: {
-    house: number
-    sign: string
-    cusp: number
-    ruler: string
-  }[]
-  aspects: {
-    planet1: string
-    planet2: string
-    aspect: string
-    orb: number
-  }[]
-  element_analysis: string
-  modality_analysis: string
-}
+/** 新建人物入参：与后端 POST /api/persons 请求同构 */
+export type CreatePersonInput = CreatePersonRequest
 
-export interface ChatMessage {
-  id: number
-  role: 'user' | 'assistant'
-  content: string
-  created_at: string
-}
+/** 对话消息：与后端 GET /chat/sessions/{id}/messages 响应同构 */
+export type ChatMessage = ApiChatMessage
 
-export interface ChatSession {
-  id: number
-  person_id: number
-  status: 'pending' | 'generating' | 'completed'
-  messages: ChatMessage[]
-  created_at: string
-  updated_at: string
-}
+/** 对话会话：与后端 GET /chat/sessions 响应同构 */
+export type ChatSession = ApiChatSession
 
-export interface Order {
-  id: number
-  points: number
-  amount: number
-  pay_method: string
-  status: 'pending' | 'paid' | 'failed'
-  trade_no: string | null
-  created_at: string
-  paid_at: string | null
-}
-
-export interface Transaction {
-  id: number
-  type: 'recharge' | 'consume' | 'refund'
-  points: number
-  order_id: number | null
-  description: string
-  created_at: string
-}
+/** 积分流水：与后端 GET /user/transactions 响应同构 */
+export type Transaction = ApiTransaction

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>01 今日页 · 趣算算</title>
+<title>01 首页 · 趣算算</title>
 <style>
 :root {
   --bg: #F7F5F0;          /* 宣纸暖白，页面底 */
@@ -15,6 +15,12 @@
   --ink-2: #8A8A93;        /* 次文字 */
   --success: #2E9E6B;      /* 宜/吉 */
   --danger: #D9534F;       /* 忌/凶 */
+  /* 人生五维专属色 */
+  --c-love: #F4B8C4;       /* 恋爱 粉 */
+  --c-marry: #5DB8E8;      /* 婚姻 蓝 */
+  --c-wealth: #E8B547;     /* 财富 金黄 */
+  --c-career: #9B8FD4;     /* 事业 紫 */
+  --c-study: #4A90E2;      /* 学业 深蓝 */
   --radius-card: 16px; --radius-pill: 999px;
   font-family: -apple-system, "PingFang SC", sans-serif;
 }
@@ -26,7 +32,7 @@ body { background:#17171C; min-height:100vh; display:flex; justify-content:cente
 .statusbar .time { font-size:15px; font-weight:600; color:var(--ink); letter-spacing:.2px; }
 .statusbar .icons { display:flex; align-items:center; gap:6px; }
 /* 内容区 */
-.screen { flex:1; display:flex; flex-direction:column; padding:0 16px; }
+.screen { flex:1; display:flex; flex-direction:column; padding:0 16px; overflow:hidden; }
 /* 顶栏 */
 .topbar { display:flex; justify-content:space-between; align-items:flex-start; padding:6px 4px 0; }
 .greet { font-size:20px; font-weight:700; color:var(--ink); }
@@ -34,16 +40,23 @@ body { background:#17171C; min-height:100vh; display:flex; justify-content:cente
 .top-right { text-align:right; }
 .date { font-size:13px; color:var(--ink); font-weight:500; }
 .bell { margin-top:6px; display:inline-flex; }
-/* 时间维度切换 */
-.seg { display:flex; background:#ECEAE3; border-radius:var(--radius-pill); padding:3px; margin:12px 0 10px; }
-.seg-item { flex:1; text-align:center; padding:7px 0; font-size:13px; color:var(--ink-2); border-radius:var(--radius-pill); display:flex; align-items:center; justify-content:center; gap:4px; }
-.seg-item.active { background:var(--card); color:var(--brand); font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,.06); }
-.seg-item .lock { color:#B9B7AF; display:inline-flex; }
-.lock-hint { font-size:10px; color:var(--ink-2); margin:-4px 6px 8px; display:flex; align-items:center; gap:4px; }
+
+/* ===== 五维 Tab 切换（今日/本周/本月/本年/人生） ===== */
+.seg { display:flex; background:#ECEAE3; border-radius:var(--radius-pill); padding:3px; margin:12px 0 6px; }
+.seg-item { flex:1; text-align:center; padding:8px 0; font-size:13px; color:var(--ink-2); border-radius:var(--radius-pill); display:flex; align-items:center; justify-content:center; gap:3px; cursor:pointer; transition:all .18s; -webkit-tap-highlight-color:transparent; }
+.seg-item.active { background:var(--card); color:var(--brand); font-weight:700; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+.lock-hint { font-size:10px; color:var(--ink-2); margin:0 6px 8px; display:flex; align-items:center; gap:4px; }
 .lock-hint .ldot { width:3px; height:3px; border-radius:50%; background:var(--gold); flex:none; }
+
+/* 面板容器 */
+.panels { flex:1; overflow-y:auto; }
+.panel { display:none; flex-direction:column; padding-bottom:8px; }
+.panel.active { display:flex; }
+
 /* 卡片通用 */
 .card { background:var(--card); border-radius:var(--radius-card); padding:14px 16px; margin-top:10px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
-/* 运势总览卡 */
+
+/* ============ 今日面板 ============ */
 .overview { border:1.5px solid var(--brand); }
 .ov-head { display:flex; justify-content:space-between; align-items:center; }
 .level { font-size:22px; font-weight:800; color:var(--ink); display:flex; align-items:center; gap:8px; }
@@ -54,10 +67,6 @@ body { background:#17171C; min-height:100vh; display:flex; justify-content:cente
 .bar { flex:1; height:8px; background:#EFEDE6; border-radius:var(--radius-pill); overflow:hidden; }
 .bar i { display:block; height:100%; background:var(--brand); border-radius:var(--radius-pill); }
 .press-num { font-size:15px; font-weight:700; color:var(--brand); flex:none; width:28px; text-align:right; }
-.year-banner { display:flex; justify-content:space-between; align-items:center; margin-top:12px; background:linear-gradient(90deg, #FBF7EF, #F6EDDA); border:1px solid rgba(201,168,106,.55); border-radius:12px; padding:9px 13px; }
-.year-banner .t { font-size:12px; font-weight:700; color:var(--ink); }
-.year-banner .t b { color:var(--gold); font-weight:800; }
-.year-banner .go { font-size:12px; font-weight:700; color:var(--gold); flex:none; }
 .gz-row { margin-top:10px; font-size:13px; color:var(--ink-2); display:flex; align-items:center; gap:8px; }
 .gz-row b { color:var(--ink); font-size:15px; letter-spacing:1px; }
 .shishen { font-size:11px; color:var(--gold); border:1px solid var(--gold); border-radius:var(--radius-pill); padding:1.5px 8px; }
@@ -68,7 +77,10 @@ body { background:#17171C; min-height:100vh; display:flex; justify-content:cente
 .six-row .s-name { flex:none; width:30px; font-size:12px; color:var(--ink-2); }
 .six-row .bar { height:6px; }
 .six-row .s-num { flex:none; width:24px; text-align:right; font-size:12px; font-weight:700; color:var(--brand); }
-/* 宜忌卡 */
+.year-banner { display:flex; justify-content:space-between; align-items:center; margin-top:12px; background:linear-gradient(90deg, #FBF7EF, #F6EDDA); border:1px solid rgba(201,168,106,.55); border-radius:12px; padding:9px 13px; }
+.year-banner .t { font-size:12px; font-weight:700; color:var(--ink); }
+.year-banner .t b { color:var(--gold); font-weight:800; }
+.year-banner .go { font-size:12px; font-weight:700; color:var(--gold); flex:none; }
 .yj-row { display:flex; align-items:center; gap:8px; }
 .yj-row + .yj-row { margin-top:10px; }
 .yj-label { flex:none; width:22px; height:22px; border-radius:7px; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; }
@@ -77,22 +89,67 @@ body { background:#17171C; min-height:100vh; display:flex; justify-content:cente
 .pill { font-size:13px; border-radius:var(--radius-pill); padding:5px 14px; font-weight:500; }
 .pill.ok { color:var(--success); background:#E7F4EE; }
 .pill.no { color:var(--danger); background:#FBEAE9; }
-/* 行动建议卡 */
 .card-title { font-size:15px; font-weight:700; color:var(--ink); }
 .action p { font-size:13px; color:var(--ink); line-height:1.7; margin-top:8px; }
 .action .reason { color:var(--ink-2); font-size:12px; }
-.checkin { display:inline-flex; align-items:center; gap:6px; margin-top:12px; background:var(--brand); color:#fff; font-size:13px; font-weight:600; border-radius:var(--radius-pill); padding:8px 22px; }
-.checkin .ck { font-size:12px; }
-/* 近期压力卡 */
-.stress-head { display:flex; justify-content:space-between; align-items:center; }
-.link { font-size:12px; color:var(--brand); }
-.sparkline { display:block; width:100%; height:56px; margin-top:10px; }
-.days { display:flex; justify-content:space-between; font-size:10px; color:var(--ink-2); margin-top:4px; }
-/* 对话引流 */
+.action .basis { margin-top:10px; padding-top:9px; border-top:1px dashed #EDE9E0; font-size:11px; color:var(--gold); }
 .goto-chat { margin-top:12px; background:var(--brand-soft); border-radius:var(--radius-card); padding:13px 16px; font-size:13px; color:var(--ink); display:flex; justify-content:space-between; align-items:center; }
 .goto-chat b { color:var(--brand); font-weight:700; }
-/* 免责声明 */
 .disclaimer { text-align:center; font-size:11px; color:var(--ink-2); margin:14px 0 10px; }
+
+/* ============ 周期运势条目（本周/本月预览复用） ============ */
+.period-head { display:flex; justify-content:space-between; align-items:center; }
+.period-head .ph-title { font-size:15px; font-weight:700; color:var(--ink); }
+.period-head .ph-sub { font-size:11px; color:var(--ink-2); }
+.period-head .ph-link { font-size:12px; color:var(--brand); }
+.fortune-list { margin-top:12px; display:flex; flex-direction:column; gap:10px; }
+.fortune-item { display:flex; align-items:center; gap:10px; }
+.fi-ic { flex:none; width:30px; height:30px; border-radius:9px; background:var(--brand-soft); display:flex; align-items:center; justify-content:center; }
+.fi-body { flex:1; min-width:0; }
+.fi-name { font-size:13px; font-weight:600; color:var(--ink); }
+.fi-progress { font-size:11px; color:var(--ink-2); margin-top:2px; }
+.fi-tag { flex:none; font-size:10.5px; font-weight:700; border-radius:var(--radius-pill); padding:3px 9px; }
+.fi-tag.warn { color:#D9772B; background:#FBEEDD; }
+.fi-tag.good { color:var(--success); background:#E7F4EE; }
+
+/* ============ 解锁完整版 通栏（本周/本月/本年 复用） ============ */
+.unlock { margin-top:14px; background:linear-gradient(90deg, #F3EFFA, #EEEFF9); border:1px solid rgba(74,78,143,.25); border-radius:14px; padding:13px 14px; display:flex; align-items:center; gap:10px; }
+.unlock .u-text { flex:1; font-size:12px; color:var(--ink); line-height:1.5; }
+.unlock .u-text b { color:var(--brand); font-weight:700; }
+.unlock .u-btn { flex:none; background:var(--brand); color:#fff; font-size:12.5px; font-weight:700; border-radius:var(--radius-pill); padding:9px 16px; display:inline-flex; align-items:center; gap:4px; }
+.spark { color:var(--gold); }
+
+/* ============ 本年面板 ============ */
+.year-hero { margin-top:10px; background:linear-gradient(160deg, #3E4278 0%, var(--brand) 60%, #5A5FA8 100%); border-radius:18px; padding:20px 18px 18px; color:#fff; position:relative; overflow:hidden; }
+.year-hero::after { content:""; position:absolute; right:-30px; top:-30px; width:120px; height:120px; border-radius:50%; background:radial-gradient(circle, rgba(201,168,106,.35), transparent 70%); }
+.yh-meta { font-size:12px; color:#D9DAEC; letter-spacing:1px; position:relative; z-index:1; }
+.yh-title { font-size:13px; color:#E9E9F4; margin-top:6px; position:relative; z-index:1; }
+.yh-four { font-size:38px; font-weight:800; letter-spacing:6px; margin-top:10px; position:relative; z-index:1; }
+.yh-four .seal { display:inline-block; font-size:13px; color:var(--gold); border:1.5px solid var(--gold); border-radius:8px; padding:2px 8px; vertical-align:middle; margin-left:8px; letter-spacing:2px; }
+.yh-kw { display:flex; gap:8px; margin-top:14px; position:relative; z-index:1; }
+.yh-kw span { font-size:12px; font-weight:700; color:var(--gold); background:rgba(201,168,106,.14); border:1px solid rgba(201,168,106,.5); border-radius:var(--radius-pill); padding:5px 13px; letter-spacing:1px; }
+.yh-desc { font-size:13px; color:#ECECF6; line-height:1.7; margin-top:14px; position:relative; z-index:1; }
+.yh-desc .fade { background:linear-gradient(90deg, transparent 70%, rgba(62,66,120,.9)); position:relative; }
+.year-detail-link { margin-top:12px; background:var(--card); border-radius:var(--radius-card); padding:13px 15px; display:flex; align-items:center; gap:10px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
+.ydl-text { flex:1; font-size:12.5px; color:var(--ink); line-height:1.5; }
+.ydl-text b { color:var(--brand); }
+.ydl-btn { flex:none; background:var(--brand); color:#fff; font-size:12.5px; font-weight:700; border-radius:var(--radius-pill); padding:9px 15px; }
+
+/* ============ 人生面板 ============ */
+.life-hero { margin-top:10px; background:var(--card); border-radius:var(--radius-card); padding:18px 16px 20px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
+.life-title { font-size:15px; font-weight:700; color:var(--ink); display:flex; align-items:center; gap:8px; }
+.life-title .lock-ic { color:var(--gold); }
+.life-sub { font-size:12px; color:var(--ink-2); margin-top:4px; }
+.life-bars { display:flex; justify-content:space-between; align-items:flex-end; gap:6px; margin-top:22px; height:150px; }
+.lb { flex:1; display:flex; flex-direction:column; align-items:center; gap:7px; }
+.lb-track { width:30px; height:110px; background:#F0EEE7; border-radius:15px; position:relative; overflow:hidden; }
+.lb-fill { position:absolute; left:0; right:0; bottom:0; border-radius:15px; }
+.lb-num { font-size:15px; font-weight:800; color:var(--ink); }
+.lb-name { font-size:11.5px; color:var(--ink-2); }
+.life-legend { margin-top:14px; display:flex; flex-wrap:wrap; gap:10px 14px; }
+.ll-item { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ink-2); }
+.ll-dot { width:8px; height:8px; border-radius:50%; }
+
 /* Tab栏 */
 .tabbar { flex:none; background:var(--card); border-top:1px solid #ECEAE4; display:flex; padding:7px 0 24px; }
 .tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:10px; color:var(--ink-2); }
@@ -113,7 +170,7 @@ body { background:#17171C; min-height:100vh; display:flex; justify-content:cente
   </div>
 
   <div class="screen">
-    <!-- 顶栏：问候+日期农历+通知 -->
+    <!-- 顶栏 -->
     <div class="topbar">
       <div>
         <div class="greet">早安，小玲</div>
@@ -127,94 +184,219 @@ body { background:#17171C; min-height:100vh; display:flex; justify-content:cente
       </div>
     </div>
 
-    <!-- 时间维度切换：日/周🔒/月🔒（周/月中期间上线） -->
+    <!-- 五维 Tab：今日 / 本周 / 本月 / 本年 / 人生 -->
     <div class="seg">
-      <div class="seg-item active">日</div>
-      <div class="seg-item">周
-        <a href="08-week.html" style="text-decoration:none;color:inherit"><span class="lock"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg></span></a>
+      <div class="seg-item active" data-tab="today" onclick="showTab('today')">今日</div>
+      <div class="seg-item" data-tab="week" onclick="showTab('week')">本周</div>
+      <div class="seg-item" data-tab="month" onclick="showTab('month')">本月</div>
+      <div class="seg-item" data-tab="year" onclick="showTab('year')">本年</div>
+      <div class="seg-item" data-tab="life" onclick="showTab('life')">人生</div>
+    </div>
+    <div class="lock-hint"><span class="ldot"></span>本周/本月/本年/人生 可免费预览 · 开通会员看完整版</div>
+
+    <div class="panels">
+      <!-- ===== 今日 ===== -->
+      <div class="panel active" id="panel-today">
+        <div class="card overview">
+          <div class="ov-head">
+            <div class="level">今日小吉 <span class="badge-ji">吉</span></div>
+            <div class="rizhu-tag">辛金日主</div>
+          </div>
+          <div class="press-row">
+            <span class="press-label">压力指数</span>
+            <div class="bar"><i style="width:45%"></i></div>
+            <span class="press-num">45</span>
+          </div>
+          <div class="gz-row">日柱 <b>辛亥</b> <span class="shishen">食神</span></div>
+          <div class="divider"></div>
+          <div class="six-title">今日六维</div>
+          <div class="six">
+            <div class="six-row"><span class="s-name">事业</span><div class="bar"><i style="width:68%"></i></div><span class="s-num">68</span></div>
+            <div class="six-row"><span class="s-name">财富</span><div class="bar"><i style="width:44%"></i></div><span class="s-num">44</span></div>
+            <div class="six-row"><span class="s-name">感情</span><div class="bar"><i style="width:72%"></i></div><span class="s-num">72</span></div>
+            <div class="six-row"><span class="s-name">健康</span><div class="bar"><i style="width:81%"></i></div><span class="s-num">81</span></div>
+            <div class="six-row"><span class="s-name">人际</span><div class="bar"><i style="width:55%"></i></div><span class="s-num">55</span></div>
+            <div class="six-row"><span class="s-name">学业</span><div class="bar"><i style="width:63%"></i></div><span class="s-num">63</span></div>
+          </div>
+        </div>
+
+        <a href="10-year.html" style="text-decoration:none;color:inherit">
+          <div class="year-banner">
+            <span class="t"><b>2027丁未</b> 年运报告已生成</span>
+            <span class="go">查看 →</span>
+          </div>
+        </a>
+
+        <div class="card">
+          <div class="yj-row">
+            <span class="yj-label yi">宜</span>
+            <span class="pill ok">见贵</span><span class="pill ok">谈事</span><span class="pill ok">学习</span>
+          </div>
+          <div class="yj-row">
+            <span class="yj-label ji">忌</span>
+            <span class="pill no">远行</span><span class="pill no">动土</span>
+          </div>
+        </div>
+
+        <div class="card action">
+          <div class="card-title">今日建议</div>
+          <p>今天建议忍住一次反驳。<br><span class="reason">今日能量主收敛，宜蓄力，适合把想说的话先沉一沉。</span></p>
+          <div class="basis">依据：辛金逢比肩日，气机内敛</div>
+        </div>
+
+        <div class="goto-chat"><span>想问更细？</span><b>去对话 ›</b></div>
+        <div class="disclaimer">内容由AI生成，仅供自我梳理参考</div>
       </div>
-      <div class="seg-item">月
-        <a href="09-month.html" style="text-decoration:none;color:inherit"><span class="lock"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg></span></a>
+
+      <!-- ===== 本周（预览） ===== -->
+      <div class="panel" id="panel-week">
+        <div class="card overview">
+          <div class="period-head">
+            <div>
+              <div class="ph-title">本周运势</div>
+              <div class="ph-sub">9.23 - 9.29 · 当前进行中</div>
+            </div>
+            <a href="08-week.html" style="text-decoration:none;color:inherit"><span class="ph-link">周运示例 ›</span></a>
+          </div>
+          <div class="fortune-list">
+            <div class="fortune-item">
+              <span class="fi-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D9772B" stroke-width="2" stroke-linecap="round"><path d="M12 3 2 21h20z"/><path d="M12 10v5"/></svg></span>
+              <div class="fi-body"><div class="fi-name">负压期</div><div class="fi-progress">已开始2天，5天后结束</div></div>
+              <span class="fi-tag warn">警戒</span>
+            </div>
+            <div class="fortune-item">
+              <span class="fi-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E9E6B" stroke-width="2" stroke-linecap="round"><path d="M12 3l2.8 6.5L22 10l-5 4.8 1.2 7L12 18l-6.2 3.8L7 14.8 2 10l7.2-.5z"/></svg></span>
+              <div class="fi-body"><div class="fi-name">感情冲刺期</div><div class="fi-progress">已开始2天，5天后结束</div></div>
+              <span class="fi-tag good">吉利</span>
+            </div>
+            <div class="fortune-item">
+              <span class="fi-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E9E6B" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+              <div class="fi-body"><div class="fi-name">契机显现</div><div class="fi-progress">已开始2天，5天后结束</div></div>
+              <span class="fi-tag good">吉利</span>
+            </div>
+          </div>
+        </div>
+        <a href="08-week.html" style="text-decoration:none;color:inherit">
+          <div class="unlock">
+            <div class="u-text"><span class="spark">✦</span> 快去查看<b>完整版</b>，了解更多运势详情吧</div>
+            <span class="u-btn">解锁完整版 →</span>
+          </div>
+        </a>
+        <div class="disclaimer">内容由AI生成，仅供自我梳理参考</div>
+      </div>
+
+      <!-- ===== 本月（预览） ===== -->
+      <div class="panel" id="panel-month">
+        <div class="card overview">
+          <div class="period-head">
+            <div>
+              <div class="ph-title">10月运势</div>
+              <div class="ph-sub">当前进行运势 · 已过22天</div>
+            </div>
+            <a href="09-month.html" style="text-decoration:none;color:inherit"><span class="ph-link">月运示例 ›</span></a>
+          </div>
+          <div class="fortune-list">
+            <div class="fortune-item">
+              <span class="fi-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D9772B" stroke-width="2" stroke-linecap="round"><path d="M12 3 2 21h20z"/></svg></span>
+              <div class="fi-body"><div class="fi-name">情绪起伏期</div><div class="fi-progress">已开始10天，21天后结束</div></div>
+              <span class="fi-tag warn">警戒</span>
+            </div>
+            <div class="fortune-item">
+              <span class="fi-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E9E6B" stroke-width="2" stroke-linecap="round"><path d="M12 3l2.8 6.5L22 10l-5 4.8 1.2 7L12 18l-6.2 3.8L7 14.8 2 10l7.2-.5z"/></svg></span>
+              <div class="fi-body"><div class="fi-name">感情冲刺期</div><div class="fi-progress">已开始10天，21天后结束</div></div>
+              <span class="fi-tag good">吉利</span>
+            </div>
+            <div class="fortune-item">
+              <span class="fi-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E9E6B" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/></svg></span>
+              <div class="fi-body"><div class="fi-name">奇迹的开端</div><div class="fi-progress">已开始10天，21天后结束</div></div>
+              <span class="fi-tag good">吉利</span>
+            </div>
+          </div>
+        </div>
+        <a href="09-month.html" style="text-decoration:none;color:inherit">
+          <div class="unlock">
+            <div class="u-text"><span class="spark">✦</span> 快去查看<b>完整版</b>，了解更多运势详情吧</div>
+            <span class="u-btn">解锁完整版 →</span>
+          </div>
+        </a>
+        <div class="disclaimer">内容由AI生成，仅供自我梳理参考</div>
+      </div>
+
+      <!-- ===== 本年 ===== -->
+      <div class="panel" id="panel-year">
+        <div class="year-hero">
+          <div class="yh-meta">2026 · 丙午流年</div>
+          <div class="yh-title">2026 年度报告</div>
+          <div class="yh-four">快乐之年<span class="seal">年度</span></div>
+          <div class="yh-kw">
+            <span>机遇</span><span>学识</span><span>文书</span><span>情感</span>
+          </div>
+          <div class="yh-desc">丙火官星制劫护身，全年主调明朗向上；春末文书显、夏际学识长，秋后情感迎来暖意窗口。<span class="fade">……</span></div>
+        </div>
+        <a href="10-year.html" style="text-decoration:none;color:inherit">
+          <div class="year-detail-link">
+            <div class="ydl-text"><span class="spark">✦</span> 快去查看<b>完整版</b>，了解更多运势详情吧<br><span style="color:var(--ink-2);font-size:11px">含四季度节奏 · 大运交接 · 年度行动建议</span></div>
+            <span class="ydl-btn">解锁完整版 →</span>
+          </div>
+        </a>
+        <div class="disclaimer">内容由AI生成，仅供自我梳理参考</div>
+      </div>
+
+      <!-- ===== 人生 ===== -->
+      <div class="panel" id="panel-life">
+        <div class="life-hero">
+          <div class="life-title">一生格局 · 五维能量
+            <span class="lock-ic">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>
+            </span>
+          </div>
+          <div class="life-sub">基于命盘长期格局推演 · 仅供参考</div>
+
+          <div class="life-bars">
+            <div class="lb">
+              <div class="lb-num" style="color:var(--c-love)">68</div>
+              <div class="lb-track"><div class="lb-fill" style="height:68%;background:linear-gradient(180deg,#F4B8C4,#E89AAA)"></div></div>
+              <div class="lb-name">恋爱</div>
+            </div>
+            <div class="lb">
+              <div class="lb-num" style="color:var(--c-marry)">55</div>
+              <div class="lb-track"><div class="lb-fill" style="height:55%;background:linear-gradient(180deg,#5DB8E8,#3A9BD4)"></div></div>
+              <div class="lb-name">婚姻</div>
+            </div>
+            <div class="lb">
+              <div class="lb-num" style="color:var(--c-wealth)">72</div>
+              <div class="lb-track"><div class="lb-fill" style="height:72%;background:linear-gradient(180deg,#E8B547,#D49A2C)"></div></div>
+              <div class="lb-name">财富</div>
+            </div>
+            <div class="lb">
+              <div class="lb-num" style="color:var(--c-career)">83</div>
+              <div class="lb-track"><div class="lb-fill" style="height:83%;background:linear-gradient(180deg,#9B8FD4,#7E70B8)"></div></div>
+              <div class="lb-name">事业</div>
+            </div>
+            <div class="lb">
+              <div class="lb-num" style="color:var(--c-study)">60</div>
+              <div class="lb-track"><div class="lb-fill" style="height:60%;background:linear-gradient(180deg,#4A90E2,#2F73C8)"></div></div>
+              <div class="lb-name">学业</div>
+            </div>
+          </div>
+
+          <div class="life-legend">
+            <div class="ll-item"><span class="ll-dot" style="background:var(--c-love)"></span>恋爱</div>
+            <div class="ll-item"><span class="ll-dot" style="background:var(--c-marry)"></span>婚姻</div>
+            <div class="ll-item"><span class="ll-dot" style="background:var(--c-wealth)"></span>财富</div>
+            <div class="ll-item"><span class="ll-dot" style="background:var(--c-career)"></span>事业</div>
+            <div class="ll-item"><span class="ll-dot" style="background:var(--c-study)"></span>学业</div>
+          </div>
+        </div>
+        <a href="10-year.html" style="text-decoration:none;color:inherit">
+          <div class="unlock">
+            <div class="u-text"><span class="spark">✦</span> 解锁<b>完整人生报告</b>，查看五维详解与改运建议</div>
+            <span class="u-btn">解锁完整版 →</span>
+          </div>
+        </a>
+        <div class="disclaimer">内容由AI生成，仅供自我梳理参考</div>
       </div>
     </div>
-    <div class="lock-hint"><span class="ldot"></span>周运/月运可免费预览 · 开通会员看完整版</div>
-
-    <!-- 运势总览卡（主视觉）+ 六维条（方案B） -->
-    <div class="card overview">
-      <div class="ov-head">
-        <div class="level">今日小吉 <span class="badge-ji">吉</span></div>
-        <div class="rizhu-tag">辛金日主</div>
-      </div>
-      <div class="press-row">
-        <span class="press-label">压力指数</span>
-        <div class="bar"><i style="width:45%"></i></div>
-        <span class="press-num">45</span>
-      </div>
-      <div class="gz-row">日柱 <b>辛亥</b> <span class="shishen">食神</span></div>
-      <div class="divider"></div>
-      <div class="six-title">今日六维</div>
-      <div class="six">
-        <div class="six-row"><span class="s-name">事业</span><div class="bar"><i style="width:68%"></i></div><span class="s-num">68</span></div>
-        <div class="six-row"><span class="s-name">财富</span><div class="bar"><i style="width:44%"></i></div><span class="s-num">44</span></div>
-        <div class="six-row"><span class="s-name">感情</span><div class="bar"><i style="width:72%"></i></div><span class="s-num">72</span></div>
-        <div class="six-row"><span class="s-name">健康</span><div class="bar"><i style="width:81%"></i></div><span class="s-num">81</span></div>
-        <div class="six-row"><span class="s-name">人际</span><div class="bar"><i style="width:55%"></i></div><span class="s-num">55</span></div>
-        <div class="six-row"><span class="s-name">学业</span><div class="bar"><i style="width:63%"></i></div><span class="s-num">63</span></div>
-      </div>
-    </div>
-
-    <!-- 年运报告入口横幅 -->
-    <a href="10-year.html" style="text-decoration:none;color:inherit">
-      <div class="year-banner">
-        <span class="t"><b>2027丁未</b> 年运报告已生成</span>
-        <span class="go">查看 →</span>
-      </div>
-    </a>
-
-    <!-- 宜忌卡 -->
-    <div class="card">
-      <div class="yj-row">
-        <span class="yj-label yi">宜</span>
-        <span class="pill ok">见贵</span><span class="pill ok">谈事</span><span class="pill ok">学习</span>
-      </div>
-      <div class="yj-row">
-        <span class="yj-label ji">忌</span>
-        <span class="pill no">远行</span><span class="pill no">动土</span>
-      </div>
-    </div>
-
-    <!-- 行动建议卡（今日修行） -->
-    <div class="card action">
-      <div class="card-title">今日修行</div>
-      <p>今天建议忍住一次反驳，<br><span class="reason">金气收敛，养气之举。</span></p>
-      <span class="checkin"><span class="ck">✓</span> 打卡</span>
-    </div>
-
-    <!-- 近期压力卡 -->
-    <div class="card">
-      <div class="stress-head">
-        <span class="card-title">近期压力</span>
-        <span class="link">查看本周运势 ›</span>
-      </div>
-      <svg class="sparkline" viewBox="0 0 326 56" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#4A4E8F" stop-opacity="0.18"/>
-            <stop offset="1" stop-color="#4A4E8F" stop-opacity="0"/>
-          </linearGradient>
-        </defs>
-        <path d="M8 40 L60 33 L112 41 L164 28 L216 22 L268 12 L318 19 L318 56 L8 56 Z" fill="url(#sparkFill)"/>
-        <polyline points="8,40 60,33 112,41 164,28 216,22 268,12 318,19" fill="none" stroke="#4A4E8F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="318" cy="19" r="3.5" fill="#4A4E8F" stroke="#FFFFFF" stroke-width="1.5"/>
-      </svg>
-      <div class="days"><span>9/17</span><span>9/18</span><span>9/19</span><span>9/20</span><span>9/21</span><span>9/22</span><span>今天</span></div>
-    </div>
-
-    <!-- 对话引流 -->
-    <div class="goto-chat"><span>想问更细？</span><b>去对话 ›</b></div>
-
-    <!-- 免责声明 -->
-    <div class="disclaimer">内容由AI生成，仅供自我梳理参考</div>
   </div>
 
   <!-- Tab栏 -->
@@ -234,5 +416,17 @@ body { background:#17171C; min-height:100vh; display:flex; justify-content:cente
   </div>
   <div class="home-indicator"></div>
 </div>
+<script>
+function showTab(name){
+  document.querySelectorAll('.seg-item').forEach(function(el){
+    el.classList.toggle('active', el.dataset.tab===name);
+  });
+  document.querySelectorAll('.panel').forEach(function(el){
+    el.classList.toggle('active', el.id===('panel-'+name));
+  });
+  // 滚回顶部
+  var p=document.querySelector('.panels'); if(p) p.scrollTop=0;
+}
+</script>
 </body>
 </html>

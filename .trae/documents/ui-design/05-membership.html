@@ -38,17 +38,18 @@ body { background:#17171C; min-height:100vh; display:flex; justify-content:cente
 .b-tags { display:flex; gap:6px; margin-top:14px; flex-wrap:wrap; }
 .b-tag { font-size:10.5px; color:#F5E9CE; background:rgba(201,168,106,.18); border:1px solid rgba(201,168,106,.45); border-radius:var(--radius-pill); padding:3.5px 10px; }
 .banner .glow { position:absolute; right:-38px; top:-38px; width:130px; height:130px; border-radius:50%; background:radial-gradient(circle, rgba(201,168,106,.35), transparent 70%); }
-/* 订阅档位卡 */
-.plans { display:flex; gap:9px; margin-top:14px; }
-.plan { flex:1; background:var(--card); border:1.5px solid #EAE7DF; border-radius:14px; padding:14px 6px 12px; text-align:center; position:relative; }
+/* 订阅档位卡：两行三列 */
+.plans { display:flex; flex-wrap:wrap; gap:9px; margin-top:14px; }
+.plan { flex:1 1 28%; min-width:0; background:var(--card); border:1.5px solid #EAE7DF; border-radius:14px; padding:14px 6px 12px; text-align:center; position:relative; }
 .plan.sel { border:2px solid var(--gold); background:#FFFDF8; box-shadow:0 2px 8px rgba(201,168,106,.18); }
-.plan .p-badge { position:absolute; top:-9px; left:50%; transform:translateX(-50%); background:var(--gold); color:#fff; font-size:10px; font-weight:700; border-radius:var(--radius-pill); padding:2px 10px; }
+.plan .p-badge { position:absolute; top:-9px; left:50%; transform:translateX(-50%); background:var(--gold); color:#fff; font-size:10px; font-weight:700; border-radius:var(--radius-pill); padding:2px 10px; white-space:nowrap; }
 .plan .p-tag { position:absolute; top:-9px; left:50%; transform:translateX(-50%); background:var(--brand); color:#fff; font-size:10px; font-weight:700; border-radius:var(--radius-pill); padding:2px 9px; white-space:nowrap; }
 .plan .p-name { font-size:13px; color:var(--ink-2); margin-top:2px; }
 .plan.sel .p-name { color:var(--ink); font-weight:600; }
-.plan .p-price { font-size:22px; font-weight:800; color:var(--ink); margin-top:6px; }
+.plan .p-price { font-size:21px; font-weight:800; color:var(--ink); margin-top:6px; }
 .plan .p-price .rmb { font-size:13px; font-weight:700; }
-.plan .p-unit { font-size:11px; color:var(--ink-2); margin-top:2px; }
+.plan .p-strike { font-size:11px; color:var(--ink-2); text-decoration:line-through; margin-top:3px; }
+.plan .p-first { font-size:11px; color:var(--gold); font-weight:600; margin-top:3px; }
 .plan.sel .p-price { color:var(--gold); }
 /* 权益对比表 */
 .card { background:var(--card); border-radius:var(--radius-card); padding:14px 16px; margin-top:14px; box-shadow:0 1px 4px rgba(43,43,51,.04); }
@@ -101,42 +102,60 @@ td .lockic { display:inline-flex; vertical-align:-2px; color:#B9B7AF; }
       <div class="b-title">趣算算VIP</div>
       <div class="b-sub">专属命理护航</div>
       <div class="b-tags">
-        <span class="b-tag">每日10次对话</span>
+        <span class="b-tag">报告免费解锁</span>
+        <span class="b-tag">每日5次AI咨询</span>
         <span class="b-tag">周运月运解锁</span>
-        <span class="b-tag">深度报告免费</span>
       </div>
     </div>
 
-    <!-- 订阅档位卡：月25 / 季58（荐）/ 年178（首月9.9，选中） -->
+    <!-- 订阅档位卡：连续包月/连续包年/一个月/三个月/六个月/十二个月 -->
     <div class="plans">
+      <div class="plan sel">
+        <div class="p-badge">限首月5折</div>
+        <div class="p-name">连续包月</div>
+        <div class="p-price"><span class="rmb">¥</span>13.9</div>
+        <div class="p-first">首月价 · 次月¥27.3/月</div>
+        <div class="p-strike">原价 ¥39</div>
+      </div>
       <div class="plan">
-        <div class="p-name">月卡</div>
-        <div class="p-price"><span class="rmb">¥</span>25</div>
-        <div class="p-unit">/月</div>
+        <div class="p-tag">省¥89.7</div>
+        <div class="p-name">连续包年</div>
+        <div class="p-price"><span class="rmb">¥</span>209.3</div>
+        <div class="p-strike">原价 ¥299</div>
+      </div>
+      <div class="plan">
+        <div class="p-name">一个月</div>
+        <div class="p-price"><span class="rmb">¥</span>34.3</div>
+        <div class="p-strike">原价 ¥49</div>
+      </div>
+      <div class="plan">
+        <div class="p-name">三个月</div>
+        <div class="p-price"><span class="rmb">¥</span>83.3</div>
+        <div class="p-strike">原价 ¥119</div>
       </div>
       <div class="plan">
         <div class="p-badge">荐</div>
-        <div class="p-name">季卡</div>
-        <div class="p-price"><span class="rmb">¥</span>58</div>
-        <div class="p-unit">/季</div>
+        <div class="p-name">六个月</div>
+        <div class="p-price"><span class="rmb">¥</span>153.3</div>
+        <div class="p-strike">原价 ¥219</div>
       </div>
-      <div class="plan sel">
-        <div class="p-tag">首月9.9</div>
-        <div class="p-name">年卡</div>
-        <div class="p-price"><span class="rmb">¥</span>178</div>
-        <div class="p-unit">/年</div>
+      <div class="plan">
+        <div class="p-name">十二个月</div>
+        <div class="p-price"><span class="rmb">¥</span>279.3</div>
+        <div class="p-strike">原价 ¥399</div>
       </div>
     </div>
+    <div style="font-size:10.5px; color:var(--ink-2); margin-top:9px; line-height:1.6;">连续包月/包年到期自动续费，可随时取消；首月优惠以实际支付金额为准</div>
 
     <!-- 权益对比表 -->
     <div class="card">
       <div class="card-title">权益对比</div>
       <table>
         <tr><th>权益</th><th>会员</th><th>非会员</th></tr>
-        <tr><td>每日对话</td><td class="good">10次</td><td class="dim">扣分</td></tr>
-        <tr><td>每日运势</td><td class="good">免费</td><td class="dim">限免</td></tr>
+        <tr><td>AI对话咨询</td><td class="good">每日免费5次</td><td class="dim">单次付费</td></tr>
+        <tr><td>深度报告解锁</td><td class="good">免费</td><td class="dim">付费解锁</td></tr>
         <tr><td>周运月运</td><td class="good">解锁</td><td class="dim"><span class="lockic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg></span></td></tr>
-        <tr><td>深度报告</td><td class="good">解锁</td><td class="dim">单买</td></tr>
+        <tr><td>每日运势</td><td class="good">免费</td><td class="good">免费</td></tr>
         <tr><td>流年流月</td><td class="good">解锁</td><td class="dim">限免</td></tr>
       </table>
     </div>
@@ -144,13 +163,13 @@ td .lockic { display:inline-flex; vertical-align:-2px; color:#B9B7AF; }
     <!-- 协议勾选 -->
     <div class="agree">
       <span class="checkbox">✓</span>
-      <span>同意<a>《会员协议》</a><a>《自动续费》</a></span>
+      <span>同意<a href="13-subscription.html">《会员订阅服务协议》</a><a href="12-privacy.html">《隐私政策》</a></span>
     </div>
 
     <!-- 底部固定按钮 -->
     <div class="bottom-cta">
       <a href="06-pay.html" style="text-decoration:none;color:inherit">
-        <div class="cta-btn">立即订阅 <span class="price">178/年</span></div>
+        <div class="cta-btn">立即开通 <span class="price">首月¥13.9</span></div>
       </a>
     </div>
   </div>

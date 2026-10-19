@@ -22,6 +22,8 @@ from app.api.legal import router as legal_router
 from app.api.admin import router as admin_router
 from app.api.eval import router as eval_router
 from app.api.wx_jssdk import router as wx_jssdk_router
+from app.api.daily import router as daily_router
+from app.api.chart import router as chart_router
 
 
 @asynccontextmanager
@@ -72,6 +74,8 @@ app.include_router(legal_router)
 app.include_router(admin_router)
 app.include_router(eval_router)
 app.include_router(wx_jssdk_router)
+app.include_router(daily_router)
+app.include_router(chart_router)
 
 
 @app.get("/api/skills")

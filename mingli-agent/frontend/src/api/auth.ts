@@ -22,6 +22,7 @@ export interface UserInfo {
   id: number
   phone: string
   name: string
+  email?: string | null
   avatar: string | null
   points: number
   created_at: string

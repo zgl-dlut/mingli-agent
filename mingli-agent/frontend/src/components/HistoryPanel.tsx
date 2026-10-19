@@ -7,17 +7,19 @@ import { authApi } from '../api/auth'
 import type { Person } from '../types'
 import { genderToText } from '../utils/gender'
 import { solarToLunar } from '../utils/lunarConvert'
+import { isApp } from '../utils/platform'
 import ContactModal from './ContactModal'
 
 interface HistoryPanelProps {
   isOpen: boolean
   onClose: () => void
   onNavigateToChat: (personId: number) => void
+  onNavigateToChart: (personId: number) => void
   onNavigateToAddPerson: () => void
   isDesktop?: boolean
 }
 
-export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavigateToAddPerson, isDesktop = false }: HistoryPanelProps) {
+export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavigateToChart, onNavigateToAddPerson, isDesktop = false }: HistoryPanelProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const { persons, deletePerson, renamePerson } = usePersonStore()
@@ -337,46 +339,67 @@ export default function HistoryPanel({ isOpen, onClose, onNavigateToChat, onNavi
                           {person.name || `${getDisplayBirthDate(person)} ${person.birth_time}`}
                         </h3>
                         <p className="text-gray-400 text-xs">
-                          {person.birth_place} · {person.calendar_type === 'solar' ? '公历' : '农历'} · {genderToText(person.gender)}
+                          {person.birth_location} · {person.calendar_type === 'solar' ? '公历' : '农历'} · {genderToText(person.gender)}
                         </p>
                       </>
                     )}
                   </div>
                   {editingId !== person.id && (
-                    <div className="relative">
-                      {/* 更多操作按钮 */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setExpandedMenuId(expandedMenuId === person.id ? null : person.id)
-                        }}
-                        className="text-gray-400 hover:text-gray-600 text-xs p-1 transition-colors"
-                      >
-                        ⋮
-                      </button>
-                      {/* 下拉菜单 */}
-                      {expandedMenuId === person.id && (
-                        <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50 min-w-[80px]">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleStartEdit(person)
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-primary-500"
-                          >
-                            编辑
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDeletePerson(e, person.id)
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-red-400"
-                          >
-                            删除
-                          </button>
-                        </div>
+                    <div className="flex items-center gap-1">
+                      {/* 看命盘入口（App 端专属） */}
+                      {isApp() && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setExpandedMenuId(null)
+                            if (isDesktop) {
+                              onNavigateToChart(person.id)
+                            } else {
+                              handleClose()
+                              setTimeout(() => onNavigateToChart(person.id), 260)
+                            }
+                          }}
+                          className="text-xs px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+                          style={{ color: '#8B6F5A', backgroundColor: '#F5F0E8' }}
+                        >
+                          看命盘
+                        </button>
                       )}
+                      <div className="relative">
+                        {/* 更多操作按钮 */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setExpandedMenuId(expandedMenuId === person.id ? null : person.id)
+                          }}
+                          className="text-gray-400 hover:text-gray-600 text-xs p-1 transition-colors"
+                        >
+                          ⋮
+                        </button>
+                        {/* 下拉菜单 */}
+                        {expandedMenuId === person.id && (
+                          <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50 min-w-[80px]">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleStartEdit(person)
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-primary-500"
+                            >
+                              编辑
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDeletePerson(e, person.id)
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 hover:text-red-400"
+                            >
+                              删除
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

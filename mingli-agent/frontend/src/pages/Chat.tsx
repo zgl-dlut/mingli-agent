@@ -845,10 +845,10 @@ export default function Chat() {
     analyzeBazi({
       birth_date: person.birth_date,
       birth_time: person.birth_time,
-      longitude: person.longitude || 116.4,
-      latitude: person.latitude || 39.9,
+      longitude: person.birth_lng || 116.4,
+      latitude: person.birth_lat || 39.9,
       gender: person.gender,
-      location: person.birth_place || '',
+      location: person.birth_location || '',
     })
       .then((result) => {
         setBaziResult(result)
@@ -1383,10 +1383,10 @@ export default function Chat() {
                 analyzeBazi({
                   birth_date: person.birth_date,
                   birth_time: person.birth_time,
-                  longitude: person.longitude || 116.4,
-                  latitude: person.latitude || 39.9,
+                  longitude: person.birth_lng || 116.4,
+                  latitude: person.birth_lat || 39.9,
                   gender: person.gender,
-                  location: person.birth_place || '',
+                  location: person.birth_location || '',
                 })
                   .then((result) => {
                     setBaziResult(result)

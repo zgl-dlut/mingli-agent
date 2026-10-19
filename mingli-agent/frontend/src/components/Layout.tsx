@@ -50,6 +50,10 @@ export default function Layout() {
   const handleNavigateToChat = (personId: number) => {
     navigate(`/chat/${personId}`)
   }
+
+  const handleNavigateToChart = (personId: number) => {
+    navigate(`/chart/${personId}`)
+  }
   
   const handleNavigateToAddPerson = () => {
     navigate('/', { replace: true, state: { timestamp: Date.now() } })
@@ -77,6 +81,7 @@ export default function Layout() {
             isOpen={isHistoryOpen}
             onClose={handleCloseHistory}
             onNavigateToChat={handleNavigateToChat}
+            onNavigateToChart={handleNavigateToChart}
             onNavigateToAddPerson={handleNavigateToAddPerson}
             isDesktop={true}
           />
@@ -93,6 +98,7 @@ export default function Layout() {
             isOpen={isHistoryOpen}
             onClose={() => setIsHistoryOpen(false)}
             onNavigateToChat={handleNavigateToChat}
+            onNavigateToChart={handleNavigateToChart}
             onNavigateToAddPerson={handleNavigateToAddPerson}
           />
         )}

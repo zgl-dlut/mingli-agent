@@ -1,5 +1,8 @@
 import { useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { useUserStore } from '../store/userStore'
+import { usePersonStore } from '../store/personStore'
+import { isApp } from '../utils/platform'
 import ShareModal from './ShareModal'
 
 interface HeaderProps {
@@ -10,7 +13,19 @@ interface HeaderProps {
 
 export default function Header({ onToggleHistory, isDesktop = false, isHistoryOpen = false }: HeaderProps) {
   const { user, isLoggedIn } = useUserStore()
+  const { persons } = usePersonStore()
+  const location = useLocation()
   const [showShare, setShowShare] = useState(false)
+
+  // 命盘入口指向默认（第一个）档案；无档案时回落到首页去创建
+  // 今日 / 命盘为 App 端专属功能，浏览器直开（H5/PC）不展示入口
+  const chartPath = persons.length > 0 ? `/chart/${persons[0].id}` : '/'
+  const navItems = isApp()
+    ? [
+        { to: '/today', label: '今日', active: location.pathname === '/today' },
+        { to: chartPath, label: '命盘', active: location.pathname.startsWith('/chart') },
+      ]
+    : []
 
   return (
     <header style={{ backgroundColor: '#8b6f5a', height: '64px', padding: '0 12px' }} className="flex items-center justify-between sticky top-0 z-40">
@@ -42,6 +57,27 @@ export default function Header({ onToggleHistory, isDesktop = false, isHistoryOp
           </button>
         )}
         <span className="logo-text" style={{ lineHeight: '32px', letterSpacing: '0' }}>趣算算</span>
+        {/* 今日 / 命盘 切换（App 端专属） */}
+        {navItems.length > 0 && (
+          <nav className="flex items-center gap-1 ml-1">
+            {navItems.map((item) => (
+              <Link
+                key={item.label}
+                to={item.to}
+                style={{
+                  color: item.active ? '#f4f2f0' : 'rgba(244,242,240,0.65)',
+                  fontSize: '13px',
+                  padding: '4px 8px',
+                  borderRadius: '999px',
+                  backgroundColor: item.active ? 'rgba(244,242,240,0.18)' : 'transparent',
+                  textDecoration: 'none',
+                }}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        )}
       </div>
 
       {/* 右侧：分享赚积分 + 积分 */}

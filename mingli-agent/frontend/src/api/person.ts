@@ -5,7 +5,6 @@ import apiClient from './client'
 
 export interface PersonResponse {
   id: number
-  user_id: number
   name: string
   gender: string
   birth_date: string
@@ -16,7 +15,8 @@ export interface PersonResponse {
   calendar_type?: string
   province?: string
   city?: string
-  bazi_data?: Record<string, unknown>
+  session_id: number | null
+  bazi_data?: Record<string, unknown> | null
   created_at: string
 }
 

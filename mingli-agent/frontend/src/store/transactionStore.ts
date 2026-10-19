@@ -34,6 +34,7 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
       id: Date.now() + nextId++,
       type,
       points,
+      biz_type: null,
       order_id: null,
       description,
       created_at: new Date().toISOString(),

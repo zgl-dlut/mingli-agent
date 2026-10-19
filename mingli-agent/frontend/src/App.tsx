@@ -4,6 +4,8 @@ import { useUserStore } from './store/userStore'
 import Layout from './components/Layout'
 import AddPerson from './pages/AddPerson'
 import Chat from './pages/Chat'
+import Today from './pages/Today'
+import Chart from './pages/Chart'
 import LoginPage from './pages/LoginPage'
 import LegalPage from './pages/LegalPage'
 import FeedbackDashboard from './pages/FeedbackDashboard'
@@ -15,6 +17,7 @@ import EvalDashboard from './pages/EvalDashboard'
 import AdminRechargePage from './pages/AdminRechargePage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import AdminLoginPage from './pages/AdminLoginPage'
+import { isApp } from './utils/platform'
 
 /**
  * 分享链接邀请参数捕获：/?ref=邀请码 → localStorage（登录注册时带给后端）
@@ -76,6 +79,14 @@ function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/** App 端专属路由：浏览器直开（H5/PC）时重定向回首页，不暴露页面 */
+function AppOnlyRoute({ children }: { children: React.ReactNode }) {
+  if (!isApp()) {
+    return <Navigate to="/" replace />
+  }
+  return <>{children}</>
+}
+
 const router = createBrowserRouter([
   {
     path: '/login',
@@ -120,6 +131,8 @@ const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <AddPerson /> },
+      { path: 'today', element: <AppOnlyRoute><Today /></AppOnlyRoute> },
+      { path: 'chart/:personId', element: <AppOnlyRoute><Chart /></AppOnlyRoute> },
       { path: 'chat/:personId', element: <Chat /> },
       { path: 'points', element: <PointsHistoryPage /> },
       { path: 'recharge', element: <RechargePage /> },

@@ -112,7 +112,7 @@ export default function AddPerson() {
 
     // 去重检查（用转换后的公历日期）
     const duplicate = persons.find(
-      (p) => p.gender === gender && p.birth_date === birthDate && p.birth_time === birthTime && p.birth_place === birthPlace
+      (p) => p.gender === gender && p.birth_date === birthDate && p.birth_time === birthTime && p.birth_location === birthPlace
     )
     if (duplicate) {
       setError('该生辰已存在')
@@ -136,7 +136,7 @@ export default function AddPerson() {
         gender,
         birth_date: birthDate,
         birth_time: birthTime,
-        birth_place: birthPlace,
+        birth_location: birthPlace,
         province,
         city,
         calendar_type: calendarType,

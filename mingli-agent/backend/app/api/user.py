@@ -43,6 +43,7 @@ async def get_profile(
 
     return {
         "id": current_user.id,
+        "phone": current_user.phone,
         "name": current_user.name,
         "email": current_user.email,
         "avatar": current_user.avatar,
@@ -70,6 +71,7 @@ async def update_profile(
     await db.refresh(current_user)
     return {
         "id": current_user.id,
+        "phone": current_user.phone,
         "name": current_user.name,
         "email": current_user.email,
         "avatar": current_user.avatar,
