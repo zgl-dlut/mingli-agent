@@ -374,20 +374,21 @@ body {
 
 /* ===== 侧滑历史面板动画 ===== */
 .history-panel-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   background: rgba(45, 42, 39, 0.22);
   z-index: 50;
   animation: fadeIn 0.2s ease-out;
 }
 
+/* 抽屉锚定 App 容器（容器 relative + overflow hidden），呈现纯 App 侧滑形态 */
 .history-panel {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   bottom: 0;
   width: 320px;
-  max-width: 85vw;
+  max-width: 85%;
   background: #e9e7e3;
   z-index: 51;
   animation: slideInLeft 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
@@ -398,34 +399,6 @@ body {
 
 .history-panel.panel-exit {
   animation: slideOutLeft 0.25s ease-in forwards;
-}
-
-/* 桌面端历史面板 - 固定在左侧，覆盖导航栏 */
-@media (min-width: 768px) {
-  .history-panel-desktop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 320px;
-    max-width: 320px;
-    z-index: 50;
-    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1);
-    animation: none;
-    flex-shrink: 0;
-    transition: width 0.3s ease;
-  }
-
-  .history-panel-overlay {
-    background: transparent;
-  }
-  
-  .history-panel-desktop.panel-exit {
-    animation: none;
-    width: 0;
-    overflow: hidden;
-    box-shadow: none;
-  }
 }
 
 /* ===== 充值弹层动画 ===== */

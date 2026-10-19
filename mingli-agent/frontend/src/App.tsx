@@ -6,6 +6,8 @@ import AddPerson from './pages/AddPerson'
 import Chat from './pages/Chat'
 import Today from './pages/Today'
 import Chart from './pages/Chart'
+import ProfilePage from './pages/ProfilePage'
+import PersonsPage from './pages/PersonsPage'
 import LoginPage from './pages/LoginPage'
 import LegalPage from './pages/LegalPage'
 import FeedbackDashboard from './pages/FeedbackDashboard'
@@ -133,6 +135,8 @@ const router = createBrowserRouter([
       { index: true, element: <AddPerson /> },
       { path: 'today', element: <AppOnlyRoute><Today /></AppOnlyRoute> },
       { path: 'chart/:personId', element: <AppOnlyRoute><Chart /></AppOnlyRoute> },
+      { path: 'profile', element: <ProfilePage /> },
+      { path: 'persons', element: <PersonsPage /> },
       { path: 'chat/:personId', element: <Chat /> },
       { path: 'points', element: <PointsHistoryPage /> },
       { path: 'recharge', element: <RechargePage /> },
