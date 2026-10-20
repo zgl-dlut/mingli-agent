@@ -64,7 +64,7 @@ export default function RechargePage() {
       QRCode.toCanvas(qrCanvasRef.current, qrCodeUrl, {
         width: 240,
         margin: 2,
-        color: { dark: '#363330', light: '#ffffff' },
+        color: { dark: '#2B2B33', light: '#ffffff' },
       }).catch((err) => {
         console.error('[RechargePage] 二维码生成失败:', err)
       })
@@ -230,7 +230,7 @@ export default function RechargePage() {
       </div>
 
       {/* 当前积分 */}
-      <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: '#eceae6' }}>
+      <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: '#FFFFFF' }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center">
             <span className="text-yellow-400 text-xl mr-2">⭐</span>
@@ -282,7 +282,7 @@ export default function RechargePage() {
                   onChange={(e) => handleCustomInput(e.target.value)}
                   placeholder={`输入 ${MIN_POINTS}~${MAX_POINTS} 之间的整数`}
                   className="flex-1 px-4 py-3 rounded-xl border-2 border-primary-600 bg-primary-50 text-sm outline-none transition-all"
-                  style={{ color: '#44403d' }}
+                  style={{ color: '#2B2B33' }}
                   autoFocus
                 />
                 <span className="text-sm text-gray-500 whitespace-nowrap">积分</span>
@@ -318,7 +318,7 @@ export default function RechargePage() {
           onClick={handleRecharge}
           disabled={isLoading || effectivePoints === 0 || qrCodeUrl !== null}
           className="w-full py-3.5 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+          style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
         >
           {isLoading ? '处理中...' : qrCodeUrl ? '请使用微信扫码支付' : effectivePoints > 0 ? `充值 ${effectivePoints} 积分 (¥${(effectivePoints / 10).toFixed(1)})` : '请选择或输入积分'}
         </button>
@@ -330,7 +330,7 @@ export default function RechargePage() {
 
       {/* Native 支付二维码 */}
       {qrCodeUrl && !qrExpired && (
-        <div className="mt-4 p-6 rounded-xl text-center" style={{ backgroundColor: '#eceae6' }}>
+        <div className="mt-4 p-6 rounded-xl text-center" style={{ backgroundColor: '#FFFFFF' }}>
           <h3 className="text-gray-700 font-medium mb-4 text-base">请使用微信扫码支付</h3>
           <div className="flex justify-center mb-4">
             <canvas ref={qrCanvasRef} className="rounded-lg" style={{ backgroundColor: '#fff', padding: '8px' }} />
@@ -343,7 +343,7 @@ export default function RechargePage() {
               setQrExpired(false)
             }}
             className="mt-4 px-4 py-2 rounded-lg text-sm transition-colors"
-            style={{ backgroundColor: '#d8d4d0', color: '#615c59' }}
+            style={{ backgroundColor: '#F0EEE7', color: '#8A8A93' }}
           >
             取消支付
           </button>
@@ -352,7 +352,7 @@ export default function RechargePage() {
 
       {/* 二维码过期提示 */}
       {qrExpired && (
-        <div className="mt-4 p-6 rounded-xl text-center" style={{ backgroundColor: '#eceae6' }}>
+        <div className="mt-4 p-6 rounded-xl text-center" style={{ backgroundColor: '#FFFFFF' }}>
           <div className="text-4xl mb-3">⏰</div>
           <p className="text-gray-600 text-sm mb-1">二维码已过期</p>
           <p className="text-gray-400 text-xs mb-4">请刷新二维码后重新扫码</p>
@@ -363,7 +363,7 @@ export default function RechargePage() {
               handleRecharge()
             }}
             className="px-6 py-2 rounded-xl text-sm font-medium transition-all"
-            style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+            style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
           >
             刷新二维码
           </button>
@@ -380,7 +380,7 @@ export default function RechargePage() {
             <button
               onClick={() => setShowSuccess(false)}
               className="px-6 py-2 rounded-xl text-sm font-medium transition-all"
-              style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+              style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
             >
               知道了
             </button>

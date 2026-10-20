@@ -345,7 +345,7 @@ export default function AddPerson() {
             type="button"
             onClick={() => setIsRechargeOpen(true)}
             className="w-full py-2.5 rounded-xl font-medium text-sm transition-all"
-            style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+            style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
           >
             去充值
           </button>
@@ -354,7 +354,7 @@ export default function AddPerson() {
             onClick={handleSubmit}
             disabled={isLoading || !isFormValid}
             className="w-full py-2.5 rounded-xl font-medium text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+            style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
           >
             {isLoading ? '正在创建...' : '确认分析'}
           </button>

@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { usePersonStore } from '../store/personStore'
 import { useChatStore } from '../store/chatStore'
+import { color } from '../theme/tokens'
 
 /**
  * 底部常驻 Tab 栏（设计稿 00-index 主导航）：今日 / 对话 / 我的
@@ -73,7 +74,7 @@ export default function TabBar() {
     <nav
       className="flex-none flex"
       style={{
-        backgroundColor: '#FFFFFF',
+        backgroundColor: color.card,
         borderTop: '1px solid #ECEAE4',
         padding: '7px 0 max(10px, env(safe-area-inset-bottom))',
       }}
@@ -87,7 +88,7 @@ export default function TabBar() {
             className="flex-1 flex flex-col items-center gap-0.5 bg-transparent border-0"
             style={{
               fontSize: '10px',
-              color: active ? '#8b6f5a' : '#9B958B',
+              color: active ? color.brand : color.ink2,
               fontWeight: active ? 600 : 400,
             }}
           >

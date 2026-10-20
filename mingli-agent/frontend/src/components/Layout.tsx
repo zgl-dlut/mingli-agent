@@ -43,12 +43,12 @@ export default function Layout() {
   return (
     <div
       className="h-screen overflow-hidden"
-      style={{ height: '100dvh', backgroundColor: isAdminArea ? '#f2f0ed' : '#dfdcd8' }}
+      style={{ height: '100dvh', backgroundColor: isAdminArea ? '#f2f0ed' : '#EBE8E2' }}
     >
       {/* App 容器：用户区锁定手机宽度居中；管理后台全宽 */}
       <div
         className="relative mx-auto h-full flex flex-col overflow-hidden"
-        style={isAdminArea ? {} : { maxWidth: '430px', backgroundColor: '#f2f0ed', boxShadow: '0 0 24px rgba(0,0,0,0.10)' }}
+        style={isAdminArea ? { height: '100%' } : { maxWidth: '430px', backgroundColor: '#F7F5F0', boxShadow: '0 0 24px rgba(43,43,51,0.10)' }}
       >
         {/* 通用Header - 常驻容器顶部 */}
         <Header />

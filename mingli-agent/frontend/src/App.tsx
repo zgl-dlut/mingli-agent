@@ -6,6 +6,7 @@ import AddPerson from './pages/AddPerson'
 import Chat from './pages/Chat'
 import Today from './pages/Today'
 import Chart from './pages/Chart'
+import DeepReading from './pages/DeepReading'
 import ProfilePage from './pages/ProfilePage'
 import PersonsPage from './pages/PersonsPage'
 import LoginPage from './pages/LoginPage'
@@ -135,6 +136,7 @@ const router = createBrowserRouter([
       { index: true, element: <AddPerson /> },
       { path: 'today', element: <AppOnlyRoute><Today /></AppOnlyRoute> },
       { path: 'chart/:personId', element: <AppOnlyRoute><Chart /></AppOnlyRoute> },
+      { path: 'deep-reading/:messageId', element: <AppOnlyRoute><DeepReading /></AppOnlyRoute> },
       { path: 'profile', element: <ProfilePage /> },
       { path: 'persons', element: <PersonsPage /> },
       { path: 'chat/:personId', element: <Chat /> },

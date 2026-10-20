@@ -123,7 +123,7 @@ export default function BaziCard({ baziResult, onStartReading, phase }: BaziCard
         <button
           onClick={onStartReading}
           className="w-full py-3.5 rounded-xl text-white font-semibold text-base shadow-lg active:scale-[0.98] transition-all"
-          style={{ backgroundColor: '#8b6f5a' }}
+          style={{ backgroundColor: '#4A4E8F' }}
         >
           ✨ 开始解读
         </button>

@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Annotated, AsyncGenerator
+from typing import Annotated, AsyncGenerator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -22,6 +22,7 @@ from app.models.user import User
 from app.services.ai_service import generate_first_reading_structured
 from app.services.followup_structured import generate_followup_structured
 from app.services.date_select_agent import generate_date_select, is_date_select_intent_async
+from app.services.deep_reading_service import generate_outline
 from app.services.payment_service import deduct_points
 from app.services.skill_prompts import validate_user_question
 from app.services.format_normalizer import normalize_output  # 首次报告仍用
@@ -50,6 +51,9 @@ _generating_errors: "dict[int, str]" = {}
 
 class MessageRequest(BaseModel):
     content: str
+    # "full": 常规完整追问报告（H5/PC 默认）
+    # "outline": App 端 AI 深度解读第一段——只产出「分析框架」大纲，正文由解锁端点生成
+    mode: str = "full"
 
 
 @router.get("/sessions")
@@ -355,6 +359,7 @@ async def send_message(
             longitude=person.birth_lng,
             latitude=person.birth_lat,
             user_id=current_user.id,
+            mode=request.mode,
         )
     )
     _generating_tasks[session_id] = task
@@ -401,6 +406,15 @@ async def _record_usage_log(
         print(f"[_record_usage_log] 用量落库失败（不影响主流程）session_id={session_id} {type(e).__name__}: {e}", flush=True)
 
 
+def _age_from_birth(birth_date: str) -> Optional[int]:
+    """粗算周岁（仅用于大纲语境，容忍误差；缺失时返回 None）。"""
+    try:
+        by = int(str(birth_date).split("-")[0])
+        return max(0, datetime.utcnow().year - by)
+    except (TypeError, ValueError):
+        return None
+
+
 async def _generate_and_save(
     session_id: int,
     bazi_data,
@@ -414,6 +428,7 @@ async def _generate_and_save(
     longitude: float,
     latitude: float,
     user_id: int,
+    mode: str = "full",
 ) -> None:
     """后台生成追问报告并存库，独立于 SSE 连接。客户端断开后任务继续运行。
 
@@ -421,15 +436,34 @@ async def _generate_and_save(
     否则走 generate_followup_structured（常规追问）。
     """
     import traceback
-    is_date_select = await is_date_select_intent_async(question)
-    print(f"[_generate_and_save] 开始 session_id={session_id} question={question[:30]} is_date_select={is_date_select}", flush=True)
+    is_outline = mode == "outline"
+    is_date_select = False if is_outline else await is_date_select_intent_async(question)
+    print(f"[_generate_and_save] 开始 session_id={session_id} question={question[:30]} mode={mode} is_date_select={is_date_select}", flush=True)
     t0 = time.time()
     usage_holder: dict = {}
     try:
         # 独立 db session，不依赖请求级 session（请求结束后请求级 session 会关闭）
         async with async_session() as db:
             full_json = ""
-            if is_date_select:
+            if is_outline:
+                # 深度解读第一段：只产出「分析框架」，不含任何正文结论
+                await queue.put("__PROGRESS__正在梳理分析框架\n")
+                outline = await generate_outline(
+                    user_question=question,
+                    history=history,
+                    gender_cn=("男" if gender in ("male", "男") else "女"),
+                    age=_age_from_birth(birth_date),
+                    usage_holder=usage_holder,
+                )
+                import json as _json_outline
+                full_json = _json_outline.dumps({
+                    "kind": "outline",
+                    "question": question,
+                    "verdict": outline.get("verdict", ""),
+                    "subtopics": outline.get("subtopics", []),
+                }, ensure_ascii=False)
+                await queue.put(full_json)
+            elif is_date_select:
                 # 择日 Agent 链路：立即推一个前置进度标记，避免 LLM 首次调用前的空窗期
                 await queue.put("__PROGRESS__正在分析需求\n")
                 async for chunk in generate_date_select(
@@ -483,8 +517,8 @@ async def _generate_and_save(
             await queue.put("\n\n__SAVED__")  # 存库完成标记，前端收到后拉取消息
             print(f"[_generate_and_save] 完成 session_id={session_id} json_len={len(full_json)}", flush=True)
 
-            # ─ 生产监控：智能采样（择日 Agent 跳过常规报告评测） ──
-            if not is_date_select:
+            # ─ 生产监控：智能采样（择日 Agent / 深度解读大纲阶段跳过常规报告评测） ──
+            if not is_date_select and not is_outline:
               try:
                 from app.services.eval.production_monitor import should_deep_eval, save_monitor_result
                 import json as _json
@@ -532,7 +566,8 @@ async def _generate_and_save(
         # 用量落库（成功/失败都记录，失败时 success=False、token 缺失为 0），独立 session 不影响主流程
         try:
             async with async_session() as usage_db:
-                await _record_usage_log(usage_db, user_id, session_id, "followup", usage_holder, t0)
+                _biz = "deep_reading_outline" if is_outline else "followup"
+                await _record_usage_log(usage_db, user_id, session_id, _biz, usage_holder, t0)
         except Exception as e:
             print(f"[_generate_and_save] 用量落库异常 session_id={session_id} {type(e).__name__}: {e}", flush=True)
         await queue.put(None)  # 结束标记，stream_response 收到后停止

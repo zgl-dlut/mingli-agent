@@ -63,7 +63,7 @@ export default function ContactModal({ onClose }: ContactModalProps) {
           <div className="flex items-center gap-2 mb-5">
             <div
               className="flex-1 rounded-lg px-3 py-2.5 text-sm text-gray-600 truncate"
-              style={{ backgroundColor: '#f4f2f0' }}
+              style={{ backgroundColor: '#FFFFFF' }}
             >
               📧 {SUPPORT_EMAIL}
             </div>
@@ -77,13 +77,13 @@ export default function ContactModal({ onClose }: ContactModalProps) {
           </div>
 
           {/* 企业微信客服二维码 */}
-          <div className="rounded-xl p-4 text-center" style={{ backgroundColor: '#faf6ef' }}>
+          <div className="rounded-xl p-4 text-center" style={{ backgroundColor: '#EEEFF9' }}>
             <div className="text-sm font-medium text-gray-700 mb-3">企业微信客服</div>
             <div className="flex justify-center mb-2">
               {qrError ? (
                 <div
                   className="w-48 h-48 rounded-lg flex items-center justify-center text-center px-4 text-xs text-gray-400 leading-relaxed"
-                  style={{ backgroundColor: '#fff', border: '1px solid #eceae6' }}
+                  style={{ backgroundColor: '#fff', border: '1px solid #FFFFFF' }}
                 >
                   客服二维码更新中
                   <br />
@@ -94,7 +94,7 @@ export default function ContactModal({ onClose }: ContactModalProps) {
                   src="/contact-qr.png"
                   alt="企业微信客服二维码"
                   className="w-48 h-48 rounded-lg bg-white"
-                  style={{ border: '1px solid #eceae6' }}
+                  style={{ border: '1px solid #FFFFFF' }}
                   onError={() => setQrError(true)}
                 />
               )}

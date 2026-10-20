@@ -60,7 +60,7 @@ export default function ShareModal({ onClose }: ShareModalProps) {
 
         <div className="px-5 pb-5">
           {/* 主视觉文案 */}
-          <div className="rounded-xl p-4 mb-4 text-center" style={{ backgroundColor: '#faf6ef' }}>
+          <div className="rounded-xl p-4 mb-4 text-center" style={{ backgroundColor: '#EEEFF9' }}>
             <div className="text-2xl font-bold" style={{ color: '#a18072' }}>邀请 1 位好友 = 80 积分</div>
             <div className="text-xs text-gray-500 mt-1">好友注册成功，积分实时到账</div>
           </div>
@@ -70,7 +70,7 @@ export default function ShareModal({ onClose }: ShareModalProps) {
           <div className="flex items-center gap-2 mb-4">
             <div
               className="flex-1 rounded-lg px-3 py-2.5 text-sm text-gray-600 truncate"
-              style={{ backgroundColor: '#f4f2f0' }}
+              style={{ backgroundColor: '#FFFFFF' }}
               title={shareLink}
             >
               {shareLink}
@@ -86,7 +86,7 @@ export default function ShareModal({ onClose }: ShareModalProps) {
           </div>
 
           {/* 活动说明 */}
-          <div className="rounded-xl p-4" style={{ backgroundColor: '#eceae6' }}>
+          <div className="rounded-xl p-4" style={{ backgroundColor: '#FFFFFF' }}>
             <div className="text-sm font-medium text-gray-700 mb-2">活动说明</div>
             <ul className="text-xs text-gray-500 space-y-1.5 leading-relaxed">
               <li>· 好友通过你的链接注册，你立即获得 <span className="font-medium" style={{ color: '#a18072' }}>80 积分</span></li>

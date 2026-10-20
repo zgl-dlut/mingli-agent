@@ -60,7 +60,7 @@ export default function AdminLoginPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="请输入用户名"
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#a7876f] focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#4A4E8F] focus:border-transparent"
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
             />
           </div>
@@ -72,7 +72,7 @@ export default function AdminLoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="请输入密码"
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#a7876f] focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#4A4E8F] focus:border-transparent"
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
             />
           </div>
@@ -87,7 +87,7 @@ export default function AdminLoginPage() {
             onClick={handleLogin}
             disabled={loading || !username || !password}
             className="w-full py-3.5 rounded-xl text-white font-semibold text-base transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg hover:shadow-xl active:scale-[0.98]"
-            style={{ backgroundColor: '#a7876f' }}
+            style={{ backgroundColor: '#4A4E8F' }}
           >
             {loading ? '登录中...' : '登录'}
           </button>

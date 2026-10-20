@@ -410,6 +410,7 @@ async def generate_daily_fortune(
         "dayun_ganzhi": ctx["dayun_ganzhi"],
         "shishen_tian": liuri["shishen_tian"],
         "shishen_di": liuri["shishen_di"],
+        "day_master": f"{ctx['day_tian']}{ctx['day_wuxing']}",
     }
 
     payload = {

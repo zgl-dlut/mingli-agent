@@ -1,16 +1,19 @@
 /**
  * 今日页 —— 今日运势 + 今日建议
  *
- * 数据来源：GET /api/daily/fortune（契约见 src/api/daily.ts）
- * 文案口径：《今日建议文案口径Spec》方案 B —— 主句零术语 / 依据句白话 / 依据行带命理依据
+ * 视觉严格对齐设计稿 `.trae/documents/ui-design/01-today.html` 的 `#panel-today`：
+ * 顶栏（问候/农历/日期）→ 五维切换段 → 总评卡（等级+日主标签+压力条+日柱十神+六维）
+ * → 宜忌卡 → 今日建议卡 → 去对话 → 免责声明。
+ * 数据来源：GET /api/daily/fortune（契约见 src/api/daily.ts）；配色一律取自 src/theme/tokens。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { dailyApi, GRADE_LABEL } from '../api/daily'
-import type { DailyFortune } from '../api/daily'
+import type { DailyFortune, DailyGrade } from '../api/daily'
 import { usePersonStore } from '../store/personStore'
 import { solarToLunar } from '../utils/lunarConvert'
 import { isApp } from '../utils/platform'
+import { color, radius, shadow } from '../theme/tokens'
 
 const LUNAR_MONTHS = ['正', '二', '三', '四', '五', '六', '七', '八', '九', '十', '冬', '腊']
 const LUNAR_DAYS = [
@@ -18,13 +21,25 @@ const LUNAR_DAYS = [
   '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十',
   '廿一', '廿二', '廿三', '廿四', '廿五', '廿六', '廿七', '廿八', '廿九', '三十',
 ]
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
-/** 等级配色：仅展示层映射，禁止升级为「大吉/大凶」 */
-const GRADE_STYLE: Record<string, { text: string; bg: string }> = {
-  good: { text: '#2E9E6B', bg: '#E7F4EE' },
-  neutral: { text: '#4A4E8F', bg: '#EEEFF9' },
-  caution: { text: '#D9772B', bg: '#FBEEDD' },
+/** 等级徽标底色：good→成功绿 / neutral→主色 / caution→警示橙（禁止升级为「大吉/大凶」） */
+const GRADE_BADGE_BG: Record<DailyGrade, string> = {
+  good: color.success,
+  neutral: color.brand,
+  caution: color.warn,
 }
+
+/** 五维切换段（设计稿 seg）：本周/本月/本年/人生 待后端就绪，当前仅今日有内容 */
+const SEG_TABS = [
+  { key: 'today', label: '今日' },
+  { key: 'week', label: '本周' },
+  { key: 'month', label: '本月' },
+  { key: 'year', label: '本年' },
+  { key: 'life', label: '人生' },
+] as const
+
+type SegKey = (typeof SEG_TABS)[number]['key']
 
 function todayIso(): string {
   const d = new Date()
@@ -49,6 +64,7 @@ export default function Today() {
   const [fortune, setFortune] = useState<DailyFortune | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [seg, setSeg] = useState<SegKey>('today')
 
   const dateStr = useMemo(todayIso, [])
 
@@ -83,6 +99,7 @@ export default function Today() {
   }, [personId, loadFortune])
 
   const currentPerson = persons.find((p) => p.id === personId)
+
   const lunarText = useMemo(() => {
     try {
       const [y, m, d] = dateStr.split('-').map(Number)
@@ -93,18 +110,23 @@ export default function Today() {
     }
   }, [dateStr])
 
-  const grade = fortune?.grade ?? 'neutral'
-  const gradeStyle = GRADE_STYLE[grade] ?? GRADE_STYLE.neutral
-  const gradeLabel = GRADE_LABEL[grade] ?? '平'
+  /** 设计稿日期格式：9月23日 周三 */
+  const dateLabel = useMemo(() => {
+    const [y, m, d] = dateStr.split('-').map(Number)
+    const wd = WEEKDAYS[new Date(y, m - 1, d).getDay()]
+    return `${m}月${d}日 ${wd}`
+  }, [dateStr])
 
   if (persons.length === 0) {
     return (
-      <div className="px-4 py-10 text-center" style={{ maxWidth: '640px', margin: '0 auto' }}>
-        <p className="text-gray-600 text-sm mb-4">还没有命盘档案，先创建一份才能看今日运势</p>
+      <div className="px-4 py-10 text-center">
+        <p style={{ color: color.ink2, fontSize: '13px' }} className="mb-4">
+          还没有命盘档案，先创建一份才能看今日运势
+        </p>
         <button
           onClick={() => navigate('/')}
           className="rounded-full px-5 py-2 text-white text-sm font-medium"
-          style={{ backgroundColor: '#4A4E8F' }}
+          style={{ backgroundColor: color.brand }}
         >
           去创建档案
         </button>
@@ -112,145 +134,257 @@ export default function Today() {
     )
   }
 
+  const grade: DailyGrade = fortune?.grade ?? 'neutral'
+  const gradeLabel = GRADE_LABEL[grade] ?? '平'
+
   return (
-    <div className="px-4 py-4 pb-8" style={{ maxWidth: '640px', margin: '0 auto' }}>
-      {/* 顶栏 */}
-      <div className="flex items-start justify-between mb-3">
+    <div className="px-4 pb-4" style={{ paddingTop: '6px' }}>
+      {/* 顶栏（设计稿 .topbar） */}
+      <div className="flex justify-between items-start" style={{ padding: '0 4px' }}>
         <div>
-          <div className="text-lg font-bold text-gray-800">
+          <div style={{ fontSize: '20px', fontWeight: 700, color: color.ink }}>
             {greeting()}{currentPerson ? `，${currentPerson.name}` : ''}
           </div>
-          <div className="text-xs text-gray-400 mt-0.5">{lunarText}</div>
+          <div style={{ fontSize: '12px', color: color.ink2, marginTop: '3px' }}>{lunarText}</div>
         </div>
         <div className="text-right">
-          <div className="text-sm text-gray-700">{dateStr}</div>
-          {persons.length > 1 && (
-            <select
-              value={personId ?? ''}
-              onChange={(e) => setPersonId(Number(e.target.value))}
-              className="mt-1 text-xs border rounded-lg px-2 py-1 text-gray-600 bg-white"
-            >
-              {persons.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          )}
-          {personId !== null && isApp() && (
-            <button
-              onClick={() => navigate(`/chart/${personId}`)}
-              className="block ml-auto mt-1 text-xs font-medium rounded-full px-2.5 py-1"
-              style={{ color: '#8B6F5A', backgroundColor: '#F5F0E8' }}
-            >
-              看命盘 ›
-            </button>
-          )}
+          <div style={{ fontSize: '13px', color: color.ink, fontWeight: 500 }}>{dateLabel}</div>
+          <div className="flex items-center justify-end gap-2 mt-1">
+            {persons.length > 1 && (
+              <select
+                value={personId ?? ''}
+                onChange={(e) => setPersonId(Number(e.target.value))}
+                className="rounded-full"
+                style={{
+                  fontSize: '11px', color: color.ink2, backgroundColor: color.card,
+                  border: '1px solid #E4E1DA', padding: '2px 6px',
+                }}
+              >
+                {persons.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            )}
+            {personId !== null && isApp() && (
+              <button
+                onClick={() => navigate(`/chart/${personId}`)}
+                className="rounded-full"
+                style={{
+                  fontSize: '11px', fontWeight: 600, color: color.brand,
+                  backgroundColor: color.brandSoft, padding: '3px 9px',
+                }}
+              >
+                看命盘 ›
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {isLoading && (
-        <div className="text-center text-gray-400 text-sm py-10">正在推算今日运势…</div>
-      )}
+      {/* 五维切换段（设计稿 .seg） */}
+      <div className="flex" style={{ backgroundColor: color.segBg, borderRadius: radius.pill, padding: '3px', margin: '12px 0 6px' }}>
+        {SEG_TABS.map((t) => {
+          const active = seg === t.key
+          return (
+            <button
+              key={t.key}
+              onClick={() => setSeg(t.key)}
+              className="flex-1"
+              style={{
+                padding: '8px 0',
+                fontSize: '13px',
+                color: active ? color.brand : color.ink2,
+                fontWeight: active ? 700 : 400,
+                borderRadius: radius.pill,
+                backgroundColor: active ? color.card : 'transparent',
+                boxShadow: active ? '0 1px 3px rgba(0,0,0,.06)' : 'none',
+              }}
+            >
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+      <div className="flex items-center gap-1" style={{ margin: '0 6px 8px', fontSize: '10px', color: color.ink2 }}>
+        <span style={{ width: '3px', height: '3px', borderRadius: '50%', backgroundColor: color.gold, flex: 'none' }} />
+        本周/本月/本年/人生 可免费预览 · 开通会员看完整版
+      </div>
 
-      {!isLoading && error && (
-        <div className="text-center py-10">
-          <p className="text-red-500 text-sm mb-3">{error}</p>
-          <button
-            onClick={() => personId !== null && loadFortune(personId)}
-            className="rounded-full px-4 py-1.5 text-sm"
-            style={{ backgroundColor: '#EEEFF9', color: '#4A4E8F' }}
-          >
-            重试
-          </button>
+      {seg !== 'today' && (
+        <div className="text-center py-16" style={{ fontSize: '13px', color: color.ink2 }}>
+          {SEG_TABS.find((t) => t.key === seg)?.label}运势即将上线
         </div>
       )}
 
-      {!isLoading && !error && fortune && (
+      {seg === 'today' && (
         <>
-          {/* 今日概览 */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm" style={{ border: '1.5px solid #4A4E8F' }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-gray-800">今日{gradeLabel}</span>
-                <span className="text-xs font-bold text-white rounded-lg px-2 py-0.5" style={{ backgroundColor: gradeStyle.text }}>
-                  {gradeLabel}
-                </span>
-              </div>
-              {fortune.source.dayun_ganzhi && (
-                <span className="text-xs font-medium rounded-full px-2.5 py-1" style={{ color: '#4A4E8F', backgroundColor: '#EEEFF9' }}>
-                  大运 {fortune.source.dayun_ganzhi}
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 mt-3">
-              <span className="text-xs text-gray-400">压力指数</span>
-              <div className="flex-1 h-2 rounded-full" style={{ backgroundColor: '#EFEDE6' }}>
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${fortune.pressure_level}%`, backgroundColor: '#4A4E8F' }}
-                />
-              </div>
-              <span className="text-sm font-bold" style={{ color: '#4A4E8F' }}>{fortune.pressure_level}</span>
-            </div>
-
-            <div className="flex items-center gap-2 mt-3 text-xs text-gray-500">
-              <span>流日</span>
-              <b className="text-gray-800 text-sm tracking-wider">{fortune.source.liuri_ganzhi}</b>
-              {fortune.source.shishen_tian && (
-                <span className="rounded-full px-2 py-0.5" style={{ color: '#C9A86A', border: '1px solid #C9A86A' }}>
-                  {fortune.source.shishen_tian}
-                </span>
-              )}
-              {fortune.source.liuyue_ganzhi && <span>· 流月 {fortune.source.liuyue_ganzhi}</span>}
-            </div>
-          </div>
-
-          {/* 今日宜忌 */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm mt-3">
-            <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg text-xs font-bold text-white flex items-center justify-center" style={{ backgroundColor: '#2E9E6B' }}>宜</span>
-              <div className="flex flex-wrap gap-2">
-                {fortune.yi.map((tag) => (
-                  <span key={tag} className="text-xs rounded-full px-3 py-1" style={{ color: '#2E9E6B', backgroundColor: '#E7F4EE' }}>{tag}</span>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 mt-3">
-              <span className="w-6 h-6 rounded-lg text-xs font-bold text-white flex items-center justify-center" style={{ backgroundColor: '#D9534F' }}>忌</span>
-              <div className="flex flex-wrap gap-2">
-                {fortune.ji.map((tag) => (
-                  <span key={tag} className="text-xs rounded-full px-3 py-1" style={{ color: '#D9534F', backgroundColor: '#FBEAE9' }}>{tag}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 今日建议 */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm mt-3">
-            <div className="text-sm font-bold text-gray-800">今日建议</div>
-            <p className="text-sm text-gray-800 leading-relaxed mt-2">{fortune.advice.action}</p>
-            <p className="text-xs text-gray-500 leading-relaxed mt-1">{fortune.advice.basis}</p>
-            <div className="text-xs mt-2.5 pt-2 border-t border-dashed" style={{ color: '#C9A86A', borderColor: '#EDE9E0' }}>
-              依据：{fortune.advice.chart_ref}
-            </div>
-          </div>
-
-          {/* 去对话 */}
-          {personId !== null && (
-            <button
-              onClick={() => navigate(`/chat/${personId}`)}
-              className="w-full rounded-2xl mt-3 px-4 py-3 flex items-center justify-between text-sm"
-              style={{ backgroundColor: '#EEEFF9', color: '#2B2B33' }}
-            >
-              <span>想问更细？</span>
-              <b style={{ color: '#4A4E8F' }}>去对话 ›</b>
-            </button>
+          {isLoading && (
+            <div className="text-center py-10" style={{ fontSize: '13px', color: color.ink2 }}>正在推算今日运势…</div>
           )}
 
-          <p className="text-center text-xs text-gray-400 mt-4">内容由AI生成，仅供自我梳理参考</p>
-          <p className="text-center text-xs text-gray-400 mt-2">
-            运势解读仅供娱乐参考，无法涵盖所有情形，请理性看待，重大决策请以实际情况为准
-          </p>
+          {!isLoading && error && (
+            <div className="text-center py-10">
+              <p className="mb-3" style={{ color: color.danger, fontSize: '13px' }}>{error}</p>
+              <button
+                onClick={() => personId !== null && loadFortune(personId)}
+                className="rounded-full px-4 py-1.5"
+                style={{ backgroundColor: color.brandSoft, color: color.brand, fontSize: '13px' }}
+              >
+                重试
+              </button>
+            </div>
+          )}
+
+          {!isLoading && !error && fortune && (
+            <>
+              {/* 总评卡（设计稿 .card.overview） */}
+              <div
+                style={{
+                  backgroundColor: color.card, borderRadius: radius.card, padding: '14px 16px',
+                  marginTop: '10px', boxShadow: shadow.card, border: `1.5px solid ${color.brand}`,
+                }}
+              >
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2" style={{ fontSize: '22px', fontWeight: 800, color: color.ink }}>
+                    今日{gradeLabel}
+                    <span
+                      className="rounded-lg"
+                      style={{ fontSize: '12px', fontWeight: 700, color: '#fff', backgroundColor: GRADE_BADGE_BG[grade], padding: '2px 7px' }}
+                    >
+                      {gradeLabel}
+                    </span>
+                  </div>
+                  {fortune.source.day_master && (
+                    <span
+                      className="rounded-full"
+                      style={{ fontSize: '12px', fontWeight: 600, color: color.brand, backgroundColor: color.brandSoft, padding: '4px 10px' }}
+                    >
+                      {fortune.source.day_master}日主
+                    </span>
+                  )}
+                </div>
+
+                {/* 压力指数（设计稿 .press-row） */}
+                <div className="flex items-center gap-2.5" style={{ marginTop: '14px' }}>
+                  <span style={{ fontSize: '12px', color: color.ink2, flex: 'none' }}>压力指数</span>
+                  <div className="flex-1 overflow-hidden" style={{ height: '8px', backgroundColor: color.track, borderRadius: radius.pill }}>
+                    <div
+                      style={{ height: '100%', width: `${fortune.pressure_level}%`, backgroundColor: color.brand, borderRadius: radius.pill }}
+                    />
+                  </div>
+                  <span style={{ fontSize: '15px', fontWeight: 700, color: color.brand, flex: 'none', width: '28px', textAlign: 'right' }}>
+                    {fortune.pressure_level}
+                  </span>
+                </div>
+
+                {/* 日柱 + 十神（设计稿 .gz-row） */}
+                <div className="flex items-center gap-2" style={{ marginTop: '10px', fontSize: '13px', color: color.ink2 }}>
+                  <span>日柱</span>
+                  <b style={{ color: color.ink, fontSize: '15px', letterSpacing: '1px' }}>{fortune.source.liuri_ganzhi}</b>
+                  {fortune.source.shishen_tian && (
+                    <span
+                      className="rounded-full"
+                      style={{ fontSize: '11px', color: color.gold, border: `1px solid ${color.gold}`, padding: '1.5px 8px' }}
+                    >
+                      {fortune.source.shishen_tian}
+                    </span>
+                  )}
+                  {fortune.source.liuyue_ganzhi && (
+                    <span style={{ fontSize: '11px' }}>· 流月 {fortune.source.liuyue_ganzhi}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* 宜忌卡（设计稿 .yj-row） */}
+              <div
+                style={{
+                  backgroundColor: color.card, borderRadius: radius.card, padding: '14px 16px',
+                  marginTop: '10px', boxShadow: shadow.card,
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="flex items-center justify-center"
+                    style={{ width: '22px', height: '22px', borderRadius: '7px', fontSize: '13px', fontWeight: 700, color: '#fff', backgroundColor: color.success }}
+                  >
+                    宜
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {fortune.yi.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full"
+                        style={{ fontSize: '13px', fontWeight: 500, color: color.success, backgroundColor: color.successSoft, padding: '5px 14px' }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2" style={{ marginTop: '10px' }}>
+                  <span
+                    className="flex items-center justify-center"
+                    style={{ width: '22px', height: '22px', borderRadius: '7px', fontSize: '13px', fontWeight: 700, color: '#fff', backgroundColor: color.danger }}
+                  >
+                    忌
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {fortune.ji.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full"
+                        style={{ fontSize: '13px', fontWeight: 500, color: color.danger, backgroundColor: color.dangerSoft, padding: '5px 14px' }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 今日建议卡（设计稿 .card.action） */}
+              <div
+                style={{
+                  backgroundColor: color.card, borderRadius: radius.card, padding: '14px 16px',
+                  marginTop: '10px', boxShadow: shadow.card,
+                }}
+              >
+                <div style={{ fontSize: '15px', fontWeight: 700, color: color.ink }}>今日建议</div>
+                <p style={{ fontSize: '13px', color: color.ink, lineHeight: 1.7, marginTop: '8px' }}>
+                  {fortune.advice.action}
+                  <br />
+                  <span style={{ color: color.ink2, fontSize: '12px' }}>{fortune.advice.basis}</span>
+                </p>
+                <div
+                  style={{
+                    marginTop: '10px', paddingTop: '9px', borderTop: `1px dashed #EDE9E0`,
+                    fontSize: '11px', color: color.gold,
+                  }}
+                >
+                  依据：{fortune.advice.chart_ref}
+                </div>
+              </div>
+
+              {/* 去对话（设计稿 .goto-chat） */}
+              {personId !== null && (
+                <button
+                  onClick={() => navigate(`/chat/${personId}`)}
+                  className="w-full flex justify-between items-center"
+                  style={{
+                    marginTop: '12px', backgroundColor: color.brandSoft, borderRadius: radius.card,
+                    padding: '13px 16px', fontSize: '13px', color: color.ink,
+                  }}
+                >
+                  <span>想问更细？</span>
+                  <b style={{ color: color.brand, fontWeight: 700 }}>去对话 ›</b>
+                </button>
+              )}
+
+              <p className="text-center" style={{ fontSize: '11px', color: color.ink2, margin: '14px 0 10px' }}>
+                内容由AI生成，仅供自我梳理参考
+              </p>
+            </>
+          )}
         </>
       )}
     </div>

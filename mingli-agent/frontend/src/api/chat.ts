@@ -50,8 +50,10 @@ export const chatApi = {
     return res.data
   },
 
-  /** 发送消息（流式 SSE） */
-  sendMessageStream: (sessionId: number, content: string, signal?: AbortSignal) => {
+  /** 发送消息（流式 SSE）
+   * mode: "full" 常规完整追问报告（H5/PC）；"outline" App 端深度解读第一段，只返回分析框架
+   */
+  sendMessageStream: (sessionId: number, content: string, signal?: AbortSignal, mode: 'full' | 'outline' = 'full') => {
     const token = localStorage.getItem('mingli_token')
     return fetch(`/api/chat/sessions/${sessionId}/messages`, {
       method: 'POST',
@@ -59,7 +61,7 @@ export const chatApi = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, mode }),
       signal,
     })
   },

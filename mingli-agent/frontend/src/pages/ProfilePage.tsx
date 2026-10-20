@@ -108,7 +108,7 @@ export default function ProfilePage() {
       <div className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3">
         <div
           className="w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold flex-none"
-          style={{ backgroundColor: '#8b6f5a' }}
+          style={{ backgroundColor: '#4A4E8F' }}
         >
           {user?.name?.[0] || '?'}
         </div>
@@ -116,7 +116,7 @@ export default function ProfilePage() {
           <div className="text-base font-semibold text-gray-800 truncate">{user?.name || '未设置昵称'}</div>
           <div className="text-xs text-gray-400 mt-0.5">{user?.phone || ''}</div>
         </div>
-        <button onClick={handleOpenNicknameModal} className="text-xs flex-none" style={{ color: '#8b6f5a' }}>
+        <button onClick={handleOpenNicknameModal} className="text-xs flex-none" style={{ color: '#4A4E8F' }}>
           编辑 ›
         </button>
       </div>
@@ -128,13 +128,13 @@ export default function ProfilePage() {
           <button
             onClick={() => navigate('/recharge')}
             className="text-xs rounded-full px-3 py-1 text-white"
-            style={{ backgroundColor: '#a7876f' }}
+            style={{ backgroundColor: '#4A4E8F' }}
           >
             充值
           </button>
         </div>
         <div className="mt-1">
-          <span className="text-3xl font-bold" style={{ color: '#8b6f5a' }}>{user?.points ?? 0}</span>
+          <span className="text-3xl font-bold" style={{ color: '#4A4E8F' }}>{user?.points ?? 0}</span>
           <span className="text-xs text-gray-400 ml-1">分</span>
         </div>
         <div className="flex items-center gap-4 mt-2">
@@ -211,7 +211,7 @@ export default function ProfilePage() {
                 onClick={handleSaveNickname}
                 disabled={savingNickname || !nickname.trim()}
                 className="flex-1 py-2.5 rounded-lg text-white text-sm disabled:opacity-40"
-                style={{ backgroundColor: '#a7876f' }}
+                style={{ backgroundColor: '#4A4E8F' }}
               >
                 {savingNickname ? '保存中…' : '保存'}
               </button>
@@ -240,7 +240,7 @@ export default function ProfilePage() {
                   onClick={handleSendDeleteSms}
                   disabled={smsSending || smsCountdown > 0}
                   className="px-3 py-2.5 rounded-lg text-xs whitespace-nowrap disabled:opacity-40"
-                  style={{ backgroundColor: '#F5F0E8', color: '#8B6F5A' }}
+                  style={{ backgroundColor: '#F5F0E8', color: '#4A4E8F' }}
                 >
                   {smsCountdown > 0 ? `${smsCountdown}s` : '获取验证码'}
                 </button>

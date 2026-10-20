@@ -3226,6 +3226,7 @@ async def generate_followup_structured(
     latitude: float,
     usage_holder: Optional[dict] = None,
     extra_chart_block: str = "",
+    outline_titles: Optional[List[str]] = None,
 ) -> AsyncGenerator[str, None]:
     """
     结构化追问报告生成：
@@ -3361,6 +3362,22 @@ async def generate_followup_structured(
         )
     else:
         logger.info("[StructuredFollowup] 问题未识别到涉及年份，未注入流月明细（依赖工具调用）")
+
+    # 3.55 深度解读大纲硬约束：解锁正文时用户已看过分析框架，
+    # 正文的子问题标题必须与大纲逐字一致、顺序一致，避免"看到的框架"和"付费的正文"对不上。
+    if outline_titles:
+        _outline_lines = "\n".join(
+            f"{i + 1}. {t}" for i, t in enumerate(outline_titles) if str(t or "").strip()
+        )
+        if _outline_lines:
+            system_prompt += (
+                "\n\n【子问题结构硬约束——深度解读大纲已对用户展示，必须严格遵守】\n"
+                "本轮报告的子问题（subtopics）的标题与顺序必须严格等于以下列表，"
+                "逐字一致、不得增删、不得改写、不得合并或拆分：\n"
+                + _outline_lines
+                + "\n每个子问题的 blocks 内容围绕其标题展开即可，标题本身保持完全一致。"
+            )
+            logger.info(f"[StructuredFollowup] 已注入深度解读大纲约束，维度数={len(outline_titles)}")
 
     # 3.6 临时生辰排盘注入：用户消息提及"他人生辰"时，系统已真实排盘，注入 system_prompt
     # 供 LLM 基于真实命盘解读，杜绝"未排盘→自行编造五行/十神"（如"满盘是水"）。

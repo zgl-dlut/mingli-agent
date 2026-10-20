@@ -14,6 +14,7 @@ from app.models.session import ChatSession
 from app.models.message import ChatMessage
 from app.models.order import Order
 from app.models.transaction import Transaction
+from app.models.content_unlock import ContentUnlock
 
 config = context.config
 

@@ -140,7 +140,7 @@ export default function PersonsPage() {
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/chart/${person.id}`) }}
             className="text-xs rounded-full px-2.5 py-1"
-            style={{ backgroundColor: '#F5F0E8', color: '#8B6F5A' }}
+            style={{ backgroundColor: '#F5F0E8', color: '#4A4E8F' }}
           >
             看命盘
           </button>
@@ -200,7 +200,7 @@ export default function PersonsPage() {
       <button
         onClick={() => navigate('/', { replace: true, state: { timestamp: Date.now() } })}
         className="w-full mt-3 bg-white rounded-2xl px-4 py-3.5 text-sm text-left transition-colors hover:bg-gray-50"
-        style={{ color: '#8b6f5a' }}
+        style={{ color: '#4A4E8F' }}
       >
         + 添加新分析
       </button>

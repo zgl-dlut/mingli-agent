@@ -59,7 +59,7 @@ export default function LoginPage() {
   const isPhoneValid = /^1\d{10}$/.test(phone)
 
   return (
-    <div className="min-h-screen flex items-start justify-center px-4 pt-[12vh]" style={{ backgroundColor: '#8b6f5a' }}>
+    <div className="min-h-screen flex items-start justify-center px-4 pt-[12vh]" style={{ backgroundColor: '#4A4E8F' }}>
       <div className="w-full max-w-sm max-md:max-w-[320px]">
         {/* 品牌标识区 */}
         <div className="mb-8 flex flex-col items-center">
@@ -107,7 +107,7 @@ export default function LoginPage() {
                 disabled={!isPhoneValid || countdown > 0 || isLoading}
                 className="px-4 py-3 rounded-xl text-sm font-medium whitespace-nowrap transition-all disabled:opacity-40 disabled:cursor-not-allowed max-md:px-3 max-md:text-xs"
                 style={{
-                  backgroundColor: isPhoneValid && countdown === 0 ? '#a7876f' : '#e5e7eb',
+                  backgroundColor: isPhoneValid && countdown === 0 ? '#4A4E8F' : '#e5e7eb',
                   color: isPhoneValid && countdown === 0 ? 'white' : '#9ca3af',
                 }}
               >
@@ -115,7 +115,7 @@ export default function LoginPage() {
               </button>
             </div>
             {devCodeFilled && (
-              <p className="text-xs mt-1.5" style={{ color: '#a7876f' }}>开发模式：验证码已自动填入，直接登录即可</p>
+              <p className="text-xs mt-1.5" style={{ color: '#4A4E8F' }}>开发模式：验证码已自动填入，直接登录即可</p>
             )}
           </div>
 
@@ -131,7 +131,7 @@ export default function LoginPage() {
             onClick={handleLogin}
             disabled={phone.length !== 11 || code.length !== 6 || isLoading || !agreed}
             className="w-full py-3.5 rounded-xl text-white font-semibold text-base transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg hover:shadow-xl active:scale-[0.98]"
-            style={{ backgroundColor: '#a7876f' }}
+            style={{ backgroundColor: '#4A4E8F' }}
           >
             {isLoading ? '登录中...' : '登录 / 注册'}
           </button>

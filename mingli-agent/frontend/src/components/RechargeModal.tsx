@@ -173,7 +173,7 @@ export default function RechargeModal({ isOpen, onClose, onRechargeSuccess }: Re
         </div>
 
         {/* 当前积分 */}
-        <div className="mx-5 mb-4 rounded-xl p-4" style={{ backgroundColor: '#eceae6' }}>
+        <div className="mx-5 mb-4 rounded-xl p-4" style={{ backgroundColor: '#FFFFFF' }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <span className="text-yellow-400 text-xl mr-2">⭐</span>
@@ -225,7 +225,7 @@ export default function RechargeModal({ isOpen, onClose, onRechargeSuccess }: Re
                     onChange={(e) => handleCustomInput(e.target.value)}
                     placeholder={`输入 ${MIN_POINTS}~${MAX_POINTS} 之间的整数`}
                     className="flex-1 px-4 py-3 rounded-xl border-2 border-primary-600 bg-primary-50 text-sm outline-none transition-all"
-                    style={{ color: '#44403d' }}
+                    style={{ color: '#2B2B33' }}
                     autoFocus
                   />
                   <span className="text-sm text-gray-500 whitespace-nowrap">积分</span>
@@ -261,7 +261,7 @@ export default function RechargeModal({ isOpen, onClose, onRechargeSuccess }: Re
             onClick={handleRecharge}
             disabled={isLoading || effectivePoints === 0}
             className="w-full py-3.5 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+            style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
           >
             {isLoading ? '处理中...' : effectivePoints > 0 ? `充值 ${effectivePoints} 积分 (¥${(effectivePoints / 10).toFixed(1)})` : '请选择或输入积分'}
           </button>

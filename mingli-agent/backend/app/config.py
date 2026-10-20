@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     # 积分配置
     POINTS_FIRST_READING: int = 160
     POINTS_FOLLOW_UP: int = 40
+    # AI 深度解读：解锁详细正文消耗的积分（大纲阶段按 POINTS_FOLLOW_UP 扣）
+    POINTS_DEEP_READING: int = 60
     POINTS_PER_YUAN: int = 10
     
     # 白名单手机号赠送积分（逗号分隔）

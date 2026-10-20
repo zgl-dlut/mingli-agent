@@ -10,7 +10,10 @@ import type { Person } from '../types'
 import { analyzeBazi, AnalyzeResult } from '../api/bazi'
 import { FollowupReportView, isStructuredReport } from '../components/FollowupReportView'
 import { DateSelectCard, isDateSelectReport } from '../components/DateSelectCard'
+import OutlineCard from '../components/OutlineCard'
+import { parseOutlineReport } from '../utils/deepReadingFormat'
 import { normalizeReportContent } from '../utils/reportFormat'
+import { isApp } from '../utils/platform'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { createLogger, traceId } from '../utils/logger'
@@ -60,10 +63,24 @@ function filterAsked(suggested: string[], messages: { role: string; content: str
  * 追问报告用 JSON 结构化，格式 100% 由组件控制，不依赖 Markdown 解析。
  * 首次报告仍用 Markdown + react-markdown，两条链路隔离互不影响。
  */
-const HtmlContent = React.memo(({ content }: { content: string }) => {
+const HtmlContent = React.memo(({ content, messageId }: { content: string; messageId?: number }) => {
   // 择日 Agent 结果：JSON 直渲染为日期卡片
   if (isDateSelectReport(content)) {
     return <DateSelectCard content={content} />
+  }
+  // 深度解读两段式（App 端 mode=outline）：未解锁渲染引导卡，解锁后直渲染正文
+  const outline = parseOutlineReport(content)
+  if (outline) {
+    if (outline.detail) {
+      return <FollowupReportView content={JSON.stringify(outline.detail)} />
+    }
+    return (
+      <OutlineCard
+        messageId={messageId ?? 0}
+        verdict={outline.verdict}
+        subtopics={outline.subtopics}
+      />
+    )
   }
   // 追问报告：JSON 直渲染
   if (isStructuredReport(content)) {
@@ -1136,9 +1153,10 @@ export default function Chat() {
       logger.info(`[${callId}] 请求初始化完成，调用 sendMessageStream`, { sessionId, questionLen: question.length, isRetry: isRetryOfUnanswered })
 
       // 使用 sendMessageStream：后端扣积分 + 存用户消息 + 流式返回 + 存 AI 回复
+      // App 端走两段式（mode=outline，先返回分析框架）；H5/PC 端保持全文（mode=full）
       let acc = ''
       let saved = false
-      const response = await chatApi.sendMessageStream(sessionId, question, controller.signal)
+      const response = await chatApi.sendMessageStream(sessionId, question, controller.signal, isApp() ? 'outline' : 'full')
       dlog(`sendMessageStream响应 status=${response.status} ok=${response.ok}`)
       // 后端任务化：若该 session 正在生成（前端状态未同步时后端兜底），回滚并提示
       if (response.status === 409) {
@@ -1355,7 +1373,7 @@ export default function Chat() {
                 handleGenerateFirstReading()
               }}
               className="w-full py-3 rounded-xl text-sm font-medium shadow-md active:scale-[0.98] transition-all"
-              style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+              style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
             >
               查看完整解读
             </button>
@@ -1418,7 +1436,7 @@ export default function Chat() {
                   <div
                     className={`px-4 py-3 rounded-2xl ${
                       msg.role === 'user'
-                        ? 'rounded-br-sm bg-[#8b6f5a] text-[#f4f2f0] ml-auto w-fit'
+                        ? 'rounded-br-sm bg-[#4A4E8F] text-[#FFFFFF] ml-auto w-fit'
                         : 'bg-white text-brand-brown rounded-bl-sm shadow-sm'
                     }`}
                   >
@@ -1427,11 +1445,11 @@ export default function Chat() {
                     ) : (
                       <>
                         {/* AI 生成内容显著标识（《人工智能生成合成内容标识办法》要求） */}
-                        <div className="inline-flex items-center gap-1 mb-2 px-2 py-0.5 rounded-md text-[11px] font-medium leading-5" style={{ backgroundColor: '#8b6f5a', color: '#faf6ef' }}>
+                        <div className="inline-flex items-center gap-1 mb-2 px-2 py-0.5 rounded-md text-[11px] font-medium leading-5" style={{ backgroundColor: '#4A4E8F', color: '#EEEFF9' }}>
                           <span style={{ fontSize: '10px' }}>✦</span>
                           <span>AI 生成 · 仅供传统文化体验与娱乐参考</span>
                         </div>
-                        <HtmlContent content={msg.content || ''} />
+                        <HtmlContent content={msg.content || ''} messageId={msg.id} />
                       </>
                     )}
                   </div>
@@ -1449,9 +1467,9 @@ export default function Chat() {
               const filtered = filterAsked(raw, messages).slice(0, 6)  // 最多 6 个
               if (filtered.length === 0) return null
               return (
-                <div className="bg-amber-50/70 rounded-xl border border-amber-200/60 p-3 shadow-[0_1px_3px_rgba(160,128,114,0.08)] chip-slide-up">
+                <div className="bg-brand-light rounded-xl border border-brand-nav/20 p-3 shadow-[0_1px_3px_rgba(74,78,143,0.08)] chip-slide-up">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1 text-sm font-semibold text-amber-700/80">
+                    <div className="flex items-center gap-1 text-sm font-semibold text-brand-nav/80">
                       <span className="text-base">✨</span>
                       <span>试试追问</span>
                       <span className="font-normal text-xs text-brand-muted/80 ml-1">（点击直接发送）</span>
@@ -1469,10 +1487,10 @@ export default function Chat() {
                         key={i}
                         type="button"
                         onClick={() => handleSend(q)}
-                        className="flex items-center justify-between gap-1.5 px-3 py-2 rounded-lg border border-amber-300/50 bg-white text-brand-brown text-sm text-left active:scale-95 transition-all hover:border-amber-500/60 hover:bg-amber-50 min-h-[36px]"
+                        className="flex items-center justify-between gap-1.5 px-3 py-2 rounded-lg border border-brand-nav/20 bg-white text-brand-brown text-sm text-left active:scale-95 transition-all hover:border-brand-nav/40 hover:bg-brand-light/80 min-h-[36px]"
                       >
                         <span className="whitespace-normal text-left">{q}</span>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600 flex-shrink-0 mt-0.5"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-brand-nav flex-shrink-0 mt-0.5"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
                       </button>
                     ))}
                   </div>
@@ -1485,7 +1503,7 @@ export default function Chat() {
             {pendingUserMsg && pendingUserMsgPid === person.id && (!optimisticDup || isPersonGenerating(person.id)) && (
               <div className="flex items-start gap-2 ml-9">
                 <div className="flex-1">
-                  <div className="px-4 py-3 rounded-2xl rounded-br-sm bg-[#8b6f5a] text-[#f4f2f0] ml-auto w-fit">
+                  <div className="px-4 py-3 rounded-2xl rounded-br-sm bg-[#4A4E8F] text-[#FFFFFF] ml-auto w-fit">
                     <div className="whitespace-pre-wrap">{pendingUserMsg}</div>
                   </div>
                 </div>
@@ -1691,7 +1709,7 @@ export default function Chat() {
                 type="button"
                 onClick={() => setIsRechargeOpen(true)}
                 className="px-5 h-10 rounded-full text-sm font-medium transition-all whitespace-nowrap"
-                style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+                style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
               >
                 去充值
               </button>
@@ -1704,7 +1722,7 @@ export default function Chat() {
                   handleSend()
                 }}
                 className="px-5 h-10 rounded-full text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                style={{ backgroundColor: '#a7876f', color: '#f4f2f0' }}
+                style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
               >
                 追问
               </button>

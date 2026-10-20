@@ -44,6 +44,7 @@ class FortuneSource(BaseModel):
     dayun_ganzhi: str    # 当前大运干支，如 "癸卯"
     shishen_tian: str    # 流日天干十神
     shishen_di: str      # 流日地支十神
+    day_master: str      # 日主，如 "辛金"
 
 
 class DailyFortuneResponse(BaseModel):

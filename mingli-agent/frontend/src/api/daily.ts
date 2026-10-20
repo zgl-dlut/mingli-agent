@@ -23,6 +23,8 @@ export interface DailyFortuneSource {
   dayun_ganzhi: string
   shishen_tian: string
   shishen_di: string
+  /** 日主，如 "辛金" */
+  day_master: string
 }
 
 export interface DailyFortune {

@@ -17,8 +17,8 @@ export default function Logo({ className = '', dark: _dark = false, showText = t
       <div
         className={`logo-icon-circle ${className}`}
         style={{
-          backgroundColor: '#8b6f5a',
-          color: '#f4f2f0',
+          backgroundColor: '#4A4E8F',
+          color: '#FFFFFF',
           width: 36,
           height: 36,
           borderRadius: '50%',
