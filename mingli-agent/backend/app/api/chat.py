@@ -200,12 +200,17 @@ async def send_message(
         and (last_msg.content or "").strip() == (request.content or "").strip()
     )
 
+    # 计费规则（对齐测测两段式交互）：
+    # - mode=outline（App 端）：提问出分析框架免费，仅在「解锁深度解读正文」时扣 POINTS_DEEP_READING
+    # - mode=full（H5/PC 端）：维持追问扣 POINTS_FOLLOW_UP
+    is_outline_mode = request.mode == "outline"
     if not is_retry_unanswered:
-        await deduct_points(
-            db, current_user.id, settings.POINTS_FOLLOW_UP,
-            f"追问: {request.content[:30]}...",
-            biz_type="followup",
-        )
+        if not is_outline_mode:
+            await deduct_points(
+                db, current_user.id, settings.POINTS_FOLLOW_UP,
+                f"追问: {request.content[:30]}...",
+                biz_type="followup",
+            )
 
         # 去重检查：10秒内相同的用户消息不重复保存（防止前端双击/竞态重复提交）
         # 超过10秒后允许用户合法重复追问相同问题，避免吞掉用户消息导致前端不显示

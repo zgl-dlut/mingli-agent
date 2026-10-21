@@ -46,6 +46,8 @@ interface Subtopic {
   lead?: string
   blocks: Block[]
   closing?: string
+  /** 分析依据（本小节结论的命盘推演来源，LLM 输出，可展开展示） */
+  basis?: string
 }
 
 interface SummaryItem {
@@ -191,6 +193,12 @@ function SubtopicView({ data, index }: { data: Subtopic; index: number }) {
         ))}
       </div>
       {data.closing && renderInline(data.closing)}
+      {data.basis && (
+        <details className="basis-toggle">
+          <summary>分析依据</summary>
+          <div className="basis-body">{renderBold(data.basis)}</div>
+        </details>
+      )}
     </>
   )
 }

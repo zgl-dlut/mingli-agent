@@ -156,23 +156,18 @@ export default function Chat() {
   } = useChatStore()
   const { user, fetchUserInfo } = useUserStore()
 
-  // 动态获取真实可见视口高度与偏移（解决移动端 100vh 包含地址栏 + iOS 键盘弹出时输入框位置错乱的问题）
-  // iOS 键盘弹出时 visualViewport.height 变小且 offsetTop 增大（可视区被向上推），
-  // fixed 容器需同时跟随 height 和 offsetTop，才能始终贴在键盘正上方
+  // 监听可视视口高度变化（键盘弹出/地址栏收缩时触发滚动状态重算）
   const [viewportHeight, setViewportHeight] = useState(
     () => window.visualViewport?.height ?? window.innerHeight
   )
-  const [viewportOffsetTop, setViewportOffsetTop] = useState(0)
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
     const handleUpdate = () => {
       setViewportHeight(vv.height)
-      setViewportOffsetTop(vv.offsetTop)
     }
     handleUpdate()
     vv.addEventListener('resize', handleUpdate)
-    // 键盘弹出/收起动画过程中 offsetTop 持续变化，scroll 事件负责实时跟随
     vv.addEventListener('scroll', handleUpdate)
     return () => {
       vv.removeEventListener('resize', handleUpdate)
@@ -183,6 +178,8 @@ export default function Chat() {
   const [person, setPerson] = useState<Person | null>(null)
   const [sessionId, setSessionId] = useState<number | null>(null)
   const [inputValue, setInputValue] = useState('')
+  // App 端「深度解读」模式开关（底部 Chip 条）：开=两段式先出框架（免费），关=直接出全文（扣40积分）
+  const [deepReadingOn, setDeepReadingOn] = useState(true)
   // 推荐追问Chip条：仅AI刚回答完时显示，刷新/重新进入不显示
   const [showSuggested, setShowSuggested] = useState(false)
   const [baziResult, setBaziResult] = useState<AnalyzeResult | null>(null)
@@ -1156,7 +1153,7 @@ export default function Chat() {
       // App 端走两段式（mode=outline，先返回分析框架）；H5/PC 端保持全文（mode=full）
       let acc = ''
       let saved = false
-      const response = await chatApi.sendMessageStream(sessionId, question, controller.signal, isApp() ? 'outline' : 'full')
+      const response = await chatApi.sendMessageStream(sessionId, question, controller.signal, isApp() && deepReadingOn ? 'outline' : 'full')
       dlog(`sendMessageStream响应 status=${response.status} ok=${response.ok}`)
       // 后端任务化：若该 session 正在生成（前端状态未同步时后端兜底），回滚并提示
       if (response.status === 409) {
@@ -1295,7 +1292,9 @@ export default function Chat() {
   )
 
   return (
-    <div style={{ position: 'fixed', top: `${viewportOffsetTop}px`, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '820px', height: `${viewportHeight}px`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    // 流式布局：嵌在 Layout 的 430px App 容器内（main 为 flex 列），底部 TabBar 常驻。
+    // 消息区 flex-1 自滚动，输入框固定在 TabBar 之上；键盘弹出时 100dvh 收缩自然贴键盘。
+    <div className="flex-1 flex flex-col overflow-hidden w-full" style={{ minHeight: 0 }}>
       {/* 页面标题栏 */}
       <div className="bg-white/80 backdrop-blur-sm border-b border-brand-inputBorder/40 flex-shrink-0 z-30">
         <div className="px-4 py-2.5">
@@ -1436,7 +1435,7 @@ export default function Chat() {
                   <div
                     className={`px-4 py-3 rounded-2xl ${
                       msg.role === 'user'
-                        ? 'rounded-br-sm bg-[#4A4E8F] text-[#FFFFFF] ml-auto w-fit'
+                        ? 'rounded-br-sm bg-[#4A4E8F] text-[#FFFFFF] ml-auto w-fit max-w-[80%]'
                         : 'bg-white text-brand-brown rounded-bl-sm shadow-sm'
                     }`}
                   >
@@ -1477,7 +1476,9 @@ export default function Chat() {
                     <span className="text-[11px] text-brand-muted/60 flex-shrink-0">
                       {isRetryOfUnanswered
                         ? <>重新生成·不扣积分</>
-                        : <>40积分/次</>
+                        : isApp()
+                          ? <>出框架免费·解锁正文60积分</>
+                          : <>40积分/次</>
                       }
                     </span>
                   </div>
@@ -1503,7 +1504,7 @@ export default function Chat() {
             {pendingUserMsg && pendingUserMsgPid === person.id && (!optimisticDup || isPersonGenerating(person.id)) && (
               <div className="flex items-start gap-2 ml-9">
                 <div className="flex-1">
-                  <div className="px-4 py-3 rounded-2xl rounded-br-sm bg-[#4A4E8F] text-[#FFFFFF] ml-auto w-fit">
+                  <div className="px-4 py-3 rounded-2xl rounded-br-sm bg-[#4A4E8F] text-[#FFFFFF] ml-auto w-fit max-w-[80%]">
                     <div className="whitespace-pre-wrap">{pendingUserMsg}</div>
                   </div>
                 </div>
@@ -1654,6 +1655,38 @@ export default function Chat() {
       {(hasGenerated || cardPhase === 'done') && (
         <div className="bg-white/90 backdrop-blur-sm border-t border-brand-inputBorder/40 flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
 
+          {/* 星盘模块（对齐测测）：星盘+昵称，点击进入档案管理页选人；选中/新增后自动回到本对话 */}
+          {isApp() && person && (
+            <div className="flex items-center gap-2 px-4 pt-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+              <button
+                type="button"
+                onClick={() => navigate(`/persons?picker=1&current=${person.id}`)}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-full border border-brand-inputBorder bg-white text-xs text-brand-brown flex-shrink-0 active:scale-95 transition-all"
+              >
+                {/* 星盘符号 */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 3v18M3 12h18M6.3 6.3l11.4 11.4M17.7 6.3L6.3 17.7" />
+                </svg>
+                <span>星盘</span>
+                <span className="text-brand-muted/50">·</span>
+                <span className="font-medium">{person.name || '选择档案'}</span>
+                <span className="text-brand-muted/60">›</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeepReadingOn((v) => !v)}
+                className="flex items-center gap-1 px-3 h-8 rounded-full border text-xs flex-shrink-0 active:scale-95 transition-all"
+                style={deepReadingOn
+                  ? { backgroundColor: '#4A4E8F', color: '#FFFFFF', borderColor: '#4A4E8F' }
+                  : { backgroundColor: '#FFFFFF', color: '#2B2B33', borderColor: '#E4E1DA' }}
+                title={deepReadingOn ? '已开启：提问免费出分析框架，解锁正文60积分' : '已关闭：直接出完整解读，扣40积分'}
+              >
+                <span>⚡</span><span>深度解读{deepReadingOn ? '·开' : '·关'}</span>
+              </button>
+            </div>
+          )}
+
           {/* 输入行 */}
           <div className="flex items-center space-x-2 px-4 py-2">
             {isWechatBrowser() && (
@@ -1704,7 +1737,8 @@ export default function Chat() {
               }}
               className="flex-1 px-4 py-2.5 border border-brand-inputBorder rounded-full focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition-all bg-brand-bgInput text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
-            {(user?.points ?? 0) < 40 && !isRetryOfUnanswered ? (
+            {/* App 端提问出框架免费，无需校验积分；H5/PC 追问扣 40 积分，不足时引导充值 */}
+            {!isApp() && (user?.points ?? 0) < 40 && !isRetryOfUnanswered ? (
               <button
                 type="button"
                 onClick={() => setIsRechargeOpen(true)}

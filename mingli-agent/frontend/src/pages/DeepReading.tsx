@@ -17,11 +17,9 @@ import RechargeModal from '../components/RechargeModal'
 import { useUserStore } from '../store/userStore'
 import { color, gradient, radius, shadow } from '../theme/tokens'
 
-/** 内容反馈标签（参考竞品，正负各若干） */
-const FEEDBACK_TAGS = [
-  '逻辑清晰易读懂', '专业性强', '提供正向情绪价值', '与事实接近',
-  '内容主题不是我想要的', '读不懂/逻辑性差', '专业性知识错误', '内容影响心情',
-]
+/** 内容反馈标签（对齐测测：👍 弹正面组，👎 弹负面组） */
+const POSITIVE_TAGS = ['逻辑清晰/易读懂', '专业性强，解读正确', '提供正向的情绪价值', '与事实接近']
+const NEGATIVE_TAGS = ['内容主题不是我想要的', '读不懂/逻辑性差/有病句', '专业性知识错误', '内容影响心情']
 
 export default function DeepReading() {
   const { messageId } = useParams<{ messageId: string }>()
@@ -42,9 +40,30 @@ export default function DeepReading() {
 
   const [voted, setVoted] = useState<'up' | 'down' | null>(null)
   const [showFeedback, setShowFeedback] = useState(false)
+  // 反馈弹层的情感倾向：点赞/点踩打开时带入对应标签组；从「内容反馈」进入为 null（展示全部）
+  const [fbSentiment, setFbSentiment] = useState<'up' | 'down' | null>(null)
   const [fbTags, setFbTags] = useState<string[]>([])
   const [fbText, setFbText] = useState('')
   const [fbDone, setFbDone] = useState(false)
+
+  /** 点 👍/👎：记录倾向并弹出对应标签组的反馈层；再点已选中态则取消 */
+  const handleVote = (v: 'up' | 'down') => {
+    if (voted === v) { setVoted(null); return }
+    setVoted(v)
+    setFbSentiment(v)
+    setFbTags([])
+    setFbText('')
+    setFbDone(false)
+    setShowFeedback(true)
+  }
+
+  const openGenericFeedback = () => {
+    setFbSentiment(voted)
+    setFbTags([])
+    setFbText('')
+    setFbDone(false)
+    setShowFeedback(true)
+  }
 
   const load = useCallback(async () => {
     if (!mid) { setError('参数错误'); setLoading(false); return }
@@ -106,10 +125,11 @@ export default function DeepReading() {
 
   const submitFeedback = async () => {
     if (fbTags.length === 0 && !fbText.trim()) { setShowFeedback(false); return }
+    const sentimentLabel = fbSentiment === 'up' ? '正面' : fbSentiment === 'down' ? '负面' : '中性'
     try {
       await feedbackApi.create({
         question: '深度解读内容反馈',
-        answer: `[标签] ${fbTags.join('、')}\n[补充] ${fbText.trim()}`,
+        answer: `[${sentimentLabel}]${fbTags.length ? `[标签] ${fbTags.join('、')}` : ''}\n[补充] ${fbText.trim()}`,
         person_name: detail?.person_name || undefined,
         is_first_reading: false,
       })
@@ -286,21 +306,21 @@ export default function DeepReading() {
             </span>
             <span className="flex items-center gap-3">
               <button
-                onClick={() => setVoted(voted === 'up' ? null : 'up')}
+                onClick={() => handleVote('up')}
                 style={{ fontSize: '16px', opacity: voted === 'down' ? 0.35 : 1 }}
                 aria-label="有帮助"
               >
                 👍
               </button>
               <button
-                onClick={() => setVoted(voted === 'down' ? null : 'down')}
+                onClick={() => handleVote('down')}
                 style={{ fontSize: '16px', opacity: voted === 'up' ? 0.35 : 1 }}
                 aria-label="没帮助"
               >
                 👎
               </button>
               <button
-                onClick={() => { setFbDone(false); setShowFeedback(true) }}
+                onClick={openGenericFeedback}
                 style={{ fontSize: '12px', color: color.ink2 }}
               >
                 内容反馈
@@ -362,7 +382,7 @@ export default function DeepReading() {
               <button onClick={() => setShowFeedback(false)} style={{ fontSize: '18px', color: color.ink2 }}>×</button>
             </div>
             <div className="flex flex-wrap gap-2" style={{ marginBottom: '14px' }}>
-              {FEEDBACK_TAGS.map((t) => {
+              {(fbSentiment === 'up' ? POSITIVE_TAGS : fbSentiment === 'down' ? NEGATIVE_TAGS : [...POSITIVE_TAGS, ...NEGATIVE_TAGS]).map((t) => {
                 const on = fbTags.includes(t)
                 return (
                   <button

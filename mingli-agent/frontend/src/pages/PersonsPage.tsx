@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { usePersonStore } from '../store/personStore'
 import { useUserStore } from '../store/userStore'
 import { useChatStore, allChats } from '../store/chatStore'
@@ -15,6 +15,10 @@ import type { Person } from '../types'
  */
 export default function PersonsPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  // 选择模式（从对话页「星盘·昵称」模块进入）：点卡片选中即回对话页；current 高亮当前对话人物
+  const picker = searchParams.get('picker') === '1'
+  const currentId = Number(searchParams.get('current')) || null
   const { persons, fetchPersons, deletePerson } = usePersonStore()
   const { fetchUserInfo } = useUserStore()
   const { deletePersonChat } = useChatStore()
@@ -109,6 +113,17 @@ export default function PersonsPage() {
       }}
       className="flex items-center justify-between px-3 py-3 border-b border-gray-50 last:border-b-0 cursor-pointer hover:bg-gray-50 transition-colors"
     >
+      {/* 选择模式：左侧单选圈，当前对话人物打勾 */}
+      {picker && (
+        <span
+          className="flex-none w-5 h-5 rounded-full border flex items-center justify-center mr-2"
+          style={person.id === currentId
+            ? { backgroundColor: '#4A4E8F', borderColor: '#4A4E8F', color: '#FFFFFF' }
+            : { borderColor: '#D8D5CE' }}
+        >
+          {person.id === currentId && <span className="text-[11px] leading-none">✓</span>}
+        </span>
+      )}
       <div className="flex-1 min-w-0">
         {editingPersonId === person.id ? (
           <div className="flex items-center gap-2">
@@ -173,6 +188,14 @@ export default function PersonsPage() {
 
   return (
     <div className="px-4 py-4 pb-6" style={{ maxWidth: '430px', margin: '0 auto' }}>
+      {/* 选择模式标题栏（从对话页进入）：返回 + 选择档案 */}
+      {picker && (
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={() => navigate(-1)} className="text-gray-700 text-xl leading-none px-1" aria-label="返回">‹</button>
+          <span className="text-base font-semibold text-gray-800">选择档案</span>
+          <span className="w-6" />
+        </div>
+      )}
       {/* 分析历史：有 AI 咨询记录的档案 */}
       <div className="bg-white rounded-2xl shadow-sm">
         <div className="px-4 pt-3 pb-1 text-xs text-gray-500">分析历史</div>
@@ -196,13 +219,13 @@ export default function PersonsPage() {
         )}
       </div>
 
-      {/* 添加新分析 */}
+      {/* 添加新档案：保存后自动回到对话页 */}
       <button
         onClick={() => navigate('/', { replace: true, state: { timestamp: Date.now() } })}
         className="w-full mt-3 bg-white rounded-2xl px-4 py-3.5 text-sm text-left transition-colors hover:bg-gray-50"
         style={{ color: '#4A4E8F' }}
       >
-        + 添加新分析
+        {picker ? '+ 添加档案' : '+ 添加新分析'}
       </button>
 
       {/* 删除确认弹窗 */}

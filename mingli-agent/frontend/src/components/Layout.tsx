@@ -17,6 +17,8 @@ export default function Layout() {
   const { fetchUserInfo } = useUserStore()
 
   const isAdminArea = location.pathname.startsWith('/admin')
+  // 对话页自带标题栏（返回 + 人名 + 命格箴言），不再叠加通用 Header
+  const isChatPage = location.pathname.startsWith('/chat')
 
   useEffect(() => {
     fetchPersons()
@@ -50,11 +52,11 @@ export default function Layout() {
         className="relative mx-auto h-full flex flex-col overflow-hidden"
         style={isAdminArea ? { height: '100%' } : { maxWidth: '430px', backgroundColor: '#F7F5F0', boxShadow: '0 0 24px rgba(43,43,51,0.10)' }}
       >
-        {/* 通用Header - 常驻容器顶部 */}
-        <Header />
+        {/* 通用Header - 常驻容器顶部（对话页除外，其自带标题栏） */}
+        {!isChatPage && <Header />}
 
         {/* 页面内容：容器内独立滚动 */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto" style={isChatPage ? { display: 'flex', flexDirection: 'column', overflow: 'hidden' } : undefined}>
           <Outlet />
         </main>
 

@@ -484,7 +484,8 @@ async def build_structured_prompt(
         {{"type": "keyword", "keyword": "叙事化关键词，不加**号", "narrative": "仅讲单一维度，2-3句、≤120字，可内联**加粗**。大白话主干占90%以上，必要术语以括号标签形式带出（如'外部压力较大（七杀）'），括号里只放术语名作命理出处，不在括号里解释意思；主干大白话已说清现象，小白读主干就懂，括号术语可跳过"}},
         {{"type": "keyword", "keyword": "另一维度关键词", "narrative": "应对策略/时间窗口/心态宽慰各自独立一个block，禁止与剧本预测合并"}}
       ],
-      "closing": "默认不输出。仅当能补上面blocks没说过的新角度（真正有情绪价值的安抚）时才输出2-3句；禁止复述已讲过的结论、禁止空洞金句口号（详见下方closing硬约束）"
+      "closing": "默认不输出。仅当能补上面blocks没说过的新角度（真正有情绪价值的安抚）时才输出2-3句；禁止复述已讲过的结论、禁止空洞金句口号（详见下方closing硬约束）",
+      "basis": "本小节的分析依据（必填，1-2句大白话，≤80字）：告诉用户本小节结论是从哪些命盘数据推出来的，必须具体引用数据（如'丙午流年火旺''当前丁巳大运''日主身弱喜印比''9月己酉月酉金冲卯木'），禁止'根据你的命盘综合来看'这类空泛表述"
     }}
   ],
   "summary": {{
@@ -526,6 +527,7 @@ async def build_structured_prompt(
 - **禁止使用 term_explain 字段**；命理名词解释只能揉进句子当中，禁止单独段落解释术语
 - sub_items使用规则（默认省略）：默认不输出 sub_items 字段。仅当同一关键词下有3个及以上并列的独立要点时才用 sub_items；1-2个短要点直接写进narrative并且**加粗**。绝大多数 keyword block 不需要 sub_items
 - subtopic的lead是可选的承上启下引导段落（1-2句），在blocks前输出，引出下面内容。lead和closing都是subtopic独立字段，不是block，不占用blocks的keyword槽位
+- **basis 硬约束（分析依据，每个 subtopic 必填）**：1-2句大白话、≤80字，说明本小节结论的命盘依据；必须具体引用命盘数据（流年干支+五行/大运干支/十神关系/用神忌神/流月干支+十神），且引用的数据必须与命盘数据栏一致（编造=最高优先级违规）；basis 是面向用户的"分析依据"展示，用大白话（术语可括号带出），不要写成给开发者的注释；若本小节纯情绪安抚无任何命理推演，可留空不输出
 - **closing 硬约束（subtopic 和 summary 都适用，高频违规点，务必执行）**：
   - closing 默认留空（不输出）。仅当能补充上面 blocks/items 没说过的新角度（真正的情绪安抚、或一个新的嘱咐方向）时才输出 2-3 句朋友式话语
   - 禁止①：复述上面已讲过的结论（换个说法再讲一遍）。如 blocks 已说"稳住别主动提离职"，closing 不得再写"稳住节奏就是赢"
@@ -705,6 +707,13 @@ def _normalize_report_data(data):
             continue
         if not sub.get("title"):
             sub["title"] = sub.get("name") or sub.get("heading") or ""
+        # basis（分析依据）规范化：非字符串或空串置为 None，超长截断
+        basis = sub.get("basis")
+        if basis is not None:
+            if not isinstance(basis, str) or not basis.strip():
+                sub["basis"] = None
+            elif len(basis) > 160:
+                sub["basis"] = basis[:160].rstrip("，。；、 ") + "…"
         # qwen-max 偶发把 blocks 输出为 JSON 字符串而非数组，需二次解析
         if isinstance(sub.get("blocks"), str):
             try:

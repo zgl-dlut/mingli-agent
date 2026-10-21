@@ -726,6 +726,39 @@ body {
   margin-bottom: 0;
 }
 
+/* 分析依据（subtopic 级，可展开）：主色系浅色底 + 黛蓝紫标题 */
+.followup-report .basis-toggle {
+  margin-top: 0.6rem;
+  border: 1px solid rgba(74, 78, 143, 0.18);
+  background: rgba(74, 78, 143, 0.05);
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.82rem;
+}
+.followup-report .basis-toggle summary {
+  cursor: pointer;
+  color: #4A4E8F;
+  font-weight: 600;
+  list-style: none;
+  user-select: none;
+}
+.followup-report .basis-toggle summary::before {
+  content: '📖 ';
+}
+.followup-report .basis-toggle summary::after {
+  content: '›';
+  float: right;
+  transition: transform 0.15s ease;
+}
+.followup-report .basis-toggle[open] summary::after {
+  transform: rotate(90deg);
+}
+.followup-report .basis-toggle .basis-body {
+  margin-top: 0.4rem;
+  color: #2B2B33;
+  line-height: 1.75;
+}
+
 /* ===== 进度条动画 ===== */
 @keyframes progress {
   0% { width: 0%; }
