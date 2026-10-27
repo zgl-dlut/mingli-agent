@@ -1,11 +1,11 @@
 /**
  * AI 深度解读 API（两段式第二段）
  * 后端路由见 backend/app/api/deep_reading.py（字段全英文 snake_case）
+ *
+ * 解锁改为后台异步任务：unlock 接口立即返回 generating=true，
+ * 正文约3分钟后生成完成写入消息 content.detail，前端轮询/刷新即可看到。
  */
 import apiClient from './client'
-
-/** 解锁正文为同步生成整篇报告，耗时可达 1~2 分钟，需覆盖 apiClient 的 30s 默认超时 */
-const UNLOCK_TIMEOUT = 300000
 
 export interface OutlineItem {
   title: string
@@ -21,6 +21,8 @@ export interface DeepReadingDetail {
   verdict: string
   subtopics: OutlineItem[]
   unlocked: boolean
+  /** 正文是否正在后台生成中（解锁后立即返回 generating=true） */
+  generating: boolean
   /** 已解锁时为完整 FollowupReport 对象，否则为 null */
   report: Record<string, unknown> | null
   /** 解锁所需积分 */
@@ -40,12 +42,12 @@ export const deepReadingApi = {
     return res.data
   },
 
-  /** 扣积分解锁正文（幂等：已解锁直接返回，不重复扣费） */
+  /** 扣积分解锁正文并启动后台生成（立即返回，不等待正文生成完成） */
   unlock: async (messageId: number): Promise<DeepReadingDetail> => {
     const res = await apiClient.post<DeepReadingDetail>(
       `/deep-reading/${messageId}/unlock`,
       undefined,
-      { timeout: UNLOCK_TIMEOUT },
+      { timeout: 30000 },
     )
     return res.data
   },

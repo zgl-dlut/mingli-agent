@@ -2,7 +2,8 @@
  * 深度解读大纲消息的解析工具
  *
  * 大纲消息 content 结构（与后端 chat.py / deep_reading.py 对齐）：
- * {"kind":"outline","question","verdict","subtopics":[{title,lead}],"detail":FollowupReport(可选，解锁后)}
+ * {"kind":"outline","question","verdict","subtopics":[{title,lead}],
+ *  "generating":true(可选，解锁后正文生成中),"detail":FollowupReport(可选，解锁完成后)}
  */
 
 export interface OutlineItem {
@@ -17,6 +18,8 @@ export interface OutlineReport {
   subtopics: OutlineItem[]
   /** 解锁后写入的完整正文；未解锁为 undefined */
   detail?: Record<string, unknown>
+  /** 正文是否正在后台生成中（解锁后立即标记，生成完成后清除） */
+  generating?: boolean
 }
 
 /** 解析大纲消息；非大纲返回 null */
@@ -38,6 +41,7 @@ export function parseOutlineReport(content: string): OutlineReport | null {
             }))
         : [],
       detail: data.detail && typeof data.detail === 'object' ? data.detail : undefined,
+      generating: !!data.generating,
     }
   } catch {
     return null

@@ -141,19 +141,74 @@ export default function DeepReading() {
   }
 
   const unlocked = !!detail?.unlocked && !!detail?.report
+  /** 正文后台生成中（解锁后立即标记，约3分钟） */
+  const generating = !!detail?.generating && !detail?.report
 
-  // ── 分析中：全屏过渡 ──
-  if (analyzing) {
+  // 生成中轮询：每10秒查一次，正文生成完成后自动切换为报告视图
+  useEffect(() => {
+    if (!generating || !mid) return
+    const timer = window.setInterval(async () => {
+      try {
+        const res = await deepReadingApi.get(mid)
+        if (res.report) setDetail(res)
+      } catch {
+        /* 轮询失败静默，下一轮重试 */
+      }
+    }, 10000)
+    return () => window.clearInterval(timer)
+  }, [generating, mid])
+
+  // ── 解锁瞬间 / 后台生成中：进度视图（约3分钟，可返回对话继续提问）──
+  if (analyzing || (generating && detail)) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-8" style={{ backgroundColor: color.bg }}>
-        <div style={{ width: '60%', height: '6px', borderRadius: radius.pill, backgroundColor: color.track, overflow: 'hidden' }}>
-          <div className="ds-analyzing-bar" style={{ height: '100%', width: '40%', borderRadius: radius.pill, background: color.brand }} />
+      <div className="min-h-screen flex flex-col" style={{ backgroundColor: color.bg }}>
+        {/* 顶栏 */}
+        <div
+          className="flex items-center"
+          style={{ padding: '12px 12px', backgroundColor: color.bg, position: 'sticky', top: 0, zIndex: 10 }}
+        >
+          <button
+            onClick={() => navigate(`/chat/${detail?.session_id ?? ''}`)}
+            style={{ fontSize: '20px', color: color.ink, width: '28px', lineHeight: 1 }}
+            aria-label="返回"
+          >
+            ‹
+          </button>
+          <div className="flex-1 text-center" style={{ fontSize: '17px', fontWeight: 700, color: color.ink }}>
+            AI 深度解读
+          </div>
+          <span style={{ width: '28px' }} />
         </div>
-        <div style={{ fontSize: '17px', fontWeight: 700, color: color.ink, marginTop: '20px' }}>
-          AI 深度分析中
-        </div>
-        <div style={{ fontSize: '12px', color: color.ink2, marginTop: '8px', textAlign: 'center' }}>
-          正在基于你的分析框架，调用命盘数据展开深度解读…
+
+        <div className="flex-1 flex flex-col items-center justify-center px-8" style={{ paddingBottom: '10vh' }}>
+          <div style={{ width: '60%', height: '6px', borderRadius: radius.pill, backgroundColor: color.track, overflow: 'hidden' }}>
+            <div className="ds-analyzing-bar" style={{ height: '100%', width: '40%', borderRadius: radius.pill, background: color.brand }} />
+          </div>
+          <div style={{ fontSize: '17px', fontWeight: 700, color: color.ink, marginTop: '20px' }}>
+            AI 深度分析中
+          </div>
+          <div style={{ fontSize: '13px', color: color.ink2, marginTop: '8px', textAlign: 'center', lineHeight: 1.8 }}>
+            正在基于你的分析框架，调用命盘数据展开深度解读…
+            <br />
+            预计约 <span style={{ color: color.brand, fontWeight: 700 }}>3 分钟</span>完成，生成后会自动展示
+          </div>
+          {detail && (
+            <button
+              onClick={() => navigate(`/chat/${detail.session_id}`)}
+              className="rounded-full active:scale-[0.98] transition-all"
+              style={{
+                marginTop: '28px', padding: '10px 24px', fontSize: '14px', fontWeight: 600,
+                backgroundColor: color.brandSoft, color: color.brand,
+              }}
+            >
+              返回对话继续提问 ›
+            </button>
+          )}
+          {detail && (
+            <div style={{ fontSize: '11px', color: color.ink2, marginTop: '12px' }}>
+              返回后也可随时在对话中查看本次深度解读
+            </div>
+          )}
         </div>
       </div>
     )
@@ -197,7 +252,7 @@ export default function DeepReading() {
       )}
 
       {/* 未解锁：分析框架大纲 */}
-      {!loading && !error && detail && !unlocked && (
+      {!loading && !error && detail && !unlocked && !generating && (
         <div className="px-4">
           <div style={{ fontSize: '20px', fontWeight: 800, color: color.ink, lineHeight: 1.5, margin: '4px 0 12px' }}>
             本次深度解读将从以下几个维度展开：
@@ -331,7 +386,7 @@ export default function DeepReading() {
       )}
 
       {/* 底部固定：已选人物 + 解锁正文 */}
-      {!loading && !error && detail && !unlocked && (
+      {!loading && !error && detail && !unlocked && !generating && (
         <div
           className="fixed left-0 right-0 bottom-0"
           style={{ maxWidth: '430px', margin: '0 auto', padding: '10px 16px 16px', backgroundColor: color.bg }}

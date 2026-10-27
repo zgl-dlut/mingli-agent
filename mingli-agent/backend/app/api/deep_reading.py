@@ -10,8 +10,11 @@
 - 解锁即把 detail 写入该消息 content，并在 content_unlocks 落一条付费记录
 """
 
+import asyncio
 import json
 import logging
+import time
+import traceback
 from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -36,6 +39,12 @@ from app.skills.orchestrator import generate_full_analysis
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/deep-reading", tags=["deep-reading"])
 
+# 深度解读正文生成的后台任务表：message_id -> asyncio.Task
+# 任务独立于 HTTP 连接运行，客户端返回后任务继续，完成后写库并从表中移除
+_generating_deep_reading: "dict[int, asyncio.Task]" = {}
+_generating_dr_start: "dict[int, float]" = {}
+_GENERATING_DR_TIMEOUT = 900
+
 
 # ============================================================
 # 请求 / 响应模型
@@ -59,6 +68,7 @@ class DeepReadingResponse(BaseModel):
     verdict: str = ""
     subtopics: List[OutlineItem] = []
     unlocked: bool = False
+    generating: bool = False                # 正文是否正在后台生成中
     report: Optional[Dict[str, Any]] = None   # 已解锁时为完整 FollowupReport
     unlock_points: int = 0                     # 解锁所需积分（供前端展示）
 
@@ -102,6 +112,7 @@ def _parse_outline(content: str) -> Optional[Dict[str, Any]]:
 
 def _to_response(message_id: int, session: ChatSession, person: Person, outline: Dict[str, Any]) -> DeepReadingResponse:
     detail = outline.get("detail")
+    generating = bool(outline.get("generating")) and not isinstance(detail, dict)
     return DeepReadingResponse(
         message_id=message_id,
         session_id=session.id,
@@ -111,6 +122,7 @@ def _to_response(message_id: int, session: ChatSession, person: Person, outline:
         verdict=str(outline.get("verdict") or ""),
         subtopics=[OutlineItem(**it) for it in (outline.get("subtopics") or []) if isinstance(it, dict)],
         unlocked=isinstance(detail, dict),
+        generating=generating,
         report=detail if isinstance(detail, dict) else None,
         unlock_points=settings.POINTS_DEEP_READING,
     )
@@ -179,8 +191,8 @@ async def unlock_deep_reading(
     if not outline:
         raise HTTPException(status_code=400, detail="该消息不是深度解读大纲")
 
-    # 幂等：已解锁直接返回，不重复扣费
-    if isinstance(outline.get("detail"), dict):
+    # 幂等：已解锁（有 detail）直接返回；生成中（generating）也直接返回，不重复扣费
+    if isinstance(outline.get("detail"), dict) or outline.get("generating"):
         return _to_response(msg.id, session, person, outline)
 
     required = settings.POINTS_DEEP_READING
@@ -197,10 +209,14 @@ async def unlock_deep_reading(
         biz_type="deep_reading",
     )
 
-    # 生成正文（严格遵循已展示的大纲标题与顺序）
+    # 标记生成中，立即返回；正文由后台任务异步生成（约3分钟）
+    outline["generating"] = True
+    msg.content = json.dumps(outline, ensure_ascii=False)
+    await db.commit()
+
+    # 提取 ORM 属性到普通变量，避免后台任务访问已关闭的请求级 session
     titles = [it.get("title", "") for it in (outline.get("subtopics") or []) if isinstance(it, dict)]
     question = str(outline.get("question") or "")
-
     bazi_data = person.bazi_data_json
     if isinstance(bazi_data, str):
         try:
@@ -227,68 +243,144 @@ async def unlock_deep_reading(
     )
     history = [{"role": m.role, "content": m.content} for m in h_result.scalars().all()]
 
+    task = asyncio.create_task(
+        _generate_and_save_deep_reading(
+            message_id=msg.id,
+            user_id=current_user.id,
+            session_id=session.id,
+            titles=titles or None,
+            question=question,
+            bazi_data=bazi_data,
+            history=history,
+            person_gender=person.gender,
+            person_birth_date=person.birth_date,
+            person_birth_time=person.birth_time,
+            person_location=person.birth_location,
+            person_lng=person.birth_lng,
+            person_lat=person.birth_lat,
+            points_cost=required,
+        )
+    )
+    _generating_deep_reading[msg.id] = task
+    _generating_dr_start[msg.id] = time.time()
+
+    return _to_response(msg.id, session, person, outline)
+
+
+async def _generate_and_save_deep_reading(
+    message_id: int,
+    user_id: int,
+    session_id: int,
+    titles: Optional[List[str]],
+    question: str,
+    bazi_data: dict,
+    history: List[dict],
+    person_gender: str,
+    person_birth_date: str,
+    person_birth_time: str,
+    person_location: str,
+    person_lng: float,
+    person_lat: float,
+    points_cost: int,
+) -> None:
+    """后台生成深度解读正文并存库，独立于 HTTP 连接。客户端返回后任务继续运行。"""
+    print(f"[_deep_reading] 开始 message_id={message_id}", flush=True)
     usage_holder: dict = {}
-    full_json = ""
     try:
+        full_json = ""
         async for chunk in generate_followup_structured(
             analysis_data=bazi_data,
-            gender=person.gender,
-            birth_date=person.birth_date,
-            birth_time=person.birth_time,
-            location=person.birth_location,
+            gender=person_gender,
+            birth_date=person_birth_date,
+            birth_time=person_birth_time,
+            location=person_location,
             user_question=question,
             history=history,
-            longitude=person.birth_lng,
-            latitude=person.birth_lat,
+            longitude=person_lng,
+            latitude=person_lat,
             usage_holder=usage_holder,
-            outline_titles=titles or None,
+            outline_titles=titles,
         ):
             if chunk.startswith("__PROGRESS__"):
                 continue
             full_json += chunk
+
+        try:
+            detail = json.loads(full_json)
+        except (TypeError, ValueError):
+            logger.error(f"[_deep_reading] 正文JSON解析失败 message_id={message_id}")
+            detail = None
+
+        # 独立 db session 写回
+        async with async_session() as wdb:
+            msg_result = await wdb.execute(select(ChatMessage).where(ChatMessage.id == message_id))
+            msg = msg_result.scalar_one_or_none()
+            if msg:
+                outline = _parse_outline(msg.content or "")
+                if outline:
+                    if detail:
+                        outline.pop("generating", None)
+                        outline["detail"] = detail
+                    else:
+                        # 生成失败，清除 generating 标记，允许用户重试
+                        outline.pop("generating", None)
+                    msg.content = json.dumps(outline, ensure_ascii=False)
+                await wdb.commit()
+
+            if detail:
+                exists = await wdb.execute(
+                    select(ContentUnlock).where(
+                        ContentUnlock.user_id == user_id,
+                        ContentUnlock.message_id == message_id,
+                    )
+                )
+                if not exists.scalar_one_or_none():
+                    wdb.add(ContentUnlock(
+                        user_id=user_id,
+                        message_id=message_id,
+                        unlock_type="points",
+                        points_cost=points_cost,
+                    ))
+                await wdb.commit()
+
+        # 用量落库（不影响主流程）
+        if detail:
+            try:
+                async with async_session() as usage_db:
+                    usage_db.add(AiUsageLog(
+                        user_id=user_id,
+                        session_id=session_id,
+                        biz_type="deep_reading",
+                        input_tokens=usage_holder.get("input_tokens", 0),
+                        output_tokens=usage_holder.get("output_tokens", 0),
+                        total_tokens=usage_holder.get("total_tokens", 0),
+                        model=usage_holder.get("model", ""),
+                        success=bool(usage_holder.get("success", True)),
+                        duration_ms=0,
+                    ))
+                    await usage_db.commit()
+            except Exception as e:
+                logger.warning(f"[_deep_reading] 用量落库失败: {type(e).__name__}: {e}")
+
+        print(f"[_deep_reading] 完成 message_id={message_id} has_detail={bool(detail)}", flush=True)
     except Exception as e:
-        logger.error(f"[深度解读] 正文生成失败 message_id={message_id}: {type(e).__name__}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="深度解读正文生成失败，请稍后重试")
-
-    try:
-        detail = json.loads(full_json)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=500, detail="深度解读正文解析失败，请稍后重试")
-
-    outline["detail"] = detail
-    msg.content = json.dumps(outline, ensure_ascii=False)
-
-    exists = await db.execute(
-        select(ContentUnlock).where(
-            ContentUnlock.user_id == current_user.id,
-            ContentUnlock.message_id == msg.id,
+        logger.error(
+            f"[_deep_reading] 异常 message_id={message_id}: {type(e).__name__}: {e}\n{traceback.format_exc()}"
         )
-    )
-    if not exists.scalar_one_or_none():
-        db.add(ContentUnlock(
-            user_id=current_user.id,
-            message_id=msg.id,
-            unlock_type="points",
-            points_cost=required,
-        ))
-    await db.commit()
-
-    # 用量落库（不影响主流程）
-    try:
-        async with async_session() as usage_db:
-            usage_db.add(AiUsageLog(
-                user_id=current_user.id,
-                session_id=session.id,
-                biz_type="deep_reading",
-                input_tokens=usage_holder.get("input_tokens", 0),
-                output_tokens=usage_holder.get("output_tokens", 0),
-                total_tokens=usage_holder.get("total_tokens", 0),
-                model=usage_holder.get("model", ""),
-                success=bool(usage_holder.get("success", bool(detail))),
-                duration_ms=0,
-            ))
-            await usage_db.commit()
-    except Exception as e:
-        logger.warning(f"[深度解读] 用量落库失败: {type(e).__name__}: {e}")
-
-    return _to_response(msg.id, session, person, outline)
+        # 生成异常：清除 generating 标记，允许重试
+        try:
+            async with async_session() as wdb:
+                msg_result = await wdb.execute(select(ChatMessage).where(ChatMessage.id == message_id))
+                msg = msg_result.scalar_one_or_none()
+                if msg:
+                    outline = _parse_outline(msg.content or "")
+                    if outline:
+                        outline.pop("generating", None)
+                        msg.content = json.dumps(outline, ensure_ascii=False)
+                    await wdb.commit()
+        except Exception:
+            pass
+    finally:
+        _generating_deep_reading.pop(message_id, None)
+        _generating_dr_start.pop(message_id, None)
+        print(f"[_deep_reading] 结束 message_id={message_id}", flush=True)

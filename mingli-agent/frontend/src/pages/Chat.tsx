@@ -37,6 +37,14 @@ function extractSuggestedQuestions(content: string): string[] | null {
   }
 }
 
+/** 首次进入对话的引导问题（对齐测测AI欢迎卡），点击直接发送 */
+const FIRST_CHAT_GUIDE_QUESTIONS = [
+  '我的性格优势有哪些？',
+  '我适合什么职业方向？',
+  '明年的财运如何？',
+  '恋爱中有哪些相处建议？',
+]
+
 /** 过滤掉已问过的推荐问题（精确匹配+包含匹配） */
 function filterAsked(suggested: string[], messages: { role: string; content: string }[]): string[] {
   const askedSet = new Set(
@@ -68,12 +76,38 @@ const HtmlContent = React.memo(({ content, messageId }: { content: string; messa
   if (isDateSelectReport(content)) {
     return <DateSelectCard content={content} />
   }
-  // 深度解读两段式（App 端 mode=outline）：未解锁渲染引导卡，解锁后直渲染正文
+  // 深度解读两段式（App 端 mode=outline）
   const outline = parseOutlineReport(content)
   if (outline) {
+    // 已解锁有正文：直接渲染报告，标记「深度解读」
     if (outline.detail) {
-      return <FollowupReportView content={JSON.stringify(outline.detail)} />
+      return (
+        <div>
+          <div className="inline-flex items-center gap-1 mb-2 px-2 py-0.5 rounded-md text-[11px] font-medium" style={{ backgroundColor: '#4A4E8F', color: '#EEEFF9' }}>
+            <span>✦</span>
+            <span>深度解读</span>
+          </div>
+          <FollowupReportView content={JSON.stringify(outline.detail)} />
+        </div>
+      )
     }
+    // 生成中：显示加载状态卡
+    if (outline.generating) {
+      return (
+        <div className="bg-white rounded-2xl p-4 border border-brand-inputBorder">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium" style={{ backgroundColor: '#4A4E8F', color: '#EEEFF9' }}>
+              <span className="inline-block w-2 h-2 rounded-full bg-white animate-pulse" />
+              <span>深度解读生成中</span>
+            </span>
+          </div>
+          <p className="text-sm text-brand-muted leading-relaxed">
+            AI 正在为你深度分析，预计约 3 分钟完成。生成完成后会自动出现在这里，你可以先返回对话继续提问。
+          </p>
+        </div>
+      )
+    }
+    // 未解锁：渲染引导卡
     return (
       <OutlineCard
         messageId={messageId ?? 0}
@@ -131,12 +165,6 @@ async function parseSSEStream(response: Response, onChunk: (text: string) => voi
   }
 }
 
-function buildGejuSummary(result: AnalyzeResult): string {
-  const sizhu = (result.四柱 || '').trim()
-  if (!sizhu) return '命格概括'
-  return sizhu
-}
-
 export default function Chat() {
   const { personId } = useParams<{ personId: string }>()
   const navigate = useNavigate()
@@ -184,7 +212,7 @@ export default function Chat() {
   const [showSuggested, setShowSuggested] = useState(false)
   const [baziResult, setBaziResult] = useState<AnalyzeResult | null>(null)
   const [, setBaziLoading] = useState(false)
-  const [cardPhase, setCardPhase] = useState<'loading' | 'ready' | 'done' | 'error'>('loading')
+  const [cardPhase, setCardPhase] = useState<'loading' | 'done' | 'error'>('loading')
   const [isRechargeOpen, setIsRechargeOpen] = useState(false)
   // 生成进度相关状态（按人独立，支持并发生成）
   const [, setProgressMap] = useState<Record<number, { percent: number; time: string }>>({})
@@ -768,6 +796,34 @@ export default function Chat() {
   // （纯内存态丢失时挂载恢复逻辑不执行 → 表现为"问题消失、回答不见"，而后端任务其实已跑完落库）。
   // 回前台时主动查后端：仍在生成→接管轮询；已空闲且本地有未闭环状态→补拉消息。
   const reconcileInFlightRef = useRef(false)
+  // 自动触发首次报告：排盘+会话就绪且未生成过时自动生成（创建档案时已扣160积分，此处不重复扣费）
+  const handleFirstReadingRef = useRef<() => void>(() => {})
+  const autoFirstReadingTriggeredRef = useRef<Set<number>>(new Set())
+  useEffect(() => {
+    handleFirstReadingRef.current = () => handleGenerateFirstReading()
+  })
+  useEffect(() => {
+    if (!person || !baziResult || !sessionId) return
+    if (hasFirstReading(person.id)) return
+    if (isPersonGenerating(person.id)) return
+    if (autoFirstReadingTriggeredRef.current.has(person.id)) return
+    autoFirstReadingTriggeredRef.current.add(person.id)
+    handleFirstReadingRef.current()
+  }, [baziResult, sessionId, person?.id])
+
+  // 深度解读生成中轮询：当消息列表存在 generating 状态的大纲时，定时拉取刷新，正文生成完自动显示
+  useEffect(() => {
+    if (!sessionId || !person) return
+    const hasGenerating = messages.some(m => {
+      const o = parseOutlineReport(m.content || '')
+      return o && o.generating && !o.detail
+    })
+    if (!hasGenerating) return
+    const timer = window.setInterval(() => {
+      fetchMessages(person.id, sessionId)
+    }, 8000)
+    return () => window.clearInterval(timer)
+  }, [messages, sessionId, person?.id, fetchMessages])
   useEffect(() => {
     if (!sessionId || !person) return
     const pid = person.id
@@ -841,7 +897,7 @@ export default function Chat() {
   // 加载命理分析数据
   useEffect(() => {
     if (!person) return
-    setCardPhase(hasFirstReading(person.id) ? 'done' : 'loading')
+    setCardPhase('loading')
     setBaziLoading(true)
     setBaziResult(null)
     
@@ -849,9 +905,7 @@ export default function Chat() {
     if (person.bazi_data && Object.keys(person.bazi_data).length > 0) {
       setBaziResult(person.bazi_data as unknown as AnalyzeResult)
       setBaziLoading(false)
-      if (!hasFirstReading(person.id)) {
-        setCardPhase('ready')
-      }
+      setCardPhase('done')
       return
     }
     
@@ -866,16 +920,12 @@ export default function Chat() {
     })
       .then((result) => {
         setBaziResult(result)
-        if (!hasFirstReading(person.id)) {
-          setCardPhase('ready')
-        }
+        setCardPhase('done')
       })
       .catch((err) => {
         console.error('命理分析失败:', err)
         setBaziResult(null)
-        if (!hasFirstReading(person.id)) {
-          setCardPhase('error')
-        }
+        setCardPhase('error')
       })
       .finally(() => {
         setBaziLoading(false)
@@ -1310,11 +1360,6 @@ export default function Chat() {
             <h1 className="text-base font-bold text-brand-brownStrong truncate">
               {person.name || '命盘'}
             </h1>
-            {(cardPhase === 'done' || hasGenerated) && baziResult?.命格箴言 && (
-              <p className="text-[11px] text-brand-brown/50 truncate mt-0.5 tracking-wide">
-                {baziResult.命格箴言}
-              </p>
-            )}
           </div>
         </div>
         </div>
@@ -1326,59 +1371,6 @@ export default function Chat() {
         className="px-4 py-4 overflow-y-auto"
         style={{ flex: 1, minHeight: 0 }}
       >
-        {cardPhase === 'ready' && baziResult && (
-          <div className="bg-white rounded-2xl shadow-sm p-6 text-center">
-            {/* 命格箴言 */}
-            {baziResult.命格箴言 && (
-              <div className="pb-5 border-b border-primary-100">
-                <p className="text-primary-500/70 text-xs mb-2 tracking-wider">命格箴言</p>
-                <p className="text-[22px] font-bold text-primary-800 tracking-[0.12em] mb-2 leading-relaxed">
-                  {baziResult.命格箴言}
-                </p>
-                {baziResult.命格箴言标签 && (
-                  <p className="text-xs text-primary-500/80">
-                    {baziResult.命格箴言标签.调候标签} · {baziResult.命格箴言标签.十神做功标签}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* 命格概括 */}
-            <div className={baziResult.命格箴言 ? 'pt-5' : ''}>
-              <p className="text-primary-500/70 text-xs mb-3 tracking-wider">命格概括</p>
-            <p className="text-xl font-bold text-gray-800 tracking-[0.2em] mb-4">
-              {buildGejuSummary(baziResult)}
-            </p>
-            <div className="grid grid-cols-3 gap-2 mb-5">
-              <div className="bg-primary-50 rounded-lg py-2">
-                <p className="text-[10px] text-primary-500/70 mb-0.5">旺衰</p>
-                <p className="text-sm font-semibold text-primary-800">{baziResult.旺衰结论}</p>
-              </div>
-              <div className="bg-primary-50 rounded-lg py-2">
-                <p className="text-[10px] text-primary-500/70 mb-0.5">格局</p>
-                <p className="text-sm font-semibold text-primary-800">{baziResult.格局}</p>
-              </div>
-              <div className="bg-primary-50 rounded-lg py-2">
-                <p className="text-[10px] text-primary-500/70 mb-0.5">用神</p>
-                <p className="text-sm font-semibold text-primary-800">{baziResult.用神}</p>
-              </div>
-            </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setCardPhase('done')
-                handleGenerateFirstReading()
-              }}
-              className="w-full py-3 rounded-xl text-sm font-medium shadow-md active:scale-[0.98] transition-all"
-              style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
-            >
-              查看完整解读
-            </button>
-          </div>
-        )}
-
         {/* 排盘加载动画 */}
         {cardPhase === 'loading' && (
           <div className="flex flex-col items-center justify-center py-20">
@@ -1407,7 +1399,7 @@ export default function Chat() {
                 })
                   .then((result) => {
                     setBaziResult(result)
-                    setCardPhase('ready')
+                    setCardPhase('done')
                   })
                   .catch(() => setCardPhase('error'))
               }}
@@ -1420,7 +1412,40 @@ export default function Chat() {
 
         {/* 对话消息区域 */}
         {(cardPhase === 'done' || hasGenerated) && (
-          <div className="space-y-3">
+          <div className="space-y-3" style={{ fontSize: 'var(--ds-fs-md)' }}>
+            {/* 首次进入欢迎引导（对齐测测）：App 端且无任何消息时展示 */}
+            {isApp() && messages.length === 0 && !pendingUserMsg && !isPersonGenerating(person.id) && (
+              <div>
+                <div className="flex items-center gap-2.5 mb-3">
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-white flex-none"
+                    style={{ backgroundColor: 'var(--ds-brand)', fontSize: 'var(--ds-fs-lg)' }}
+                  >
+                    ✦
+                  </div>
+                  <div>
+                    <div className="font-semibold text-brand-brown" style={{ fontSize: 'var(--ds-fs-lg)' }}>Hi～ 我是趣算算AI</div>
+                    <div className="text-brand-muted" style={{ fontSize: 'var(--ds-fs-sm)' }}>来用你的命盘档案解答问题吧～</div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {FIRST_CHAT_GUIDE_QUESTIONS.map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => handleSend(q)}
+                      className="flex items-center justify-between gap-2 px-4 py-3 rounded-xl bg-white border border-brand-inputBorder text-brand-brown text-left active:scale-[0.98] transition-all shadow-sm"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span style={{ color: 'var(--ds-brand)' }}>✦</span>
+                        <span>{q}</span>
+                      </span>
+                      <span className="text-brand-muted/60 flex-none">›</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {messages.filter(Boolean)
               .filter(m => {
                 // 生成中：与 pendingUserMsg 内容相同的 user 消息由乐观气泡单独渲染，避免重复
@@ -1761,11 +1786,6 @@ export default function Chat() {
                 追问
               </button>
             )}
-          </div>
-
-          {/* 免责声明 */}
-          <div className="text-center text-brand-muted/40 text-[10px] py-1">
-            AI存在幻觉，仅供传统文化体验与娱乐参考，不具有科学预测能力
           </div>
         </div>
       )}

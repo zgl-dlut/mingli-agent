@@ -30,6 +30,12 @@
   --ds-radius-card: 16px;
   --ds-radius-pill: 999px;
 
+  /* ===== 全局字号阶梯（App 端统一，页面禁止再随意写死字号）===== */
+  --ds-fs-xs: 11px;   /* 小标签 / 徽标 / 免责 */
+  --ds-fs-sm: 13px;   /* 辅助说明 / 次级信息 */
+  --ds-fs-md: 15px;   /* 正文 / 对话气泡 / 列表条目 */
+  --ds-fs-lg: 17px;   /* 模块标题 / 页内大标题 */
+
   /* 文字色阶（映射到设计稿墨色） */
   --text: var(--ds-ink);
   --text-strong: var(--ds-ink);
@@ -468,7 +474,7 @@ body {
 
 /* ===== 报告 HTML 排版样式（参考周算网站） ===== */
 .report-content {
-  font-size: 1rem;
+  font-size: var(--ds-fs-md);
   line-height: 1.9;
   color: var(--text);
   max-width: none;
@@ -682,6 +688,7 @@ body {
    ============================================================ */
 .followup-report {
   font-family: var(--font-body);
+  font-size: var(--ds-fs-md);
   font-weight: 400;
   color: var(--text);
 }
