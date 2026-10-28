@@ -1,0 +1,1752 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V2 模块化设计稿 · 趣算算</title>
+<style>
+:root {
+  --bg: #F7F5F0;
+  --card: #FFFFFF;
+  --brand: #4A4E8F;
+  --brand-soft: #EEEFF9;
+  --brand-deep: #3E4278;
+  --gold: #C9A86A;
+  --gold-soft: #FBF3E3;
+  --gold-line: #EBD9B4;
+  --ink: #2B2B33;
+  --ink-2: #8A8A93;
+  --line: #ECEAE4;
+  --success: #2E9E6B;
+  --danger: #D9534F;
+  --r-card: 16px;
+  --r-pill: 999px;
+  font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #131318;
+  min-height: 100vh;
+  padding: 46px 30px 90px;
+  display: flex; flex-wrap: wrap; gap: 46px 38px; justify-content: center;
+}
+/* 顶部说明 */
+.intro { flex-basis: 100%; max-width: 1240px; }
+.intro h1 { font-size: 25px; color: #F2F2F7; letter-spacing: .5px; }
+.intro > p { font-size: 13px; line-height: 1.85; margin-top: 10px; color: #9A9AA6; }
+.map { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+.map-card { flex: 1; min-width: 250px; background: #1C1C23; border: 1px solid #2B2B36; border-radius: 14px; padding: 13px 15px; }
+.map-card .k { font-size: 11px; letter-spacing: 1.5px; color: #C9A86A; }
+.map-card .v { font-size: 14px; font-weight: 700; color: #EDEDF4; margin-top: 6px; }
+.map-card .d { font-size: 11.5px; color: #8E8E9A; line-height: 1.7; margin-top: 5px; }
+/* 模块分隔 */
+.module-head { flex-basis: 100%; max-width: 1240px; display: flex; align-items: flex-start; gap: 18px; margin-top: 34px; padding-top: 26px; border-top: 1px solid rgba(255,255,255,.09); }
+.module-no { flex: none; font-size: 11px; letter-spacing: 2px; color: #C9A86A; border: 1px solid rgba(201,168,106,.45); border-radius: 999px; padding: 5px 13px; margin-top: 3px; }
+.module-t h2 { font-size: 21px; color: #F2F2F7; font-weight: 700; }
+.module-t .line { font-size: 12.5px; color: #9A9AA6; line-height: 1.85; margin-top: 7px; max-width: 1020px; }
+.module-t .line b { color: #D8D8E4; font-weight: 600; }
+/* 手机 */
+.frame { display: flex; flex-direction: column; align-items: center; gap: 13px; }
+.cap { font-size: 12px; color: #8E8E9A; letter-spacing: .4px; }
+.cap b { color: #E9E9F0; font-weight: 600; margin-right: 7px; }
+.cap em { font-style: normal; color: #C9A86A; }
+.phone {
+  width: 390px; height: 844px; flex: none;
+  background: var(--bg); border: 11px solid #0D0D11; border-radius: 46px;
+  box-shadow: 0 26px 70px rgba(0,0,0,.6);
+  display: flex; flex-direction: column; position: relative; overflow: hidden;
+}
+.statusbar { height: 44px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 26px 0 30px; }
+.statusbar .time { font-size: 15px; font-weight: 600; color: var(--ink); }
+.statusbar .icons { display: flex; align-items: center; gap: 6px; }
+.sig { font-size: 9px; letter-spacing: 1px; color: #2B2B33; }
+.batt { width: 22px; height: 10px; border: 1px solid rgba(43,43,51,.35); border-radius: 3px; position: relative; }
+.batt::after { content: ""; position: absolute; inset: 2px 6px 2px 2px; background: #2B2B33; border-radius: 1px; }
+.wifi { width: 13px; height: 9px; border: 1.6px solid #2B2B33; border-color: #2B2B33 transparent transparent transparent; border-radius: 50% 50% 0 0; transform: translateY(3px); }
+.screen { flex: 1; display: flex; flex-direction: column; padding: 0 16px; overflow: hidden; position: relative; }
+.hdr { flex: none; height: 46px; display: flex; align-items: center; justify-content: space-between; }
+.hdr .h-title { font-size: 17px; font-weight: 700; color: var(--ink); }
+.hdr .h-sub { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+.icon-btn { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: var(--ink); }
+.card { background: var(--card); border-radius: var(--r-card); padding: 14px; box-shadow: 0 1px 4px rgba(43,43,51,.05); }
+.pill { display: inline-flex; align-items: center; gap: 4px; border-radius: var(--r-pill); font-size: 11px; font-weight: 600; padding: 4px 10px; }
+.pill-brand { background: var(--brand-soft); color: var(--brand); }
+.pill-gold { background: var(--gold-soft); color: #9A7A3E; border: 1px solid var(--gold-line); }
+.pill-danger { background: #FBECEC; color: var(--danger); }
+.pill-success { background: #EAF6F0; color: var(--success); }
+.mut { color: var(--ink-2); }
+.btn { border-radius: 14px; font-size: 15px; font-weight: 600; padding: 13px 0; text-align: center; }
+.btn-primary { background: var(--brand); color: #fff; }
+.btn-gold { background: linear-gradient(135deg, #DBBE88, #C9A86A); color: #3A2F1A; }
+.btn-line { border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+.btn-ghost { color: var(--brand); font-size: 13px; font-weight: 600; }
+.tabbar { flex: none; background: var(--card); border-top: 1px solid var(--line); display: flex; padding: 8px 0 22px; }
+.tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: var(--ink-2); }
+.tab.active { color: var(--brand); font-weight: 700; }
+.home-indicator { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); width: 134px; height: 5px; border-radius: 3px; background: #111; }
+.sec-title { font-size: 13px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.divider { height: 1px; background: var(--line); margin: 12px 0; }
+.msg-user { align-self: flex-end; max-width: 78%; background: var(--brand); color: #fff; font-size: 15px; line-height: 1.6; padding: 10px 14px; border-radius: 16px 16px 4px 16px; }
+.ai-pill { display: inline-flex; align-items: center; gap: 4px; background: var(--brand-soft); color: var(--brand); font-size: 10px; font-weight: 700; border-radius: var(--r-pill); padding: 3px 9px; letter-spacing: .5px; }
+.fold { background: #FAF9F5; border-radius: 12px; padding: 10px 12px; margin-top: 10px; }
+.fold-head { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--brand); }
+.fold p { font-size: 12.5px; line-height: 1.75; color: var(--ink); margin-top: 6px; }
+.locked { position: relative; overflow: hidden; border-radius: 12px; }
+.locked .blurred { filter: blur(4.5px); user-select: none; }
+.lock-mask { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(247,245,240,.55); }
+.lock-tag { background: var(--card); border: 1px solid var(--line); color: var(--ink-2); font-size: 11px; border-radius: var(--r-pill); padding: 5px 12px; font-weight: 600; }
+.seg { display: flex; background: var(--card); border-radius: var(--r-pill); padding: 3px; border: 1px solid var(--line); }
+.seg span { flex: 1; text-align: center; font-size: 12.5px; padding: 7px 0; border-radius: var(--r-pill); color: var(--ink-2); }
+.seg span.on { background: var(--brand); color: #fff; font-weight: 700; }
+.dim-num { width: 22px; height: 22px; border-radius: 7px; background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; }
+.inputbar { flex: none; display: flex; align-items: center; gap: 8px; background: var(--card); border-radius: var(--r-pill); padding: 6px 6px 6px 16px; box-shadow: 0 1px 4px rgba(43,43,51,.06); }
+.send { background: var(--brand); color: #fff; font-size: 13px; font-weight: 600; border-radius: var(--r-pill); padding: 8px 18px; }
+.chipbar { flex: none; display: flex; gap: 8px; padding: 4px 0 10px; overflow: hidden; }
+.chip { display: inline-flex; align-items: center; gap: 5px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-pill); font-size: 11.5px; color: var(--ink); padding: 6px 11px; white-space: nowrap; }
+.chip.on { background: var(--brand-soft); border-color: #D8DAF0; color: var(--brand); font-weight: 600; }
+.scroll-area { flex: 1; overflow: hidden; padding-top: 4px; }
+.footbar { flex: none; padding: 10px 0 12px; border-top: 1px solid var(--line); background: var(--bg); }
+.mini { font-size: 11px; color: var(--ink-2); }
+.row { display: flex; align-items: center; justify-content: space-between; }
+.g12 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.g4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+.stat { text-align: center; }
+.stat .n { font-size: 15px; font-weight: 700; color: var(--ink); }
+.stat .l { font-size: 10.5px; color: var(--ink-2); margin-top: 3px; }
+.tl { position: relative; padding-left: 16px; }
+.tl::before { content: ""; position: absolute; left: 4px; top: 4px; bottom: 4px; width: 2px; background: #E9E6DE; }
+.tl-item { position: relative; padding-bottom: 12px; }
+.tl-item::before { content: ""; position: absolute; left: -15px; top: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--brand); }
+.tl-item.gold::before { background: var(--gold); }
+.progress { height: 4px; border-radius: 2px; background: #E9E6DE; overflow: hidden; }
+.progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--brand), #7B80C4); }
+.pulse { width: 62px; height: 62px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: flex; align-items: center; justify-content: center; font-size: 22px; box-shadow: 0 0 0 12px rgba(74,78,143,.06); }
+.avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; flex: none; }
+.avat-brand { background: var(--brand); color: #fff; }
+.avat-gold { background: var(--gold-soft); border: 1px solid var(--gold-line); color: #9A7A3E; }
+.rel-bar { display: flex; align-items: center; gap: 8px; }
+/* 半弹层 */
+.overlay { position: absolute; inset: 0; background: rgba(18,18,24,.42); z-index: 5; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 79%; background: var(--bg); border-radius: 22px 22px 0 0; box-shadow: 0 -12px 34px rgba(0,0,0,.18); display: flex; flex-direction: column; z-index: 6; }
+.sheet-hdr { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 10px; border-bottom: 1px solid var(--line); }
+.bubble-ai { background: var(--card); border-radius: 4px 16px 16px 16px; padding: 12px 14px; font-size: 13px; line-height: 1.8; color: var(--ink); box-shadow: 0 1px 4px rgba(43,43,51,.05); }
+/* 流盘柱状 */
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 118px; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; }
+.bar-key { font-size: 9.5px; line-height: 1.3; color: var(--ink-2); text-align: center; }
+.bar-score { font-size: 11.5px; font-weight: 700; color: var(--ink); }
+.bar { width: 82%; border-radius: 5px 5px 0 0; background: linear-gradient(180deg, #C9A86A, #E4CFA6); }
+</style>
+</head>
+<body>
+
+<div class="intro">
+  <h1>趣算算 · V2 模块化设计稿 · 18 屏 + 合盘态</h1>
+  <p>按功能模块分组，避免跨模块串行。每个模块先写清「入口 → 行为链路 → 出口」，再列该模块的屏幕。
+     不设独立关系模块：合盘在对话的星盘弹层里选 A / B，材料在输入框内联上传。
+     配色统一取自主色系 tokens，不从竞品截图取色；金额与积分为设计示意。</p>
+  <div class="map">
+    <div class="map-card">
+      <div class="k">模块 01</div>
+      <div class="v">今日 · 认识自己</div>
+      <div class="d">入口：底部 Tab「今日」（默认首页）<br>4 屏</div>
+    </div>
+    <div class="map-card">
+      <div class="k">模块 02</div>
+      <div class="v">对话 · 获得陪伴</div>
+      <div class="d">入口：底部 Tab「对话」/ 今日页「问 AI」<br>6 屏 + 合盘态（含选择与输入态）</div>
+    </div>
+    <div class="map-card">
+      <div class="k">模块 03</div>
+      <div class="v">我的 · 资产与权益</div>
+      <div class="d">入口：底部 Tab「我的」<br>8 屏（星盘 / 流盘 / 更多解读 / AI 解读 / 添加档案）</div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 模块 01 今日 ==================== -->
+<div class="module-head">
+  <div class="module-no">模块 01</div>
+  <div class="module-t">
+    <h2>今日 · 认识自己</h2>
+    <div class="line">
+      <b>入口：</b>底部 Tab「今日」，App 默认首页；从其他模块返回时保留上次所处时间段。<br>
+      <b>行为链路：</b>打开首页看免费日运 → 切换「本月 / 本年」→ 免费预览（总评 + 1 个维度）→ 积分解锁或会员免费解锁 → 生成完成在页面内展开全文 → 沉淀到报告中心。<br>
+      <b>出口：</b>报告中心（回看）、会员中心（升级）、对话（带着具体问题追问，或切「合盘」问关系）。
+    </div>
+  </div>
+</div>
+
+<!-- 01 今日页 -->
+<div class="frame">
+  <div class="cap"><b>01</b>今日页 · <em>入口：Tab 今日</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <div>
+          <div class="h-title" style="font-size:19px">今日</div>
+          <div class="h-sub">2026 年 10 月 27 日 · 周二 · 农历九月十七</div>
+        </div>
+        <span class="pill pill-brand">小玲 ▾</span>
+      </div>
+
+      <div class="seg" style="margin-top:4px">
+        <span class="on">今日</span><span>本月</span><span>本年</span>
+      </div>
+
+      <div class="scroll-area" style="margin-top:11px">
+        <!-- 主运卡 -->
+        <div class="card" style="background:linear-gradient(160deg,#4A4E8F,#3E4278);color:#fff;padding:15px">
+          <div class="row">
+            <span style="font-size:12px;opacity:.8">丙午年 · 戊戌月 · 丁卯日</span>
+            <span class="pill" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.25)">大吉</span>
+          </div>
+          <div style="font-size:20px;font-weight:700;margin-top:12px;letter-spacing:1px">霜焰破霜 · 隐忍生财</div>
+          <div style="font-size:12.5px;line-height:1.75;margin-top:8px;opacity:.88">
+            火土相生，适合推进卡住的事。上午灵感强，下午宜谈合作。
+          </div>
+          <div style="display:flex;gap:7px;margin-top:12px">
+            <span class="pill" style="background:rgba(255,255,255,.14);color:#fff">食神当值</span>
+            <span class="pill" style="background:rgba(255,255,255,.14);color:#fff">正财透干</span>
+            <span class="pill" style="background:rgba(255,255,255,.14);color:#fff">事业 85</span>
+          </div>
+        </div>
+
+        <!-- 宜忌 -->
+        <div class="g12" style="margin-top:9px">
+          <div class="card" style="padding:11px 13px">
+            <div style="font-size:12px;font-weight:700;color:var(--success)">宜</div>
+            <div style="font-size:12.5px;line-height:1.7;color:var(--ink);margin-top:5px">谈合作 · 汇报<br>整理账目 · 签约</div>
+          </div>
+          <div class="card" style="padding:11px 13px">
+            <div style="font-size:12px;font-weight:700;color:var(--danger)">忌</div>
+            <div style="font-size:12.5px;line-height:1.7;color:var(--ink);margin-top:5px">情绪化沟通<br>深夜做决定</div>
+          </div>
+        </div>
+
+        <!-- 本月预告（月运入口） -->
+        <div class="card" style="margin-top:9px;border:1px solid #DDDFF2;background:linear-gradient(180deg,#F7F7FD,#FFF);padding:13px">
+          <div class="row">
+            <div>
+              <div style="font-size:13.5px;font-weight:700;color:var(--brand)">11 月月运已更新</div>
+              <div class="mini" style="margin-top:3px">收束与蓄势 · 4 个维度 · 已试看 1/4</div>
+            </div>
+            <span class="pill pill-gold">80 积分</span>
+          </div>
+          <div class="btn btn-primary" style="margin-top:10px;padding:9px 0;font-size:13px">免费试看本月 ›</div>
+        </div>
+
+        <!-- 本年预告（年报入口） -->
+        <div class="card" style="margin-top:9px;padding:13px">
+          <div class="row">
+            <div>
+              <div style="font-size:13.5px;font-weight:700;color:var(--ink)">2026 年度报告</div>
+              <div class="mini" style="margin-top:3px">借火生财 · 12 个月节奏 · 已试看 1/3</div>
+            </div>
+            <span class="pill pill-gold">160 积分</span>
+          </div>
+          <div class="btn btn-line" style="margin-top:10px;padding:9px 0;font-size:13px">免费试看年报 ›</div>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab active"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.5"/></svg>今日</div>
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16v11H9l-5 3z"/></svg>对话</div>
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8.5" r="3.4"/><path d="M5 20c.8-3.6 3.6-5.3 7-5.3s6.2 1.7 7 5.3"/></svg>我的</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 02 月运试看 -->
+<div class="frame">
+  <div class="cap"><b>02</b>月运试看 · <em>入口：今日页「本月」/ 本月预告</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <div style="text-align:center">
+          <div class="h-title" style="font-size:16px">本月运势</div>
+          <div class="h-sub">2026 年 11 月 · 己亥月</div>
+        </div>
+        <span class="icon-btn mut">⋯</span>
+      </div>
+
+      <div class="scroll-area">
+        <div class="card" style="background:linear-gradient(160deg,#4A4E8F,#3E4278);color:#fff">
+          <div class="row">
+            <span style="font-size:12px;opacity:.82">小玲 · 辛金日主</span>
+            <span class="pill" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.25)">平稳</span>
+          </div>
+          <div style="font-size:20px;font-weight:700;margin-top:13px">收束与蓄势</div>
+          <div style="font-size:12.5px;line-height:1.8;margin-top:8px;opacity:.9">
+            己亥月土生金，但地支亥水为忌。适合收口、复盘、补短板，不宜开新战场。
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="row"><span class="sec-title">关键节点</span><span class="mini">11/07 — 12/06</span></div>
+          <div class="tl" style="margin-top:12px">
+            <div class="tl-item"><div style="font-size:12.5px;font-weight:600;color:var(--ink)">11/07 立冬 · 节气换月</div><div class="mini" style="margin-top:2px">情绪起伏，别当天做重大决定</div></div>
+            <div class="tl-item gold"><div style="font-size:12.5px;font-weight:600;color:var(--ink)">11/15 前后 · 合作窗口</div><div class="mini" style="margin-top:2px">辰日带合，适合与人谈事</div></div>
+            <div class="tl-item"><div style="font-size:12.5px;font-weight:600;color:var(--ink)">11/28 前后 · 阻力日</div><div class="mini" style="margin-top:2px">亥水当值，沟通易反复</div></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="row"><span class="sec-title">四维解读</span><span class="mini">已试看 1/4</span></div>
+
+          <div style="margin-top:12px">
+            <div class="row"><span style="font-size:13.5px;font-weight:700;color:var(--ink)">事业</span><span class="pill pill-success">吉</span></div>
+            <p style="font-size:13px;line-height:1.8;color:var(--ink);margin-top:6px">前半月收尾旧项目效率高；后半月不宜接新活，容易在年底集中返工。</p>
+          </div>
+
+          <div class="locked" style="margin-top:14px">
+            <div class="row blurred"><span style="font-size:13.5px;font-weight:700;color:var(--ink)">财运</span><span class="pill pill-danger">需谨慎</span></div>
+            <p class="blurred" style="font-size:13px;line-height:1.8;color:var(--ink);margin-top:6px">正财稳、偏财弱，忌大额投资与朋友借贷，年底人情支出会明显增加。</p>
+            <div class="lock-mask"><span class="lock-tag">🔒 解锁查看</span></div>
+          </div>
+
+          <div class="locked" style="margin-top:12px">
+            <div class="row blurred"><span style="font-size:13.5px;font-weight:700;color:var(--ink)">感情</span><span class="pill pill-success">平顺</span></div>
+            <p class="blurred" style="font-size:13px;line-height:1.8;color:var(--ink);margin-top:6px">有伴者宜多陪伴，单身者本月桃花偏弱，下旬后转好。</p>
+            <div class="lock-mask"><span class="lock-tag">🔒 解锁查看</span></div>
+          </div>
+
+          <div class="locked" style="margin-top:12px">
+            <div class="row blurred"><span style="font-size:13.5px;font-weight:700;color:var(--ink)">健康</span><span class="pill pill-danger">留意</span></div>
+            <p class="blurred" style="font-size:13px;line-height:1.8;color:var(--ink);margin-top:6px">亥水克火，注意睡眠与泌尿系统，月底作息紊乱容易引发旧疾。</p>
+            <div class="lock-mask"><span class="lock-tag">🔒 解锁查看</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footbar">
+        <div class="row" style="margin-bottom:9px">
+          <span class="mini">解锁完整月运 · 4 维 + 关键节点</span>
+          <span style="font-size:13px;font-weight:700;color:var(--gold)">80 积分</span>
+        </div>
+        <div style="display:flex;gap:9px">
+          <div class="btn btn-primary" style="flex:1;font-size:13.5px;padding:11px 0">积分解锁</div>
+          <div class="btn btn-gold" style="flex:1;font-size:13.5px;padding:11px 0">会员免费解锁</div>
+        </div>
+        <div class="mini" style="text-align:center;margin-top:8px">会员含月运 + 年报，查看权益 ›</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 03 月运正文 -->
+<div class="frame">
+  <div class="cap"><b>03</b>月运正文 · <em>出口：报告中心 / 月份切换</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:52</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <div style="text-align:center">
+          <div class="h-title" style="font-size:16px">11 月运势</div>
+          <div class="h-sub">己亥月 · 小玲</div>
+        </div>
+        <span class="pill pill-brand">目录</span>
+      </div>
+
+      <div class="scroll-area">
+        <div class="card">
+          <div class="row"><span class="pill pill-success">整体平稳</span><span class="mini">辛金 · 正财格</span></div>
+          <div style="font-size:14.5px;line-height:1.85;color:var(--ink);margin-top:10px">
+            这个月的主旋律是「收」。把手里的事收干净，比开新局更重要。亥水为忌，容易在人际关系上耗神，学会把话说短、把决定往后放。
+          </div>
+        </div>
+
+        <div style="display:flex;gap:7px;margin-top:11px;overflow:hidden">
+          <span class="chip on" style="font-size:11px">事业</span>
+          <span class="chip" style="font-size:11px">财运</span>
+          <span class="chip" style="font-size:11px">感情</span>
+          <span class="chip" style="font-size:11px">健康</span>
+        </div>
+
+        <div style="margin-top:14px">
+          <div class="sec-title"><span class="dim-num">01</span>事业 · 收尾优于开新</div>
+          <p style="font-size:14px;line-height:1.85;color:var(--ink);margin-top:8px">
+            上旬适合把拖着的项目收口，中旬有一次合作窗口（11/15 前后），下旬容易被反复修改消耗。重要汇报尽量安排在上半月。
+          </p>
+          <div class="fold">
+            <div class="fold-head"><span>📖 分析依据</span><span style="margin-left:auto;color:var(--ink-2);font-size:11px">收起 ˄</span></div>
+            <p>己亥月，亥水为忌神；中旬辰日与月支有合，短暂转吉；下旬水气加重，主反复。</p>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div>
+          <div class="sec-title"><span class="dim-num">02</span>财运 · 正财稳，偏财弱</div>
+          <p style="font-size:14px;line-height:1.85;color:var(--ink);margin-top:8px">
+            工资收入稳定，年终奖可能略低于预期。本月不适合大额投资、朋友借贷、冲动消费。
+          </p>
+        </div>
+
+        <div style="margin-top:14px">
+          <div class="sec-title"><span class="dim-num">03</span>感情 · 平顺但需主动</div>
+          <p style="font-size:14px;line-height:1.85;color:var(--ink);margin-top:8px">
+            有伴者宜多陪伴、少讲道理；单身者本月桃花偏弱，下旬后转好。
+          </p>
+        </div>
+
+        <div style="margin-top:14px">
+          <div class="sec-title"><span class="dim-num">04</span>健康 · 留意睡眠</div>
+          <p style="font-size:14px;line-height:1.85;color:var(--ink);margin-top:8px">
+            亥水克火，注意睡眠质量与泌尿系统。月底作息紊乱容易引发旧疾。
+          </p>
+        </div>
+      </div>
+
+      <div class="footbar">
+        <div class="row">
+          <div style="display:flex;gap:8px"><span class="chip" style="font-size:12px">👍 有帮助</span><span class="chip" style="font-size:12px">👎 不准确</span></div>
+          <span class="mini">AI 生成 · 传统文化参考</span>
+        </div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 04 年报 -->
+<div class="frame">
+  <div class="cap"><b>04</b>年度报告 · <em>入口：今日页「本年」</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <div style="text-align:center">
+          <div class="h-title" style="font-size:16px">2026 年度报告</div>
+          <div class="h-sub">丙午年 · 癸未大运</div>
+        </div>
+        <span class="pill pill-gold">会员</span>
+      </div>
+
+      <div class="scroll-area">
+        <div class="card" style="background:linear-gradient(160deg,#4A4E8F,#3E4278);color:#fff">
+          <div class="row">
+            <span style="font-size:12px;opacity:.82">年度主题</span>
+            <span class="pill" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.25)">大吉</span>
+          </div>
+          <div style="font-size:20px;font-weight:700;margin-top:12px">借火生财 · 顺势上行</div>
+          <div style="font-size:12.5px;line-height:1.8;margin-top:9px;opacity:.9">
+            丙午纯火帮身，是近三年最顺的一年。机会集中在上半年与 9—10 月，12 月需要收着走。
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="row"><span class="sec-title">十二个月节奏</span><span class="mini">点击查看流月</span></div>
+          <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-top:12px">
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#EAF6F0;color:#2E9E6B;font-size:11px;font-weight:600">1<br>吉</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#F4F4F8;color:#8A8A93;font-size:11px;font-weight:600">2<br>平</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#EAF6F0;color:#2E9E6B;font-size:11px;font-weight:600">3<br>吉</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#EAF6F0;color:#2E9E6B;font-size:11px;font-weight:600">4<br>吉</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#F4F4F8;color:#8A8A93;font-size:11px;font-weight:600">5<br>平</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#FBECEC;color:#D9534F;font-size:11px;font-weight:600">6<br>凶</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#EAF6F0;color:#2E9E6B;font-size:11px;font-weight:600">7<br>吉</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#EAF6F0;color:#2E9E6B;font-size:11px;font-weight:600">8<br>吉</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#EAF6F0;color:#2E9E6B;font-size:11px;font-weight:600">9<br>吉</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#EAF6F0;color:#2E9E6B;font-size:11px;font-weight:600">10<br>吉</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#F4F4F8;color:#8A8A93;font-size:11px;font-weight:600">11<br>平</div>
+            <div style="text-align:center;border-radius:9px;padding:8px 0;background:#FBECEC;color:#D9534F;font-size:11px;font-weight:600">12<br>凶</div>
+          </div>
+          <div class="mini" style="margin-top:10px">吉 7 个月 · 平 3 个月 · 凶 2 个月</div>
+        </div>
+
+        <div class="g12" style="margin-top:10px">
+          <div class="card" style="padding:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--success)">机会窗口</div>
+            <div style="font-size:13px;line-height:1.7;color:var(--ink);margin-top:6px">3—4 月 · 7—10 月</div>
+            <div class="mini" style="margin-top:5px">争取晋升、换赛道</div>
+          </div>
+          <div class="card" style="padding:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--danger)">风险月份</div>
+            <div style="font-size:13px;line-height:1.7;color:var(--ink);margin-top:6px">6 月 · 12 月</div>
+            <div class="mini" style="margin-top:5px">避免签约与大额支出</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="sec-title">大运叠加</div>
+          <p style="font-size:13.5px;line-height:1.8;color:var(--ink);margin-top:8px">
+            癸未大运偏印生身，配合丙午流年，属于「有人托底」的一年。适合借力、拜师、进组织。
+          </p>
+          <div class="fold">
+            <div class="fold-head"><span>📖 分析依据</span><span style="margin-left:auto;color:var(--ink-2);font-size:11px">收起 ˄</span></div>
+            <p>癸未大运：偏印 + 未土印库生辛金；2026 丙午流年：丙火正官、午火为喜神。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="footbar">
+        <div class="row"><span class="mini">已含在会员权益中 · 永久保留</span><span class="btn-ghost">分享 ›</span></div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- ==================== 模块 02 对话 ==================== -->
+<div class="module-head">
+  <div class="module-no">模块 02</div>
+  <div class="module-t">
+    <h2>对话 · 获得陪伴</h2>
+    <div class="line">
+      <b>入口：</b>底部 Tab「对话」；今日页报告底部「带着问题问 AI」；星盘详情底部「⇄ 合盘」。顶部「⊕ 星盘 · 小玲 ▾」chip 是单人 / 合盘的唯一入口。<br>
+      <b>行为链路：</b>点星盘 chip → 弹层切「合盘」→ 直接选 A、B 两个人 → 回到对话输入问题（可按住说话，也可「+」选相册截图 / 文本）→ <b>免费</b>得到分析框架（框架与「开启分析」在同一张卡）→ 扣 60 积分后<b>不跳页</b>，卡内显示生成进度 → 约 3 分钟完成，在对话流留下结果卡 → 点「查看完整解读」才进正文页，返回即回对话。<b>不设独立关系模块，也不设材料上传页</b>。<br>
+      <b>出口：</b>深度解读全文、历史问题回看、报告中心。
+    </div>
+  </div>
+</div>
+
+<!-- 05 对话首屏 -->
+<div class="frame">
+  <div class="cap"><b>05</b>对话首屏 · 单人态 · <em>入口：Tab 对话；点顶部星盘可切「合盘」，合盘样式见 05b</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <div style="display:flex;align-items:center;gap:5px">
+          <span style="font-size:16px;font-weight:700">星盘 · 小玲</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8A8A93" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+        </div>
+        <span class="pill pill-brand">1740 积分</span>
+      </div>
+      <div class="mini" style="margin-top:-2px">点星盘切换「单人 / 合盘」；切到合盘需选 2 个人</div>
+
+      <div class="scroll-area">
+        <div style="display:flex;gap:9px;margin-top:6px">
+          <div style="width:34px;height:34px;border-radius:50%;background:var(--brand);color:#EEEFF9;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none">✦</div>
+          <div class="card" style="flex:1;border-radius:4px 16px 16px 16px;padding:14px">
+            <div style="font-size:15px;font-weight:700;color:var(--ink)">Hi～ 我是趣算算 AI</div>
+            <div class="mut" style="font-size:13px;line-height:1.65;margin-top:5px">来用你的命盘档案解答问题吧～<br>选一个你最近在琢磨的事：</div>
+
+            <div style="display:flex;flex-direction:column;gap:9px;margin-top:13px">
+              <div class="card" style="padding:11px 12px;background:#FAF9F5;box-shadow:none;border:1px solid var(--line);border-radius:12px">
+                <div style="font-size:13.5px;color:var(--ink)">我的性格优势有哪些？</div>
+                <div class="mini" style="margin-top:3px">从十神与格局看你的天赋底色</div>
+              </div>
+              <div class="card" style="padding:11px 12px;background:#FAF9F5;box-shadow:none;border:1px solid var(--line);border-radius:12px">
+                <div style="font-size:13.5px;color:var(--ink)">我适合什么职业方向？</div>
+                <div class="mini" style="margin-top:3px">用神与流年给你的选择参考</div>
+              </div>
+              <div class="card" style="padding:11px 12px;background:#FAF9F5;box-shadow:none;border:1px solid var(--line);border-radius:12px">
+                <div style="font-size:13.5px;color:var(--ink)">明年的财运如何？</div>
+                <div class="mini" style="margin-top:3px">流年与大运叠加的财势判断</div>
+              </div>
+              <div class="card" style="padding:11px 12px;background:#FAF9F5;box-shadow:none;border:1px solid var(--line);border-radius:12px">
+                <div style="font-size:13.5px;color:var(--ink)">恋爱中有哪些相处建议？</div>
+                <div class="mini" style="margin-top:3px">从命盘看你与 TA 的相处节奏</div>
+              </div>
+            </div>
+            <div class="mini" style="margin-top:12px">也可以直接输入你正在烦恼的事</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chipbar">
+        <span class="chip on">⊕ 星盘 · 小玲 ▾</span>
+        <span class="chip">⚡ 深度解读 <b style="color:var(--brand)">开</b></span>
+      </div>
+      <div class="inputbar" style="margin-bottom:5px;gap:10px">
+        <span style="flex:none;display:flex;color:var(--ink-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span>
+        <span class="mut" style="flex:1;font-size:13px">说说你最近在为什么事困扰…</span>
+        <span style="flex:none;display:flex;color:var(--ink-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="10" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path d="M9 21h6"/></svg></span>
+        <span class="send">发送</span>
+      </div>
+      <div class="mini" style="text-align:center;margin-bottom:6px">可语音输入，也可「+」上传聊天记录一起分析</div>
+      <div class="tabbar">
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.5"/></svg>今日</div>
+        <div class="tab active"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16v11H9l-5 3z"/></svg>对话</div>
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8.5" r="3.4"/><path d="M5 20c.8-3.6 3.6-5.3 7-5.3s6.2 1.7 7 5.3"/></svg>我的</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 05b 对话首屏 · 合盘态 -->
+<div class="frame">
+  <div class="cap"><b>05b</b>对话首屏 · 合盘态 · <em>同一位置的星盘 chip 换成「合盘 · A 小玲 × B 阿哲」</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <div style="display:flex;align-items:center;gap:5px">
+          <span style="font-size:16px;font-weight:700">合盘 · 小玲 × 阿哲</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8A8A93" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+        </div>
+        <span class="pill pill-brand">1740 积分</span>
+      </div>
+      <div class="mini" style="margin-top:-2px">A 小玲 · 辛金 正财格　B 阿哲 · 庚金 伤官格 · 恋人</div>
+
+      <div class="scroll-area">
+        <div style="display:flex;gap:9px;margin-top:6px">
+          <div style="width:34px;height:34px;border-radius:50%;background:var(--brand);color:#EEEFF9;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none">✦</div>
+          <div class="card" style="flex:1;border-radius:4px 16px 16px 16px;padding:14px">
+            <div style="font-size:15px;font-weight:700;color:var(--ink)">Hi～ 我看到了小玲和阿哲的合盘</div>
+            <div class="mut" style="font-size:13px;line-height:1.65;margin-top:5px">我会从你们各自的命盘节奏，解释为什么总在同一件事上卡住。<br>选一个你们最近的事：</div>
+
+            <div style="display:flex;flex-direction:column;gap:9px;margin-top:13px">
+              <div class="card" style="padding:11px 12px;background:#FAF9F5;box-shadow:none;border:1px solid var(--line);border-radius:12px">
+                <div style="font-size:13.5px;color:var(--ink)">我们为什么总因为家务吵架？</div>
+                <div class="mini" style="margin-top:3px">看两个人对「责任」和「回应」的节奏差</div>
+              </div>
+              <div class="card" style="padding:11px 12px;background:#FAF9F5;box-shadow:none;border:1px solid var(--line);border-radius:12px">
+                <div style="font-size:13.5px;color:var(--ink)">他的沟通节奏和我差在哪？</div>
+                <div class="mini" style="margin-top:3px">从十神与日主看表达方式和回避点</div>
+              </div>
+              <div class="card" style="padding:11px 12px;background:#FAF9F5;box-shadow:none;border:1px solid var(--line);border-radius:12px">
+                <div style="font-size:13.5px;color:var(--ink)">这段关系里我容易忽略什么？</div>
+                <div class="mini" style="margin-top:3px">看你的惯性模式与对方的真实需要</div>
+              </div>
+              <div class="card" style="padding:11px 12px;background:#FAF9F5;box-shadow:none;border:1px solid var(--line);border-radius:12px">
+                <div style="font-size:13.5px;color:var(--ink)">他为什么总是回避冲突？</div>
+                <div class="mini" style="margin-top:3px">不猜心思，只解释他的命盘反应模式</div>
+              </div>
+            </div>
+            <div class="mini" style="margin-top:12px">也可以直接说你们最近卡住的事</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chipbar">
+        <span class="chip on">⊕ 合盘 · A 小玲 × B 阿哲 ▾</span>
+        <span class="chip">⚡ 深度解读 <b style="color:var(--brand)">开</b></span>
+      </div>
+      <div class="inputbar" style="margin-bottom:5px;gap:10px">
+        <span style="flex:none;display:flex;color:var(--ink-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span>
+        <span class="mut" style="flex:1;font-size:13px">说说你们最近卡住的事…</span>
+        <span style="flex:none;display:flex;color:var(--ink-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="10" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path d="M9 21h6"/></svg></span>
+        <span class="send">发送</span>
+      </div>
+      <div class="mini" style="text-align:center;margin-bottom:6px">可语音输入，也可「+」上传聊天截图一起分析</div>
+      <div class="tabbar">
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.5"/></svg>今日</div>
+        <div class="tab active"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16v11H9l-5 3z"/></svg>对话</div>
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8.5" r="3.4"/><path d="M5 20c.8-3.6 3.6-5.3 7-5.3s6.2 1.7 7 5.3"/></svg>我的</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 06 对话 · 输入框附件态 -->
+<div class="frame">
+  <div class="cap"><b>06</b>对话 · 输入框附件态 · <em>不新增页面；语音 / 图片 / 聊天记录都在输入框内完成</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:42</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <div style="display:flex;align-items:center;gap:5px">
+          <span style="font-size:16px;font-weight:700">星盘 · 小玲</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8A8A93" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+        </div>
+        <span class="pill pill-brand">1740 积分</span>
+      </div>
+
+      <div class="scroll-area" style="display:flex;flex-direction:column;gap:10px">
+        <div class="msg-user" style="max-width:86%;align-self:flex-end">我想让你看看这段聊天，我们最近总因为家务吵架。是不是真的不合适？</div>
+        <div style="display:flex;gap:7px;justify-content:flex-end">
+          <div style="width:52px;height:66px;border-radius:9px;background:#F1F1F5;border:1px solid var(--line);padding:7px;display:flex;flex-direction:column;gap:4px">
+            <span style="height:4px;width:76%;border-radius:2px;background:#D9D9E3"></span>
+            <span style="height:4px;width:58%;border-radius:2px;background:#E2E2EA"></span>
+            <span style="height:4px;width:70%;border-radius:2px;background:#D9D9E3"></span>
+            <span style="height:4px;width:44%;border-radius:2px;background:#E2E2EA"></span>
+          </div>
+          <div style="width:52px;height:66px;border-radius:9px;background:#F1F1F5;border:1px solid var(--line);padding:7px;display:flex;flex-direction:column;gap:4px">
+            <span style="height:4px;width:52%;border-radius:2px;background:#E2E2EA"></span>
+            <span style="height:4px;width:78%;border-radius:2px;background:#D9D9E3"></span>
+            <span style="height:4px;width:64%;border-radius:2px;background:#E2E2EA"></span>
+            <span style="height:4px;width:70%;border-radius:2px;background:#D9D9E3"></span>
+          </div>
+          <div style="width:52px;height:66px;border-radius:9px;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;color:var(--ink-2);font-size:20px">+</div>
+        </div>
+        <div class="mini" style="text-align:right">2 张截图 · 已解析 128 条对话 · 姓名手机号已打码</div>
+
+        <div class="bubble-ai">收到。我只从你们的沟通节奏和表达方式看差异，不判断谁对谁错，也不预测关系结局。</div>
+        <div class="mini" style="text-align:center">图片与聊天记录仅用于本次分析，7 天后自动删除</div>
+      </div>
+
+      <div class="card" style="padding:11px 8px;margin:0 0 7px">
+        <div class="row" style="justify-content:space-around">
+          <div style="text-align:center;width:24%">
+            <div style="width:38px;height:38px;border-radius:12px;background:#F1F1F6;display:flex;align-items:center;justify-content:center;margin:0 auto">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A4E8F" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9" r="1.6"/><path d="M4 17l5-4 3 2 3-3 5 5"/></svg>
+            </div>
+            <div class="mini" style="margin-top:5px">相册</div>
+          </div>
+          <div style="text-align:center;width:24%">
+            <div style="width:38px;height:38px;border-radius:12px;background:#F1F1F6;display:flex;align-items:center;justify-content:center;margin:0 auto">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A4E8F" stroke-width="1.7"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>
+            </div>
+            <div class="mini" style="margin-top:5px">拍照</div>
+          </div>
+          <div style="text-align:center;width:24%">
+            <div style="width:38px;height:38px;border-radius:12px;background:#F1F1F6;display:flex;align-items:center;justify-content:center;margin:0 auto">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A4E8F" stroke-width="1.7"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h4"/><path d="M9 13h6M9 17h6"/></svg>
+            </div>
+            <div class="mini" style="margin-top:5px">文本</div>
+          </div>
+          <div style="text-align:center;width:24%">
+            <div style="width:38px;height:38px;border-radius:12px;background:#F1F1F6;display:flex;align-items:center;justify-content:center;margin:0 auto">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4A4E8F" stroke-width="1.7"><rect x="9" y="3" width="6" height="10" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21M9 21h6"/></svg>
+            </div>
+            <div class="mini" style="margin-top:5px">语音</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chipbar">
+        <span class="chip on">⊕ 星盘 · 小玲 ▾</span>
+        <span class="chip">⚡ 深度解读 <b style="color:var(--brand)">开</b></span>
+      </div>
+      <div class="inputbar" style="margin-bottom:5px;gap:9px">
+        <span style="flex:none;display:flex;color:var(--brand)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span>
+        <span class="mut" style="flex:1;font-size:12.5px">补充一句你最想问的…</span>
+        <span style="flex:none;display:flex;color:var(--ink-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="10" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path d="M9 21h6"/></svg></span>
+        <span class="send">发送</span>
+      </div>
+      <div class="mini" style="text-align:center;margin-bottom:6px">按住说话，最长 60 秒；松开自动转写，可编辑后发送</div>
+
+      <div class="tabbar">
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.5"/></svg>今日</div>
+        <div class="tab active"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16v11H9l-5 3z"/></svg>对话</div>
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8.5" r="3.4"/><path d="M5 20c.8-3.6 3.6-5.3 7-5.3s6.2 1.7 7 5.3"/></svg>我的</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 07 选择星盘 · 合盘（对话内弹层） -->
+<div class="frame">
+  <div class="cap"><b>07</b>选择星盘 · 合盘（对话内弹层） · <em>只选 A / B 两个人，确定后回对话</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:42</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="h-title">选择星盘</span>
+        <span class="btn-ghost" style="font-size:12px">取消</span>
+      </div>
+
+      <div class="seg" style="margin-top:2px">
+        <span>单人</span><span class="on">合盘</span>
+      </div>
+      <div class="mini" style="margin-top:9px;line-height:1.7">切到合盘后，选 A、B 两个人就行。确定后直接回到对话，不发消息不扣费。</div>
+
+      <div class="scroll-area" style="margin-top:10px">
+        <div class="row" style="margin-top:2px">
+          <span class="sec-title">选择两个人</span>
+          <span class="mini">已选 2 / 2</span>
+        </div>
+        <div class="card" style="padding:0 14px;margin-top:8px">
+          <div class="row" style="padding:12px 0;border-bottom:1px solid var(--line)">
+            <div class="rel-bar">
+              <div class="avatar avat-brand" style="width:34px;height:34px;font-size:13px">玲</div>
+              <div style="margin-left:4px">
+                <div style="font-size:13.5px;font-weight:600;color:var(--ink)">小玲　<span class="pill pill-brand" style="font-size:10px">A · 我方</span></div>
+                <div class="mini" style="margin-top:2px">辛金 · 正财格</div>
+              </div>
+            </div>
+            <span class="btn-ghost" style="font-size:12px">切换</span>
+          </div>
+          <div class="row" style="padding:12px 0;border-bottom:1px solid var(--line)">
+            <div class="rel-bar">
+              <div class="avatar avat-gold" style="width:34px;height:34px;font-size:13px">哲</div>
+              <div style="margin-left:4px">
+                <div style="font-size:13.5px;font-weight:600;color:var(--ink)">阿哲　<span class="pill pill-gold" style="font-size:10px">B · 对方</span></div>
+                <div class="mini" style="margin-top:2px">庚金 · 伤官格</div>
+              </div>
+            </div>
+            <span class="btn-ghost" style="font-size:12px">切换</span>
+          </div>
+          <div class="row" style="padding:12px 0">
+            <div class="row" style="gap:9px;justify-content:flex-start">
+              <span style="width:34px;height:34px;border-radius:50%;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;color:var(--ink-2)">+</span>
+              <div>
+                <div style="font-size:13.5px;font-weight:600;color:var(--brand)">添加新档案</div>
+                <div class="mini" style="margin-top:2px">填生辰时一并选「与我的关系」</div>
+              </div>
+            </div>
+            <span class="mini" style="font-size:17px">›</span>
+          </div>
+          <div class="divider" style="margin:0"></div>
+          <div class="row" style="padding:11px 0 12px;flex-wrap:wrap;gap:7px;justify-content:flex-start">
+            <span class="mini" style="margin-right:2px">关系</span>
+            <span class="chip on" style="font-size:11.5px">恋人</span>
+            <span class="chip" style="font-size:11.5px">夫妻</span>
+            <span class="chip" style="font-size:11.5px">亲子</span>
+            <span class="chip" style="font-size:11.5px">朋友</span>
+            <span class="chip" style="font-size:11.5px">同事</span>
+          </div>
+        </div>
+
+        <div class="mini" style="margin-top:10px;line-height:1.7">合盘只解释双方节奏差异与相处盲区，不预测关系结局，也不判断谁对谁错。</div>
+      </div>
+
+      <div class="footbar">
+        <div class="row" style="margin-bottom:9px">
+          <span class="mini">A 小玲 × B 阿哲</span>
+          <span class="mini">恋人</span>
+        </div>
+        <div class="btn btn-primary" style="text-align:center;padding:12px 0;font-size:13.5px">带入对话 ›</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 08 分析框架卡 -->
+<div class="frame">
+  <div class="cap"><b>08</b>分析框架卡 · <em>框架与「开启分析」同一张卡；免费段不扣积分，单人 / 合盘共用</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:43</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="h-title" style="font-size:16px">星盘 · 小玲</span>
+        <span class="pill pill-brand">1740 积分</span>
+      </div>
+
+      <div class="scroll-area" style="display:flex;flex-direction:column;gap:12px">
+        <div class="msg-user">我今年下半年事业运怎么样？</div>
+
+        <div class="card" style="border-radius:16px 16px 16px 4px">
+          <span class="ai-pill">✦ 分析框架</span>
+          <div style="font-size:14.5px;line-height:1.7;color:var(--ink);margin-top:10px">这个问题可以从下面 <b>3 个维度</b>帮你看清楚：</div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;margin-top:14px">
+            <div style="display:flex;gap:9px">
+              <span class="dim-num">01</span>
+              <div><div style="font-size:14px;font-weight:600;color:var(--ink)">下半年事业整体走向</div>
+              <div class="mut" style="font-size:12px;line-height:1.6;margin-top:3px">流月吉凶如何分布，哪几个月是窗口期</div></div>
+            </div>
+            <div style="display:flex;gap:9px">
+              <span class="dim-num">02</span>
+              <div><div style="font-size:14px;font-weight:600;color:var(--ink)">职场机会与挑战</div>
+              <div class="mut" style="font-size:12px;line-height:1.6;margin-top:3px">变动、合作、竞争分别对应哪些月份</div></div>
+            </div>
+            <div style="display:flex;gap:9px">
+              <span class="dim-num">03</span>
+              <div><div style="font-size:14px;font-weight:600;color:var(--ink)">事业与财运的关联</div>
+              <div class="mut" style="font-size:12px;line-height:1.6;margin-top:3px">正财格身弱，如何借势而不透支</div></div>
+            </div>
+          </div>
+
+          <div class="mini" style="margin-top:14px;line-height:1.65">框架免费。深度解读会结合你的流年、大运、十神逐条推演，内容更具体。</div>
+
+          <div class="divider" style="margin:14px 0"></div>
+          <div class="row">
+            <div>
+              <div style="font-size:14.5px;font-weight:700;color:var(--brand)">开启完整解读</div>
+              <div class="mut" style="font-size:12px;margin-top:4px">3 个维度展开 · 约 1800 字</div>
+            </div>
+            <span class="pill pill-gold">60 积分</span>
+          </div>
+          <div class="btn btn-primary" style="margin-top:12px">开启分析 ›</div>
+          <div class="mini" style="text-align:center;margin-top:9px">会员可免费解锁 · 查看会员权益 ›</div>
+        </div>
+      </div>
+
+      <div class="chipbar" style="padding-top:8px">
+        <span class="chip on">⊕ 星盘 · 小玲 ▾</span>
+        <span class="chip">⚡ 深度解读 <b style="color:var(--brand)">开</b></span>
+      </div>
+      <div class="inputbar" style="margin-bottom:5px;gap:10px">
+        <span style="flex:none;display:flex;color:var(--ink-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span>
+        <span class="mut" style="flex:1;font-size:13px">继续问我别的问题…</span>
+        <span style="flex:none;display:flex;color:var(--ink-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="10" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path d="M9 21h6"/></svg></span>
+        <span class="send">发送</span>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 09 对话内生成与完成 -->
+<div class="frame">
+  <div class="cap"><b>09</b>对话内生成与完成 · <em>不跳页；生成中与结果卡都留在对话流</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:44</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="h-title" style="font-size:16px">星盘 · 小玲</span>
+        <span class="pill pill-brand">1740 积分</span>
+      </div>
+
+      <div class="scroll-area" style="display:flex;flex-direction:column;gap:11px">
+        <div class="msg-user">我今年下半年事业运怎么样？</div>
+
+        <div class="card" style="border:1px solid #DDDFF2;background:linear-gradient(180deg,#F7F7FD,#FFF)">
+          <div class="row">
+            <span class="ai-pill" style="background:var(--brand);color:#EEEFF9">✦ 深度解读</span>
+            <span class="pill pill-success">已生成</span>
+          </div>
+          <div style="font-size:15px;font-weight:700;color:var(--ink);margin-top:10px">下半年事业：先难后顺</div>
+          <div class="mut" style="font-size:12.5px;line-height:1.7;margin-top:5px">7—10 月连续走吉，是争取机会的窗口；12 月庚子月需防冲，别把重要决定压到年底。</div>
+          <div class="row" style="margin-top:10px">
+            <span class="mini">3 个维度 · 约 1800 字</span>
+            <span class="mini">已解锁 · 可反复看</span>
+          </div>
+          <div class="btn btn-primary" style="margin-top:10px;text-align:center;padding:10px 0;font-size:13px">查看完整解读 ›</div>
+        </div>
+
+        <div class="msg-user">那我该不该在 9 月换工作？</div>
+
+        <div class="card" style="border-radius:16px 16px 16px 4px">
+          <div class="row">
+            <span class="ai-pill">✦ 分析框架</span>
+            <span class="pill pill-brand">已开启</span>
+          </div>
+          <div class="mini" style="margin-top:8px;line-height:1.65">9 月换工作的窗口与风险 · 行业方向 · 提前准备</div>
+
+          <div class="divider" style="margin:12px 0"></div>
+          <div class="row"><span class="mini" style="color:var(--brand);font-weight:600">深度解读生成中</span><span class="mini">约 3 分钟</span></div>
+          <div class="progress" style="margin-top:9px"><i style="width:38%"></i></div>
+          <div class="row" style="margin-top:9px">
+            <span class="mini" style="color:var(--success)">✓ 梳理 3 个维度</span>
+            <span class="mini" style="color:var(--brand)">● 推演命盘依据 38%</span>
+          </div>
+          <div class="mini" style="margin-top:8px;line-height:1.65">可以继续问别的，生成完成后会作为结果卡留在这条对话下方。</div>
+        </div>
+      </div>
+
+      <div class="chipbar" style="padding-top:8px">
+        <span class="chip on">⊕ 星盘 · 小玲 ▾</span>
+        <span class="chip">⚡ 深度解读 <b style="color:var(--brand)">开</b></span>
+      </div>
+      <div class="inputbar" style="margin-bottom:5px;gap:10px">
+        <span style="flex:none;display:flex;color:var(--ink-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span>
+        <span class="mut" style="flex:1;font-size:13px">继续问我别的问题…</span>
+        <span style="flex:none;display:flex;color:var(--ink-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="10" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path d="M9 21h6"/></svg></span>
+        <span class="send">发送</span>
+      </div>
+      <div class="mini" style="text-align:center;margin-bottom:6px">生成完成后，点对话里的结果卡看全文</div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 10 深度解读正文 -->
+<div class="frame">
+  <div class="cap"><b>10</b>深度解读正文 · <em>入口：对话流结果卡「查看完整解读」；返回即回对话</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:48</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <span class="h-title">深度解读</span>
+        <span class="pill pill-brand">目录 3</span>
+      </div>
+
+      <div class="scroll-area">
+        <div class="row" style="margin-top:2px">
+          <span class="ai-pill" style="background:var(--brand);color:#EEEFF9">✦ 深度解读</span>
+          <span class="mini">小玲 · 2026 下半年</span>
+        </div>
+        <div style="font-size:14.5px;color:var(--ink-2);margin-top:10px;line-height:1.6">「我今年下半年事业运怎么样？」</div>
+
+        <div class="card" style="margin-top:11px;background:linear-gradient(180deg,#F5F6FC,#FFF)">
+          <div class="row"><span class="pill pill-success">整体偏吉</span><span class="mini">2026 丙午年 · 癸未大运</span></div>
+          <div style="font-size:14px;line-height:1.78;color:var(--ink);margin-top:11px">
+            下半年是「先难后顺」的节奏：<b>7—10 月</b>连续走吉，火土帮身，是争取机会的窗口；<b>12 月</b>庚子月需防冲，别把重要决定压到年底。
+          </div>
+        </div>
+
+        <div style="display:flex;gap:7px;margin-top:12px;overflow:hidden">
+          <span class="chip on" style="font-size:11px">01 整体走向</span>
+          <span class="chip" style="font-size:11px">02 机会与挑战</span>
+          <span class="chip" style="font-size:11px">03 事业与财运</span>
+        </div>
+
+        <div style="margin-top:14px">
+          <div class="sec-title"><span class="dim-num">01</span>下半年事业整体走向</div>
+          <p style="font-size:14px;line-height:1.85;color:var(--ink);margin-top:9px">
+            7 至 10 月流月连吉，丙火帮身、戊土生金，思路清楚、执行力强，适合主动争取项目与汇报机会。9 月丁酉带冲，是变动月，换岗、调部门都可能出现，但属于「动中得利」。
+          </p>
+          <div class="fold">
+            <div class="fold-head"><span>📖 分析依据</span><span style="margin-left:auto;color:var(--ink-2);font-size:11px">收起 ˄</span></div>
+            <p>2026 丙午年大吉纯火帮身；7—10 月流月连吉；12 月庚子月大凶，且子冲午为用神受冲。</p>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div>
+          <div class="sec-title"><span class="dim-num">02</span>职场机会与挑战</div>
+          <p style="font-size:14px;line-height:1.85;color:var(--ink);margin-top:9px">
+            机会集中在 10 月戊戌月，戌土为喜神，合作类事务容易谈成；挑战在 11 月己亥月，地支亥水为忌，容易出现沟通反复，建议提前留一轮修改缓冲。
+          </p>
+          <div class="fold">
+            <div class="fold-head"><span>📖 分析依据</span><span style="margin-left:auto;color:var(--ink-2);font-size:11px">收起 ˄</span></div>
+            <p>9 月丁酉吉带冲主变动；10 月戊戌吉主合作；11 月己亥平，地支水为忌神。</p>
+          </div>
+        </div>
+
+        <div style="margin-top:14px">
+          <div class="sec-title"><span class="dim-num">03</span>事业与财运的关联</div>
+          <p style="font-size:14px;line-height:1.85;color:var(--ink);margin-top:9px">
+            正财格身弱喜火土，秋冬事业顺则财稳；12 月庚子月大凶，偏财带忌神水，需防破财。
+          </p>
+        </div>
+      </div>
+
+      <div class="footbar">
+        <div class="row">
+          <div style="display:flex;gap:8px"><span class="chip" style="font-size:12px">👍 有帮助</span><span class="chip" style="font-size:12px">👎 不准确</span></div>
+          <span class="mini">AI 生成 · 仅供传统文化体验</span>
+        </div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- ==================== 模块 03 我的 ==================== -->
+<div class="module-head">
+  <div class="module-no">模块 03</div>
+  <div class="module-t">
+    <h2>我的 · 资产与权益</h2>
+    <div class="line">
+      <b>入口：</b>底部 Tab「我的」；生成完成提示进入报告中心。<br>
+      <b>行为链路：</b>我的首页看会员与积分 → 「我的档案」列表 → 点某人进<b>星盘详情</b>，顶部页签「命盘 / 流盘 / 合盘」→ 命盘：四柱主表 → 五行旺衰 → AI 基础解读（「Ai 解读」开半弹层、「更多解读」进逐条解读列表）→ 个性化追问卡；流盘：大运/流年子页签 → 大运段位柱状图 / 当前大运四维分 / 大运重点提醒 → 点段位或「Ai 解读」开半弹层追问；合盘：选 A / B 后回对话提问。<br>
+      <b>出口：</b>回今日 / 对话；会员开通后回原付费点直接解锁。
+    </div>
+  </div>
+</div>
+
+<!-- 11 报告中心 -->
+<div class="frame">
+  <div class="cap"><b>11</b>报告中心 · <em>入口：我的 / 生成完成提示</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <span class="h-title">我的报告</span>
+        <span class="pill pill-brand">小玲 ▾</span>
+      </div>
+
+      <div style="display:flex;gap:7px;margin-top:2px;overflow:hidden">
+        <span class="chip on" style="font-size:11.5px">全部</span>
+        <span class="chip" style="font-size:11.5px">深度解读</span>
+        <span class="chip" style="font-size:11.5px">月运</span>
+        <span class="chip" style="font-size:11.5px">年报</span>
+        <span class="chip" style="font-size:11.5px">关系</span>
+      </div>
+
+      <div class="scroll-area" style="margin-top:12px;display:flex;flex-direction:column;gap:9px">
+        <div class="card">
+          <div class="row">
+            <div>
+              <span class="ai-pill" style="background:var(--brand);color:#EEEFF9">✦ 深度解读</span>
+              <div style="font-size:14px;font-weight:600;color:var(--ink);margin-top:8px">我今年下半年事业运怎么样？</div>
+              <div class="mini" style="margin-top:4px">10 月 27 日 · 已解锁 · 60 积分</div>
+            </div>
+            <span class="btn-ghost" style="font-size:20px">›</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <div>
+              <span class="pill pill-brand">月运</span>
+              <div style="font-size:14px;font-weight:600;color:var(--ink);margin-top:8px">11 月运势 · 收束与蓄势</div>
+              <div class="mini" style="margin-top:4px">会员权益 · 已解锁</div>
+            </div>
+            <span class="btn-ghost" style="font-size:20px">›</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <div>
+              <span class="pill pill-brand">年报</span>
+              <div style="font-size:14px;font-weight:600;color:var(--ink);margin-top:8px">2026 年度报告 · 借火生财</div>
+              <div class="mini" style="margin-top:4px">会员权益 · 已解锁</div>
+            </div>
+            <span class="btn-ghost" style="font-size:20px">›</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <div>
+              <span class="pill pill-brand">合盘解读</span>
+              <div style="font-size:14px;font-weight:600;color:var(--ink);margin-top:8px">小玲 × 阿哲 · 相处模式</div>
+              <div class="mini" style="margin-top:4px">10 月 25 日 · 已解锁 · 120 积分</div>
+            </div>
+            <span class="btn-ghost" style="font-size:20px">›</span>
+          </div>
+        </div>
+
+        <div class="mini" style="text-align:center;margin-top:4px">已解锁的报告会永久保留在这里</div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.5"/></svg>今日</div>
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16v11H9l-5 3z"/></svg>对话</div>
+        <div class="tab active"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8.5" r="3.4"/><path d="M5 20c.8-3.6 3.6-5.3 7-5.3s6.2 1.7 7 5.3"/></svg>我的</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 12 会员中心 -->
+<div class="frame">
+  <div class="cap"><b>12</b>会员中心 · <em>入口：付费墙「会员免费解锁」/ 我的会员卡</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <span class="h-title">会员中心</span>
+        <span class="icon-btn mut">?</span>
+      </div>
+
+      <div class="scroll-area">
+        <div style="border-radius:18px;padding:18px;background:linear-gradient(135deg,#2F335F,#4A4E8F 55%,#5B5FA5);color:#fff;position:relative;overflow:hidden">
+          <div style="position:absolute;right:-24px;top:-24px;width:110px;height:110px;border-radius:50%;background:rgba(201,168,106,.18)"></div>
+          <div class="row">
+            <span style="font-size:12px;letter-spacing:2px;color:#E7D3A8">趣算算会员</span>
+            <span class="pill" style="background:rgba(201,168,106,.22);color:#E7D3A8;border:1px solid rgba(201,168,106,.45)">未开通</span>
+          </div>
+          <div style="font-size:19px;font-weight:700;margin-top:12px">把每一次合盘都看清楚</div>
+          <div style="font-size:12px;line-height:1.8;margin-top:8px;opacity:.85">月运、年报全部免费，深度解读每月 10 次</div>
+        </div>
+
+        <div class="card" style="margin-top:10px">
+          <div class="sec-title">会员权益</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:13px">
+            <div style="display:flex;gap:8px"><span style="color:var(--gold);font-size:13px">✦</span><div><div style="font-size:13px;font-weight:600">月运免费解锁</div><div class="mini" style="margin-top:2px">每月自动更新</div></div></div>
+            <div style="display:flex;gap:8px"><span style="color:var(--gold);font-size:13px">✦</span><div><div style="font-size:13px;font-weight:600">年报免费解锁</div><div class="mini" style="margin-top:2px">每年一份</div></div></div>
+            <div style="display:flex;gap:8px"><span style="color:var(--gold);font-size:13px">✦</span><div><div style="font-size:13px;font-weight:600">深度解读 10 次/月</div><div class="mini" style="margin-top:2px">价值 600 积分</div></div></div>
+            <div style="display:flex;gap:8px"><span style="color:var(--gold);font-size:13px">✦</span><div><div style="font-size:13px;font-weight:600">合盘解读 8 折</div><div class="mini" style="margin-top:2px">不限次数</div></div></div>
+            <div style="display:flex;gap:8px"><span style="color:var(--gold);font-size:13px">✦</span><div><div style="font-size:13px;font-weight:600">会员专属标识</div><div class="mini" style="margin-top:2px">报告永久保留</div></div></div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <div class="card" style="flex:1;text-align:center;padding:13px 0;box-shadow:none;border:1px solid var(--line)">
+            <div style="font-size:12px;color:var(--ink-2)">月卡</div>
+            <div style="font-size:18px;font-weight:700;color:var(--ink);margin-top:5px">¥25</div>
+            <div class="mini" style="margin-top:3px">¥25/月</div>
+          </div>
+          <div class="card" style="flex:1;text-align:center;padding:13px 0;box-shadow:none;border:1px solid var(--line)">
+            <div style="font-size:12px;color:var(--ink-2)">季卡</div>
+            <div style="font-size:18px;font-weight:700;color:var(--ink);margin-top:5px">¥58</div>
+            <div class="mini" style="margin-top:3px">¥19.3/月</div>
+          </div>
+          <div class="card" style="flex:1;text-align:center;padding:13px 0;border:1.5px solid var(--gold);background:var(--gold-soft);position:relative">
+            <div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:var(--gold);color:#3A2F1A;font-size:10px;font-weight:700;border-radius:9px;padding:2px 8px">推荐</div>
+            <div style="font-size:12px;color:#9A7A3E">年卡</div>
+            <div style="font-size:18px;font-weight:700;color:#7A5C22;margin-top:5px">¥178</div>
+            <div class="mini" style="margin-top:3px;color:#9A7A3E">¥14.8/月</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footbar">
+        <div class="btn btn-gold" style="font-size:14.5px">立即开通 · 年卡 ¥178</div>
+        <div class="mini" style="text-align:center;margin-top:9px;line-height:1.6">开通即生效 · 到期不自动续费 · 虚拟内容不支持退款</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 13 我的页 -->
+<div class="frame">
+  <div class="cap"><b>13</b>我的页 · <em>入口：Tab 我的</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr"><span class="h-title" style="font-size:19px">我的</span><span class="icon-btn mut">⚙</span></div>
+
+      <div class="scroll-area">
+        <div class="card" style="display:flex;align-items:center;gap:12px">
+          <div class="avatar avat-brand" style="width:50px;height:50px;font-size:19px">玲</div>
+          <div style="flex:1">
+            <div style="font-size:16px;font-weight:700;color:var(--ink)">小玲</div>
+            <div class="mini" style="margin-top:3px">138****6688 · 已建档 3 人</div>
+          </div>
+          <span class="pill pill-brand">普通用户</span>
+        </div>
+
+        <div class="g12" style="margin-top:10px">
+          <div class="card" style="padding:13px;background:linear-gradient(140deg,#2F335F,#4A4E8F);color:#fff">
+            <div style="font-size:11px;color:#E7D3A8;letter-spacing:1px">趣算算会员</div>
+            <div style="font-size:15px;font-weight:700;margin-top:8px">未开通</div>
+            <div style="font-size:11px;opacity:.82;margin-top:5px">月运 / 年报 全免费</div>
+            <div style="margin-top:10px;background:rgba(201,168,106,.9);color:#3A2F1A;text-align:center;border-radius:9px;font-size:11.5px;font-weight:700;padding:6px 0">立即开通</div>
+          </div>
+          <div class="card" style="padding:13px">
+            <div style="font-size:11px;color:var(--ink-2);letter-spacing:1px">我的积分</div>
+            <div style="font-size:22px;font-weight:700;color:var(--ink);margin-top:5px">1,740</div>
+            <div style="font-size:11px;color:var(--ink-2);margin-top:3px">约可解锁 21 次深度解读</div>
+            <div style="margin-top:10px;background:var(--brand-soft);color:var(--brand);text-align:center;border-radius:9px;font-size:11.5px;font-weight:700;padding:6px 0">充值 / 明细</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:10px;padding:0 14px">
+          <div class="row" style="padding:13px 0;border-bottom:1px solid var(--line)">
+            <div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px">🗂</span><span style="font-size:14px">我的档案</span></div>
+            <span class="mini">3 人档案 ›</span>
+          </div>
+          <div class="row" style="padding:13px 0;border-bottom:1px solid var(--line)">
+            <div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px">📄</span><span style="font-size:14px">我的报告</span></div>
+            <span class="mini">12 份 ›</span>
+          </div>
+          <div class="row" style="padding:13px 0;border-bottom:1px solid var(--line)">
+            <div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px">💳</span><span style="font-size:14px">消费记录</span></div>
+            <span class="mini">›</span>
+          </div>
+          <div class="row" style="padding:13px 0">
+            <div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px">🎁</span><span style="font-size:14px">邀请赚积分</span></div>
+            <span class="mini">每邀 1 人 +80 ›</span>
+          </div>
+        </div>
+
+        <div class="mini" style="text-align:center;margin-top:12px;line-height:1.6">AI 生成内容仅供传统文化体验与娱乐参考<br>不具有科学预测能力</div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 1.5"/></svg>今日</div>
+        <div class="tab"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16v11H9l-5 3z"/></svg>对话</div>
+        <div class="tab active"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8.5" r="3.4"/><path d="M5 20c.8-3.6 3.6-5.3 7-5.3s6.2 1.7 7 5.3"/></svg>我的</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 14 星盘详情（单人） -->
+<div class="frame">
+  <div class="cap"><b>14</b>星盘详情 · 命盘/流盘/合盘 · <em>入口：我的 › 我的档案 › 点某人；对话「⊕ 星盘」切单人</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <span class="h-title">阿哲</span>
+        <span style="display:flex;align-items:center;gap:2px">
+          <span class="icon-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M5 14v5h14v-5"/></svg></span>
+          <span class="btn-ghost" style="font-size:12px">编辑</span>
+        </span>
+      </div>
+
+      <div class="seg" style="margin-top:2px">
+        <span class="on">命盘</span><span>流盘</span><span>合盘</span>
+      </div>
+      <div class="mini" style="margin-top:5px">真太阳时 08:14 · 出生在立冬后 2 天 7 时</div>
+
+      <div class="scroll-area" style="margin-top:6px">
+        <!-- 四柱主表 -->
+        <div class="card" style="padding:9px 11px">
+          <div class="row" style="margin-bottom:5px"><span class="sec-title">四柱</span><span class="mini">十神 · 藏干 · 神煞</span></div>
+          <div style="display:flex;margin-top:2px">
+            <div class="mini" style="width:40px">十神</div>
+            <div class="mini" style="flex:1;text-align:center">七杀</div>
+            <div class="mini" style="flex:1;text-align:center">正印</div>
+            <div class="mini" style="flex:1;text-align:center;color:var(--brand);font-weight:700">日主</div>
+            <div class="mini" style="flex:1;text-align:center">正官</div>
+          </div>
+          <div style="display:flex;margin-top:4px;align-items:center">
+            <div class="mini" style="width:40px">天干</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#C25B4E">丙</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#B0894A">己</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:var(--brand)">庚</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#C25B4E">丁</div>
+          </div>
+          <div style="display:flex;margin-top:2px;align-items:center">
+            <div class="mini" style="width:40px">地支</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#3E7FA6">子</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#B0894A">丑</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:var(--brand)">申</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#3E7FA6">亥</div>
+          </div>
+          <div style="display:flex;margin-top:5px">
+            <div class="mini" style="width:40px">藏干</div>
+            <div class="mini" style="flex:1;text-align:center">癸</div>
+            <div class="mini" style="flex:1;text-align:center">己辛癸</div>
+            <div class="mini" style="flex:1;text-align:center">庚壬戊</div>
+            <div class="mini" style="flex:1;text-align:center">壬甲</div>
+          </div>
+          <div style="display:flex;margin-top:2px">
+            <div class="mini" style="width:40px">支神</div>
+            <div class="mini" style="flex:1;text-align:center">伤官</div>
+            <div class="mini" style="flex:1;text-align:center">正印·比肩</div>
+            <div class="mini" style="flex:1;text-align:center">比肩·偏印</div>
+            <div class="mini" style="flex:1;text-align:center">食神·偏财</div>
+          </div>
+          <div class="divider" style="margin:6px 0"></div>
+          <div style="display:flex">
+            <div class="mini" style="width:40px">纳音</div>
+            <div class="mini" style="flex:1;text-align:center">涧下水</div>
+            <div class="mini" style="flex:1;text-align:center">霹雳火</div>
+            <div class="mini" style="flex:1;text-align:center">石榴木</div>
+            <div class="mini" style="flex:1;text-align:center">屋上土</div>
+          </div>
+          <div style="display:flex;margin-top:3px">
+            <div class="mini" style="width:40px">空亡</div>
+            <div class="mini" style="flex:1;text-align:center">子丑</div>
+            <div class="mini" style="flex:1;text-align:center">子丑</div>
+            <div class="mini" style="flex:1;text-align:center">子丑</div>
+            <div class="mini" style="flex:1;text-align:center">子丑</div>
+          </div>
+          <div style="display:flex;margin-top:3px">
+            <div class="mini" style="width:40px">地势</div>
+            <div class="mini" style="flex:1;text-align:center">死</div>
+            <div class="mini" style="flex:1;text-align:center">墓</div>
+            <div class="mini" style="flex:1;text-align:center">临官</div>
+            <div class="mini" style="flex:1;text-align:center">病</div>
+          </div>
+          <div style="display:flex;margin-top:5px">
+            <div class="mini" style="width:40px">神煞</div>
+            <div class="mini" style="flex:1;text-align:center">将星·天乙</div>
+            <div class="mini" style="flex:1;text-align:center">华盖</div>
+            <div class="mini" style="flex:1;text-align:center">禄神·驿马</div>
+            <div class="mini" style="flex:1;text-align:center">文昌·太极</div>
+          </div>
+          <div class="divider" style="margin:6px 0"></div>
+          <div class="row"><span class="mini">地支关系</span><span class="mini" style="color:var(--ink)">亥子丑三会水 · 子丑合土 · 申亥相害</span></div>
+          <div class="divider" style="margin:6px 0"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:12.5px;font-weight:700;color:#B0894A">土旺</span>
+            <span style="font-size:12.5px;font-weight:600;color:#6B6F8A">金相</span>
+            <span style="font-size:12.5px;color:#8A8A93">水休</span>
+            <span style="font-size:12.5px;color:#4E8F6A">木囚</span>
+            <span style="font-size:12.5px;color:#C25B4E">火死</span>
+            <span class="mini" style="font-size:10px">月令丑土</span>
+          </div>
+        </div>
+
+        <!-- AI 基础解读 -->
+        <div class="card" style="margin-top:9px">
+          <div class="row">
+            <span class="sec-title">基础解读</span>
+            <span style="display:flex;align-items:center;gap:9px">
+              <span class="btn-ghost" style="font-size:11.5px">Ai 解读 ›</span>
+              <span class="btn-ghost" style="font-size:11.5px">更多解读 ›</span>
+            </span>
+          </div>
+          <div style="font-size:12.5px;line-height:1.75;color:var(--ink);margin-top:7px">你外表克制、有分寸，认定的事很难被劝回；团队里常是推进者，但被管得太细会明显抵触。</div>
+          <div class="mini" style="margin-top:6px">AI 生成 · 依据：庚金身强 · 伤官透出 · 土金偏旺 · 亥子丑三会水</div>
+
+          <div class="divider" style="margin:8px 0"></div>
+          <div class="row">
+            <span style="font-size:13px;font-weight:600;color:var(--ink)">今年该不该换工作？</span>
+            <span class="pill pill-gold">个性化</span>
+          </div>
+          <div class="row" style="margin-top:7px">
+            <span class="mini" style="font-weight:600;color:var(--ink)">完整解读将为你展开</span>
+            <span class="mini" style="font-size:10px">丙戌大运 · 丙午流年</span>
+          </div>
+          <div class="mini" style="margin-top:4px">· 换工作的窗口期与风险月</div>
+          <div class="mini" style="margin-top:2px">· 更适合你的行业方向</div>
+          <div class="mini" style="margin-top:2px">· 今年要提前做的准备</div>
+          <div class="btn btn-primary" style="margin-top:8px;padding:8px 0;font-size:12.5px;text-align:center">和 AI 聊聊 ›</div>
+        </div>
+
+        <div class="mini" style="text-align:center;margin-top:9px;line-height:1.7">内容由 AI 生成，仅供传统文化体验与自我梳理参考</div>
+      </div>
+
+      <div class="footbar">
+        <div style="display:flex;gap:9px">
+          <div class="btn btn-line" style="flex:1;text-align:center;padding:11px 0;font-size:13px">单独解读 60 分</div>
+          <div class="btn btn-primary" style="flex:1.2;text-align:center;padding:11px 0;font-size:13px">⇄ 与小玲合盘</div>
+        </div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 15 流盘 -->
+<div class="frame">
+  <div class="cap"><b>15</b>星盘详情 · 流盘（大运/流年） · <em>入口：星盘详情 › 流盘页签；点段位或「Ai 解读」追问</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <span class="h-title">阿哲</span>
+        <span style="display:flex;align-items:center;gap:2px">
+          <span class="icon-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M5 14v5h14v-5"/></svg></span>
+          <span class="btn-ghost" style="font-size:12px">海报</span>
+        </span>
+      </div>
+
+      <div class="seg" style="margin-top:2px">
+        <span>命盘</span><span class="on">流盘</span><span>合盘</span>
+      </div>
+      <div class="mini" style="margin-top:5px">丙戌大运 · 28–37 岁 · 2026 流年丙午</div>
+
+      <div class="scroll-area" style="margin-top:6px">
+        <!-- 大运柱状 -->
+        <div class="card" style="padding:12px 10px">
+          <div class="row" style="margin-bottom:7px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="font-size:13px;font-weight:700;color:var(--ink);border-bottom:2px solid var(--brand);padding-bottom:2px">大运</span>
+              <span class="mini">流年</span>
+            </div>
+            <span class="mini">点击段位看解读</span>
+          </div>
+          <div class="bars">
+            <div class="bar-col">
+              <span class="bar-key">守中<br>得宜</span><span class="bar-score">68</span>
+              <div class="bar" style="height:56px"></div>
+            </div>
+            <div class="bar-col">
+              <span class="bar-key">安住<br>当下</span><span class="bar-score">63</span>
+              <div class="bar" style="height:48px"></div>
+            </div>
+            <div class="bar-col">
+              <span class="bar-key">克己<br>复礼</span><span class="bar-score">66</span>
+              <div class="bar" style="height:53px"></div>
+            </div>
+            <div class="bar-col">
+              <span class="bar-key">收敛<br>锋芒</span><span class="bar-score">71</span>
+              <div class="bar" style="height:62px"></div>
+            </div>
+            <div class="bar-col">
+              <span class="bar-key">半隐<br>于市</span><span class="bar-score">68</span>
+              <div class="bar" style="height:56px"></div>
+            </div>
+            <div class="bar-col">
+              <span class="bar-key">饱经<br>通透</span><span class="bar-score">62</span>
+              <div class="bar" style="height:46px"></div>
+            </div>
+          </div>
+          <div style="display:flex;gap:3px;margin-top:4px">
+            <div class="bar-col"><span class="mini" style="font-size:9.5px">28–37</span><span style="font-size:10.5px;font-weight:700;color:var(--brand)">丙戌</span></div>
+            <div class="bar-col"><span class="mini" style="font-size:9.5px">38–47</span><span style="font-size:10.5px;font-weight:700;color:var(--ink)">乙酉</span></div>
+            <div class="bar-col"><span class="mini" style="font-size:9.5px">48–57</span><span style="font-size:10.5px;font-weight:700;color:var(--ink)">甲申</span></div>
+            <div class="bar-col"><span class="mini" style="font-size:9.5px">58–67</span><span style="font-size:10.5px;font-weight:700;color:var(--ink)">癸未</span></div>
+            <div class="bar-col"><span class="mini" style="font-size:9.5px">68–77</span><span style="font-size:10.5px;font-weight:700;color:var(--ink)">壬午</span></div>
+            <div class="bar-col"><span class="mini" style="font-size:9.5px">78–87</span><span style="font-size:10.5px;font-weight:700;color:var(--ink)">辛巳</span></div>
+          </div>
+        </div>
+
+        <!-- 当前大运 -->
+        <div class="card" style="margin-top:9px">
+          <div class="row">
+            <span class="sec-title">当前大运 · 丙戌</span>
+            <span class="pill pill-brand">28–37 岁</span>
+          </div>
+          <div style="font-size:12.5px;line-height:1.75;color:var(--ink);margin-top:6px">火土助身，机会与压力同时加码。这十年的主题是「把能力换成位置」，前五年偏积累，后五年开始收成。</div>
+          <div class="g4" style="margin-top:9px">
+            <div class="stat"><div class="n">78</div><div class="l">事业</div></div>
+            <div class="stat"><div class="n">65</div><div class="l">财运</div></div>
+            <div class="stat"><div class="n">52</div><div class="l">感情</div></div>
+            <div class="stat"><div class="n">70</div><div class="l">健康</div></div>
+          </div>
+          <div class="row" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--line)">
+            <span class="btn-ghost" style="font-size:11.5px">Ai 解读 ›</span>
+            <span class="btn-ghost" style="font-size:11.5px">本运重点 ›</span>
+          </div>
+        </div>
+
+        <!-- 大运重点提醒 -->
+        <div class="card" style="margin-top:9px;border:1px solid var(--gold-line);background:var(--gold-soft)">
+          <div class="row"><span class="sec-title">大运重点提醒</span><span class="mini">丙戌 · 主题</span></div>
+          <div class="g12" style="margin-top:8px">
+            <div style="background:rgba(255,255,255,.7);border-radius:11px;padding:9px 10px">
+              <div style="font-size:11.5px;font-weight:700;color:#9A7A3E">财富</div>
+              <div class="mini" style="margin-top:4px;line-height:1.6">正财稳定，副业与合伙容易起量；别在情绪高点上重仓。</div>
+            </div>
+            <div style="background:rgba(255,255,255,.7);border-radius:11px;padding:9px 10px">
+              <div style="font-size:11.5px;font-weight:700;color:#9A7A3E">幸运</div>
+              <div class="mini" style="margin-top:4px;line-height:1.6">贵人多在正南方向，家居与工位宜取暖色，数字 4、15。</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <div style="display:flex;gap:6px"><span class="chip" style="font-size:10.5px">有帮助</span><span class="chip" style="font-size:10.5px">无帮助</span></div>
+            <span class="mini">反馈用于改进解读</span>
+          </div>
+        </div>
+
+        <div class="mini" style="text-align:center;margin-top:9px;line-height:1.7">内容由 AI 生成，仅供传统文化体验与自我梳理参考</div>
+      </div>
+
+      <div class="footbar">
+        <div class="row">
+          <span class="mini">流盘 · 大运 / 流年</span>
+          <span class="btn-ghost" style="font-size:12px">⇄ 与小玲合盘</span>
+        </div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 16 更多解读 -->
+<div class="frame">
+  <div class="cap"><b>16</b>更多解读 · <em>入口：星盘详情「更多解读」；每张卡可再看 AI 解读</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <span class="h-title">更多解读</span>
+        <span class="icon-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M5 14v5h14v-5"/></svg></span>
+      </div>
+      <div class="mini" style="margin-top:-2px">阿哲 · 庚金日主 · 命盘逐条解读</div>
+
+      <div class="chipbar" style="margin-top:7px">
+        <span class="chip on" style="font-size:11px">全部</span>
+        <span class="chip" style="font-size:11px">十神</span>
+        <span class="chip" style="font-size:11px">格局</span>
+        <span class="chip" style="font-size:11px">神煞</span>
+      </div>
+
+      <div class="scroll-area" style="display:flex;flex-direction:column;gap:9px">
+        <div class="card">
+          <div class="row">
+            <span style="font-size:13.5px;font-weight:700;color:var(--ink)">日支 · 比肩</span>
+            <span class="btn-ghost" style="font-size:11.5px">Ai 解读 ›</span>
+          </div>
+          <div style="background:#FAF9F5;border-radius:10px;padding:8px 10px;margin-top:7px;font-size:11.5px;line-height:1.7;color:var(--ink-2)">与日干五行相同、阴阳相同，象征自我、同辈与竞争，主独立与并肩。</div>
+          <div style="font-size:12.5px;line-height:1.75;color:var(--ink);margin-top:7px">你在团队里更像「自己扛」的人，遇事先想解决方案而不是求助；这份独立让你可靠，也容易把真正的需要藏起来。<span class="btn-ghost" style="font-size:11.5px">…全文</span></div>
+          <div class="mini" style="margin-top:7px">同类交流地 · 1.4w 测友正在讨论 ›</div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <span style="font-size:13.5px;font-weight:700;color:var(--ink)">年干 · 七杀</span>
+            <span class="btn-ghost" style="font-size:11.5px">Ai 解读 ›</span>
+          </div>
+          <div style="background:#FAF9F5;border-radius:10px;padding:8px 10px;margin-top:7px;font-size:11.5px;line-height:1.7;color:var(--ink-2)">克制日干且与日干阴阳相同，克身力度较大，可化为权势与行动力，也易带来压力。</div>
+          <div style="font-size:12.5px;line-height:1.75;color:var(--ink);margin-top:7px">你对「被安排」格外敏感，遇到强势的人会本能对抗；把这份劲头用在目标明确的事上，反而容易出头。<span class="btn-ghost" style="font-size:11.5px">…全文</span></div>
+          <div class="mini" style="margin-top:7px">同类交流地 · 1.2w 测友正在讨论 ›</div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <span style="font-size:13.5px;font-weight:700;color:var(--ink)">月干 · 正印</span>
+            <span class="btn-ghost" style="font-size:11.5px">Ai 解读 ›</span>
+          </div>
+          <div style="background:#FAF9F5;border-radius:10px;padding:8px 10px;margin-top:7px;font-size:11.5px;line-height:1.7;color:var(--ink-2)">生扶日干且与日干阴阳不同，主庇护、学习与名誉，代表长辈与规则的支撑。</div>
+          <div style="font-size:12.5px;line-height:1.75;color:var(--ink);margin-top:7px">你习惯先弄懂规则再动手，学东西快；但被照顾太多时，也容易犹豫、不敢自己拍板。<span class="btn-ghost" style="font-size:11.5px">…全文</span></div>
+          <div class="mini" style="margin-top:7px">同类交流地 · 9863 测友正在讨论 ›</div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <span style="font-size:13.5px;font-weight:700;color:var(--ink)">时干 · 正官</span>
+            <span class="btn-ghost" style="font-size:11.5px">Ai 解读 ›</span>
+          </div>
+          <div style="background:#FAF9F5;border-radius:10px;padding:8px 10px;margin-top:7px;font-size:11.5px;line-height:1.7;color:var(--ink-2)">克制日干且与日干阴阳不同，主秩序、责任与约束，也代表稳定关系与职位。</div>
+          <div style="font-size:12.5px;line-height:1.75;color:var(--ink);margin-top:7px">你在关系里看重「说清楚」，不喜欢模糊地带；这份认真是优点，但别把标准同时套在对方身上。<span class="btn-ghost" style="font-size:11.5px">…全文</span></div>
+          <div class="mini" style="margin-top:7px">同类交流地 · 7421 测友正在讨论 ›</div>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <span style="font-size:13.5px;font-weight:700;color:var(--ink)">时支 · 偏财</span>
+            <span class="btn-ghost" style="font-size:11.5px">Ai 解读 ›</span>
+          </div>
+          <div style="background:#FAF9F5;border-radius:10px;padding:8px 10px;margin-top:7px;font-size:11.5px;line-height:1.7;color:var(--ink-2)">日干所克且与日干阴阳相同，主流动之财、人脉与机会，来得快也去得快。</div>
+          <div style="font-size:12.5px;line-height:1.75;color:var(--ink);margin-top:7px">你对机会的嗅觉不错，副业与人脉常带来意外收入；但花钱也随性，建议设一个固定储蓄比例。<span class="btn-ghost" style="font-size:11.5px">…全文</span></div>
+          <div class="mini" style="margin-top:7px">同类交流地 · 1.8w 测友正在讨论 ›</div>
+        </div>
+
+        <div class="mini" style="text-align:center;padding:2px 0 8px;line-height:1.7">内容由 AI 生成，仅供传统文化体验与自我梳理参考</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 17 AI 解读半弹层 -->
+<div class="frame">
+  <div class="cap"><b>17</b>AI 解读 · 半弹层 · <em>入口：星盘详情 / 更多解读 点「Ai 解读」；可继续追问</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <span class="h-title">阿哲</span>
+        <span style="display:flex;align-items:center;gap:2px">
+          <span class="icon-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M5 14v5h14v-5"/></svg></span>
+          <span class="btn-ghost" style="font-size:12px">编辑</span>
+        </span>
+      </div>
+      <div class="seg" style="margin-top:2px">
+        <span class="on">命盘</span><span>流盘</span><span>合盘</span>
+      </div>
+      <div class="mini" style="margin-top:5px">真太阳时 08:14 · 出生在立冬后 2 天 7 时</div>
+
+      <div class="scroll-area" style="margin-top:6px">
+        <div class="card" style="padding:10px 12px">
+          <div class="row" style="margin-bottom:7px"><span class="sec-title">四柱</span><span class="mini">十神 · 藏干 · 神煞</span></div>
+          <div style="display:flex">
+            <div class="mini" style="width:40px">十神</div>
+            <div class="mini" style="flex:1;text-align:center">七杀</div>
+            <div class="mini" style="flex:1;text-align:center">正印</div>
+            <div class="mini" style="flex:1;text-align:center;color:var(--brand);font-weight:700">日主</div>
+            <div class="mini" style="flex:1;text-align:center">正官</div>
+          </div>
+          <div style="display:flex;margin-top:5px;align-items:center">
+            <div class="mini" style="width:40px">天干</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#C25B4E">丙</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#B0894A">己</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:var(--brand)">庚</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#C25B4E">丁</div>
+          </div>
+          <div style="display:flex;margin-top:2px;align-items:center">
+            <div class="mini" style="width:40px">地支</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#3E7FA6">子</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#B0894A">丑</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:var(--brand)">申</div>
+            <div style="flex:1;text-align:center;font-size:16px;font-weight:700;color:#3E7FA6">亥</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:9px">
+          <div class="row"><span class="sec-title">基础解读</span><span class="pill pill-brand">AI 生成</span></div>
+          <div style="font-size:12.5px;line-height:1.75;color:var(--ink);margin-top:6px">你外表克制、做事有分寸，实际上认定的事很难被劝回。团队里常是推进者，但被管得太细会明显抵触。</div>
+        </div>
+      </div>
+
+      <div class="overlay"></div>
+      <div class="sheet">
+        <div class="sheet-hdr">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="avatar avat-brand" style="width:30px;height:30px;font-size:12px">趣</div>
+            <div>
+              <div style="font-size:13.5px;font-weight:700;color:var(--ink)">趣算算 AI</div>
+              <div class="mini">正在解读 阿哲 · 庚金日主</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:2px">
+            <span class="icon-btn" style="font-size:16px">⤢</span>
+            <span class="icon-btn" style="font-size:16px">✕</span>
+          </div>
+        </div>
+
+        <div style="flex:1;min-height:0;overflow:hidden;padding:10px 16px 0;display:flex;flex-direction:column;gap:9px">
+          <div class="msg-user" style="align-self:flex-end;max-width:80%;font-size:13px">解读一下日支·比肩</div>
+          <div class="bubble-ai">
+            比肩在日支，说明你对自己的判断很笃定：认定的事会自己扛，不太习惯开口求助。好处是执行力强、遇事不慌；代价是容易把「需要被支持」误当成软弱。
+            <div style="margin-top:7px">接下来三个月，适合把一件正在硬撑的事说给一个人听——不是求解决方案，只是让对方知道。</div>
+            <div class="mini" style="margin-top:8px">内容由 AI 生成，仅供参考</div>
+            <div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+              <div style="display:flex;gap:14px;color:var(--ink-2);font-size:13px">
+                <span>⧉</span><span>↑</span><span>↓</span><span>⤴</span>
+              </div>
+              <span style="color:var(--ink-2);font-size:13px">⋯</span>
+            </div>
+          </div>
+          <div style="align-self:flex-end;display:flex;align-items:center;gap:6px">
+            <span class="chip" style="font-size:11.5px">这个特质对我事业意味着什么？</span>
+            <span class="icon-btn" style="width:24px;height:24px;background:var(--card);border-radius:50%;font-size:12px;color:var(--ink-2);box-shadow:0 1px 4px rgba(43,43,51,.06)">↓</span>
+          </div>
+          <div style="align-self:flex-end">
+            <span class="chip" style="font-size:11.5px;opacity:.55">我在关系里总是先低头怎么办？</span>
+          </div>
+        </div>
+
+        <div style="flex:none;padding:8px 12px 0">
+          <div class="chipbar" style="padding:0 0 8px">
+            <span class="chip" style="font-size:11px">工具 ▾</span>
+            <span class="chip" style="font-size:11px">✦ 深度解读</span>
+            <span class="chip" style="font-size:11px">⇄ 合盘</span>
+            <span class="chip" style="font-size:11px">对话 · 阿哲</span>
+          </div>
+          <div class="inputbar">
+            <span style="flex:1;font-size:13px;color:var(--ink-2)">让我来解答你的问题吧</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A8A93" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+            <span class="send">发送</span>
+          </div>
+          <div class="mini" style="text-align:center;padding:8px 0 14px">内容由 AI 生成，仅供传统文化体验与自我梳理参考</div>
+        </div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+<!-- 18 添加档案（含关系） -->
+<div class="frame">
+  <div class="cap"><b>18</b>添加档案 · <em>入口：我的档案「+ 添加」/ 合盘选择器「添加新档案」</em></div>
+  <div class="phone">
+    <div class="statusbar"><span class="time">9:41</span><span class="icons"><span class="sig">▂▄▆█</span><span class="wifi"></span><span class="batt"></span></span></div>
+    <div class="screen">
+      <div class="hdr">
+        <span class="icon-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2B2B33" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <span class="h-title">添加档案</span>
+        <span class="btn-ghost" style="font-size:12px">保存</span>
+      </div>
+
+      <div class="scroll-area">
+        <div class="card" style="padding:0 14px">
+          <div class="row" style="padding:13px 0;border-bottom:1px solid var(--line)">
+            <span style="font-size:13.5px;color:var(--ink)">姓名</span>
+            <span style="font-size:13.5px;color:var(--ink)">阿哲</span>
+          </div>
+          <div class="row" style="padding:11px 0;border-bottom:1px solid var(--line)">
+            <span style="font-size:13.5px;color:var(--ink)">性别</span>
+            <div class="seg" style="width:132px;padding:2px">
+              <span class="on" style="font-size:11.5px;padding:5px 0">男</span><span style="font-size:11.5px;padding:5px 0">女</span>
+            </div>
+          </div>
+          <div class="row" style="padding:13px 0;border-bottom:1px solid var(--line)">
+            <span style="font-size:13.5px;color:var(--ink)">出生日期</span>
+            <span style="font-size:13.5px;color:var(--ink)">1996-03-12 ›</span>
+          </div>
+          <div class="row" style="padding:13px 0;border-bottom:1px solid var(--line)">
+            <span style="font-size:13.5px;color:var(--ink)">出生时间</span>
+            <div style="display:flex;align-items:center;gap:6px"><span class="mini">未知时辰</span><span style="font-size:13.5px;color:var(--ink)">08:20 ›</span></div>
+          </div>
+          <div class="row" style="padding:13px 0;border-bottom:1px solid var(--line)">
+            <span style="font-size:13.5px;color:var(--ink)">出生地点</span>
+            <span style="font-size:13.5px;color:var(--ink)">浙江 杭州 ›</span>
+          </div>
+          <div class="row" style="padding:11px 0">
+            <span style="font-size:13.5px;color:var(--ink)">历法</span>
+            <div class="seg" style="width:132px;padding:2px">
+              <span class="on" style="font-size:11.5px;padding:5px 0">阳历</span><span style="font-size:11.5px;padding:5px 0">农历</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 与我的关系：建档时即设 -->
+        <div class="card" style="margin-top:10px;border:1px solid #DDDFF2">
+          <div class="row">
+            <span class="sec-title">与我的关系</span>
+            <span class="mini">建档时设置</span>
+          </div>
+          <div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap">
+            <span class="chip" style="font-size:11.5px">本人</span>
+            <span class="chip on" style="font-size:11.5px">恋人</span>
+            <span class="chip" style="font-size:11.5px">夫妻</span>
+            <span class="chip" style="font-size:11.5px">亲子</span>
+            <span class="chip" style="font-size:11.5px">朋友</span>
+            <span class="chip" style="font-size:11.5px">同事</span>
+          </div>
+          <div class="mini" style="margin-top:9px;line-height:1.7">设置后 TA 会出现在合盘选择器，可直接选为 A / B；也可留空，之后在合盘时再选。</div>
+        </div>
+
+        <div class="mini" style="margin-top:10px;line-height:1.7;text-align:center">生辰信息仅用于排盘与本人生成解读，可随时在档案中删除。</div>
+      </div>
+
+      <div class="footbar">
+        <div class="btn btn-primary" style="text-align:center;padding:12px 0;font-size:13.5px">保存并查看星盘</div>
+      </div>
+    </div>
+    <div class="home-indicator"></div>
+  </div>
+</div>
+
+</body>
+</html>

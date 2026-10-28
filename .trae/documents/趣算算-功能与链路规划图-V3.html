@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>趣算算 · 功能与链路规划图 V3</title>
+<style>
+  :root{
+    --brand:#4A4E8F; --brand-soft:#EEF0FA; --gold:#C9A86A; --gold-soft:#FAF4E6;
+    --paper:#F7F5F0; --card:#FFFFFF; --ink:#2B2B33; --ink2:#8A8A93;
+    --line:#E7E4DA; --success:#2E9E6B; --danger:#D9534F;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;line-height:1.6;padding:48px 28px 80px}
+  .wrap{max-width:1180px;margin:0 auto}
+  .eyebrow{font-size:12px;letter-spacing:.22em;color:var(--ink2);text-transform:uppercase}
+  h1{font-size:32px;letter-spacing:-.01em;margin:8px 0 10px}
+  .sub{color:var(--ink2);font-size:14px}
+  .meta{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+  .tag{font-size:12px;padding:3px 10px;border-radius:999px;background:#fff;border:1px solid var(--line);color:var(--ink2)}
+  .tag.b{background:var(--brand-soft);border-color:#D9DDF2;color:var(--brand)}
+  .tag.g{background:var(--gold-soft);border-color:#EBDDBC;color:#8C6B36}
+
+  h2{font-size:20px;margin:52px 0 6px;letter-spacing:-.01em}
+  h2 .no{color:var(--gold);font-size:13px;font-weight:600;letter-spacing:.14em;margin-right:10px}
+  .lead{color:var(--ink2);font-size:13.5px;margin-bottom:16px}
+
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .kpi .n{font-size:26px;font-weight:700;letter-spacing:-.02em}
+  .kpi .n small{font-size:12px;font-weight:500;color:var(--ink2);margin-left:4px}
+  .kpi .l{font-size:12px;color:var(--ink2);margin-top:4px}
+  .kpi.del .n{color:var(--danger)} .kpi.add .n{color:var(--success)} .kpi.keep .n{color:var(--brand)} .kpi.merge .n{color:#8C6B36}
+
+  /* 全景链路 */
+  .flow{display:flex;align-items:stretch;gap:10px;margin-top:8px}
+  .col{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+  .col-h{font-size:12px;color:var(--ink2);letter-spacing:.08em;margin-bottom:10px;display:flex;justify-content:space-between}
+  .col-h b{color:var(--ink);letter-spacing:0}
+  .ar{flex:none;display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:26px;width:22px}
+  .group{font-size:11px;color:var(--ink2);margin:10px 0 6px}
+  .group:first-child{margin-top:0}
+  .entry{display:flex;align-items:center;gap:7px;font-size:12.5px;padding:5px 0;border-bottom:1px dashed #EFEDE5}
+  .entry:last-child{border-bottom:none}
+  .dot{width:5px;height:5px;border-radius:50%;background:var(--brand);flex:none}
+  .entry .new{font-size:10px;color:var(--success);border:1px solid #CFE8DA;background:#F1F9F4;border-radius:4px;padding:0 4px;margin-left:auto}
+  .entry .free{font-size:10px;color:var(--ink2);margin-left:auto}
+
+  .hub{background:linear-gradient(180deg,#FBFAF6,#fff);border-color:#DEDBF0}
+  .cap{border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:8px;background:#fff}
+  .cap .t{font-size:13px;font-weight:600;display:flex;justify-content:space-between;gap:6px;align-items:center}
+  .cap .d{font-size:11.5px;color:var(--ink2);margin-top:3px}
+  .price{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--gold-soft);color:#8C6B36;border:1px solid #EBDDBC;white-space:nowrap}
+  .price.free{background:#F1F9F4;color:var(--success);border-color:#CFE8DA}
+  .shell{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px;font-size:11.5px;color:var(--ink2)}
+
+  .pay{margin-top:12px;background:var(--brand);color:#fff;border-radius:14px;padding:12px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .pay .lab{font-size:12px;opacity:.75;letter-spacing:.08em}
+  .pay .item{font-size:12.5px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:3px 11px}
+
+  /* 表格 */
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:12.5px}
+  thead th{background:#FBFAF6;text-align:left;font-size:11.5px;color:var(--ink2);font-weight:600;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:10px 12px;border-bottom:1px solid #F0EEE7;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td b{font-weight:600}
+  .pill{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--ink2);white-space:nowrap}
+  .pill.keep{background:#F1F4FD;border-color:#D9DDF2;color:var(--brand)}
+  .pill.merge{background:var(--gold-soft);border-color:#EBDDBC;color:#8C6B36}
+  .pill.del{background:#FBEFEE;border-color:#F0CFCC;color:#B4443F}
+  .pill.add{background:#F1F9F4;border-color:#CFE8DA;color:var(--success)}
+  .mut{color:var(--ink2)}
+  .pricecell{color:#8C6B36;font-weight:600;white-space:nowrap}
+
+  /* 契机时间轴 */
+  .timeline{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:8px}
+  .tl{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;position:relative}
+  .tl:before{content:"";position:absolute;top:0;left:14px;right:14px;height:3px;border-radius:0 0 3px 3px;background:var(--gold)}
+  .tl .w{font-size:11px;color:var(--ink2);letter-spacing:.06em}
+  .tl .e{font-size:13px;font-weight:600;margin:5px 0 4px}
+  .tl .a{font-size:11.5px;color:var(--ink2);line-height:1.65}
+  .tl .p{font-size:11px;color:#8C6B36;margin-top:6px}
+
+  /* 结论区 */
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .panel h3{font-size:14px;margin-bottom:8px}
+  .panel ul{list-style:none}
+  .panel li{font-size:12.5px;padding:7px 0;border-bottom:1px dashed #F0EEE7;display:flex;gap:8px}
+  .panel li:last-child{border-bottom:none}
+  .panel li span.i{flex:none;font-size:10.5px;padding:0 6px;border-radius:4px;height:18px;line-height:18px;margin-top:1px}
+  .i.del{background:#FBEFEE;color:#B4443F} .i.add{background:#F1F9F4;color:var(--success)} .i.merge{background:var(--gold-soft);color:#8C6B36}
+
+  .note{margin-top:14px;font-size:11.5px;color:var(--ink2)}
+  .footer{margin-top:46px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink2)}
+
+  @media (max-width:980px){
+    .cards{grid-template-columns:repeat(2,1fr)}
+    .flow{flex-direction:column}
+    .ar{width:100%;height:22px;transform:rotate(90deg)}
+    .timeline{grid-template-columns:repeat(2,1fr)}
+    .split{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">Product Flow Map · V3</div>
+  <h1>趣算算 · 功能与链路规划图</h1>
+  <div class="sub">以「对话」为中枢，把 12 个入口、5 项能力、7 个收费点、6 类行为契机串成一条可回流的链路；同时审计冗余与断链。</div>
+  <div class="meta">
+    <span class="tag b">基线：4 模块 · 20 屏</span>
+    <span class="tag">对话 = 中枢，不是第四个 Tab 之外的孤岛</span>
+    <span class="tag g">先给价值，再收钱</span>
+    <span class="tag">2026-10-28</span>
+  </div>
+
+  <h2><span class="no">00</span>结论摘要</h2>
+  <div class="lead">审计后的动作：保留 2 条主链，合并 3 处重复能力，删除 3 个冗余/死链，新增 6 个补链功能。</div>
+  <div class="cards">
+    <div class="kpi keep"><div class="n">2<small>条</small></div><div class="l">保留主链：单盘问答、关系解读</div></div>
+    <div class="kpi merge"><div class="n">3<small>处</small></div><div class="l">合并：周期报告 / 两套对话壳 / 合盘长文</div></div>
+    <div class="kpi del"><div class="n">3<small>个</small></div><div class="l">删除：对话内周期报告、同类交流地、会员人生报告</div></div>
+    <div class="kpi add"><div class="n">6<small>个</small></div><div class="l">新增：空态建档、今日问 AI、报告追问、完成通知、会员用量、合盘摘要</div></div>
+  </div>
+
+  <h2><span class="no">01</span>全景链路</h2>
+  <div class="lead">入口分三层：常驻、内容后置、半弹层。所有入口最终都汇入同一套会话、额度与解锁逻辑，避免“一个入口一套计费”。</div>
+
+  <div class="flow">
+    <div class="col">
+      <div class="col-h"><b>入口 · 12 + 1 升格</b><span>免费进入</span></div>
+
+      <div class="group">常驻</div>
+      <div class="entry"><span class="dot"></span>Tab「对话」<span class="free">常驻</span></div>
+
+      <div class="group">内容后置（读完就走 → 带着问题来）</div>
+      <div class="entry"><span class="dot"></span>今日页「问问 AI」<span class="new">新增</span></div>
+      <div class="entry"><span class="dot"></span>月运正文底部「带着这个月问 AI」</div>
+      <div class="entry"><span class="dot"></span>年报底部「问这一年的取舍」</div>
+      <div class="entry"><span class="dot"></span>深度解读正文「继续追问」</div>
+      <div class="entry"><span class="dot"></span>关系正文「继续问我」</div>
+      <div class="entry"><span class="dot"></span>报告中心条目「继续问」<span class="new">新增</span></div>
+      <div class="entry"><span class="dot"></span>首读末尾「继续看你的十神 / 大运」<span class="new">新增</span></div>
+
+      <div class="group">半弹层（不离开当前页）</div>
+      <div class="entry"><span class="dot"></span>星盘命盘「Ai 解读」</div>
+      <div class="entry"><span class="dot"></span>流盘段位「Ai 解读」</div>
+      <div class="entry"><span class="dot"></span>更多解读每条「Ai 解读」</div>
+      <div class="entry"><span class="dot"></span>半弹层「⤢ 展开」升格完整对话</div>
+      <div class="entry"><span class="dot"></span>⊕ 星盘选择器（单人 / 合盘）</div>
+    </div>
+
+    <div class="ar">→</div>
+
+    <div class="col hub">
+      <div class="col-h"><b>对话中枢</b><span>承载 5 项能力</span></div>
+      <div class="cap">
+        <div class="t">单盘问答<span class="price">免费框架 → 60</span></div>
+        <div class="d">命盘 / 流年 / 十神维度提问，先给分析框架，解锁出正文</div>
+      </div>
+      <div class="cap">
+        <div class="t">关系合盘解读<span class="price">120 · 会员 8 折</span></div>
+        <div class="d">免费合盘摘要 → 选 2 人 → 大纲 → 解锁 → 双人视角正文</div>
+      </div>
+      <div class="cap">
+        <div class="t">报告追问<span class="price free">免费</span></div>
+        <div class="d">引用已生成的月运 / 年报 / 关系正文作答，不重复生成同类报告</div>
+      </div>
+      <div class="cap">
+        <div class="t">多模态输入<span class="price free">解析免费</span></div>
+        <div class="d">语音 ≤60s 转写；聊天记录 ≤9 张截图 / 文本导入，脱敏 + 7 天删除</div>
+      </div>
+      <div class="cap">
+        <div class="t">统一付费壳<span class="price">积分 / 会员 / 充值</span></div>
+        <div class="d">深读、月运、年报、关系共用同一个解锁弹层与额度判断</div>
+      </div>
+      <div class="shell">统一：一个会话 ID · 一套额度 · 一条解锁记录 · 一个充值入口</div>
+    </div>
+
+    <div class="ar">→</div>
+
+    <div class="col">
+      <div class="col-h"><b>产出与回流</b><span>可沉淀、可分享</span></div>
+      <div class="entry"><span class="dot"></span>深度解读正文 → 追问 / 反馈</div>
+      <div class="entry"><span class="dot"></span>关系正文 → 为 TA 建档（160）</div>
+      <div class="entry"><span class="dot"></span>报告中心：月运 / 年报 / 关系 / 深读</div>
+      <div class="entry"><span class="dot"></span>星盘详情：命盘 / 流盘 / 更多解读</div>
+      <div class="entry"><span class="dot"></span>分享海报（命格关键词 / 月运）</div>
+      <div class="entry"><span class="dot"></span>会员续期与权益消耗</div>
+      <div class="entry"><span class="dot"></span>生成完成站内通知<span class="new">新增</span></div>
+      <div class="entry"><span class="dot"></span>明日日运 / 下月月运回流</div>
+    </div>
+  </div>
+
+  <div class="pay">
+    <span class="lab">收费点</span>
+    <span class="item">首读 160</span>
+    <span class="item">深度解读 60</span>
+    <span class="item">月运 80</span>
+    <span class="item">年报 160</span>
+    <span class="item">关系解读 120</span>
+    <span class="item">会员 25 / 58 / 178</span>
+    <span class="item">充值 1 元 = 10 分</span>
+  </div>
+
+  <h2><span class="no">02</span>入口矩阵</h2>
+  <div class="lead">每个入口必须回答四件事：用户此刻在想什么、带什么参数进来、落在对话哪一步、是否收费。</div>
+  <table>
+    <thead><tr><th>#</th><th>入口</th><th>触发时机</th><th>带入参数</th><th>落点</th><th>计费</th></tr></thead>
+    <tbody>
+      <tr><td>E1</td><td><b>Tab 对话</b></td><td>随时，默认打开上次会话</td><td>当前档案（默认本人）</td><td>对话首屏 / 历史会话</td><td class="pricecell">按内容</td></tr>
+      <tr><td>E2</td><td><b>今日页「问问 AI」</b><span class="pill add">新增</span></td><td>看完日运，想追问今天怎么做</td><td>流日干支 + 今日宜忌</td><td>预填「今天适合推进什么事？」</td><td class="pricecell">免费框架</td></tr>
+      <tr><td>E3</td><td><b>月运正文底部</b></td><td>读完月运，想落到具体决策</td><td>月份 + 已解锁月运 ID</td><td>引用月运的追问卡</td><td class="pricecell">免费追问</td></tr>
+      <tr><td>E4</td><td><b>年报底部</b></td><td>看完年度节奏，想确认取舍</td><td>年份 + 年报 ID</td><td>引用年报的追问卡</td><td class="pricecell">免费追问</td></tr>
+      <tr><td>E5</td><td><b>深度解读正文</b></td><td>读完一篇，仍有下一个问题</td><td>原问题 + 深读 ID</td><td>续接同一会话</td><td class="pricecell">新问题 60</td></tr>
+      <tr><td>E6</td><td><b>关系正文底部</b></td><td>看完关系说明书，想问具体场景</td><td>双人档案 + 关系 ID</td><td>续接关系会话</td><td class="pricecell">新问题 60 / 关系 120</td></tr>
+      <tr><td>E7</td><td><b>报告中心条目</b><span class="pill add">新增</span></td><td>回看旧报告时产生新疑问</td><td>报告类型 + ID</td><td>引用报告的追问卡</td><td class="pricecell">免费追问</td></tr>
+      <tr><td>E8</td><td><b>首读末尾</b><span class="pill add">新增</span></td><td>首读刚生成，想继续深挖</td><td>命盘 ID + 命格关键词</td><td>更多解读 / 流盘 / 对话三选一</td><td class="pricecell">免费导流</td></tr>
+      <tr><td>E9</td><td><b>星盘命盘「Ai 解读」</b></td><td>看某个十神 / 格局想细问</td><td>命盘 ID + 维度 key</td><td>AI 半弹层</td><td class="pricecell">免费问答</td></tr>
+      <tr><td>E10</td><td><b>流盘段位「Ai 解读」</b></td><td>看某段大运 / 流年想细问</td><td>命盘 ID + 大运 / 流年</td><td>AI 半弹层</td><td class="pricecell">免费问答</td></tr>
+      <tr><td>E11</td><td><b>更多解读每条</b></td><td>读完一条解释想追问</td><td>命盘 ID + 条目 key</td><td>AI 半弹层</td><td class="pricecell">免费问答</td></tr>
+      <tr><td>E12</td><td><b>⊕ 星盘选择器</b></td><td>对话中要换人 / 切合盘</td><td>当前档案 + 关系类型</td><td>弹层：单人 / 合盘</td><td class="pricecell">合盘 120</td></tr>
+    </tbody>
+  </table>
+  <div class="note">E9–E11 不新开一套计费：半弹层与对话共用会话、额度与解锁记录；「⤢ 展开」直接升格为完整对话，消息不丢。</div>
+
+  <h2><span class="no">03</span>对话承载的能力</h2>
+  <div class="lead">能力按“输入 → 免费部分 → 收费部分 → 输出去向”定义，避免同一能力在两个页面用不同规则收费。</div>
+  <table>
+    <thead><tr><th>能力</th><th>输入</th><th>免费部分</th><th>收费部分</th><th>输出去向</th><th>复用页面</th></tr></thead>
+    <tbody>
+      <tr><td><b>单盘问答</b></td><td>命盘 + 问题 + 可选材料</td><td>分析框架（4 维）、可改大纲</td><td>60 分解锁正文；会员 10 次/月</td><td>深度解读正文</td><td>对话、半弹层、首读导流</td></tr>
+      <tr><td><b>关系解读</b></td><td>2 人档案 + 关系类型 + 材料</td><td>免费合盘摘要 + 4 维框架</td><td>120 分解锁（会员 8 折 = 96）</td><td>关系正文</td><td>对话、星盘合盘页签</td></tr>
+      <tr><td><b>报告追问</b></td><td>已解锁报告 ID + 问题</td><td>引用报告作答</td><td>不单独收费</td><td>对话回答 / 转深读</td><td>月运、年报、报告中心</td></tr>
+      <tr><td><b>多模态输入</b></td><td>语音 / 聊天截图 / 文本</td><td>转写与解析、脱敏</td><td>不单独收费</td><td>对话摘要卡</td><td>对话、关系输入材料</td></tr>
+      <tr><td><b>统一付费壳</b></td><td>内容类型 + 价格</td><td>积分余额、会员权益校验</td><td>积分 / 会员 / 充值</td><td>解锁记录</td><td>全局复用</td></tr>
+    </tbody>
+  </table>
+
+  <h2><span class="no">04</span>行为契机</h2>
+  <div class="lead">用户不是“来学命理”，而是被时间、事件、关系、资产四类契机推着回来；每个契机必须有承接页和回流钩子。</div>
+  <div class="timeline">
+    <div class="tl"><div class="w">D0</div><div class="e">建档</div><div class="a">新用户没有盘，先 1 分钟建档</div><div class="p">首读 160（新人赠送覆盖）</div></div>
+    <div class="tl"><div class="w">每日 0 点</div><div class="e">日运刷新</div><div class="a">今日吉凶、宜忌、五行；底部「问问 AI」</div><div class="p">免费 → 深读 60</div></div>
+    <div class="tl"><div class="w">每月 1 号</div><div class="e">月运更新</div><div class="a">月主题、流月日历、四维</div><div class="p">80 分 / 会员免费</div></div>
+    <div class="tl"><div class="w">年初 / 生日</div><div class="e">流年切换</div><div class="a">流盘段位、年报、关键转折年</div><div class="p">160 分 / 会员免费</div></div>
+    <div class="tl"><div class="w">关系事件</div><div class="e">吵架 / 冷战 / 表白</div><div class="a">合盘摘要 → 关系正文 → 为 TA 建档</div><div class="p">120 → 160</div></div>
+    <div class="tl"><div class="w">决策焦虑</div><div class="e">跳槽 / 分手 / 搬家</div><div class="a">框架 → 深读 → 行动建议</div><div class="p">60 分</div></div>
+  </div>
+  <div class="note">另有两条资产型契机：报告生成完成（站内通知 → 回对话）、会员到期前 3 天（续期页 + 剩余次数）。</div>
+
+  <h2><span class="no">05</span>冗余审计</h2>
+  <div class="lead">判定标准：如果两处产出“同一份解释”或“同一套计费”，就合并；如果只是同一能力的两个壳，保留但统一状态。</div>
+  <table>
+    <thead><tr><th>#</th><th>重叠对象</th><th>问题</th><th>判定</th><th>处理</th></tr></thead>
+    <tbody>
+      <tr><td>R1</td><td><b>今日的月运 / 年报</b> vs <b>对话生成周期报告</b></td><td>同一份周期报告两个生产地，价格与缓存容易不一致</td><td><span class="pill merge">合并</span></td><td>周期报告只在今日 / 报告中心生成；对话只做“引用报告追问”，不再生成同类报告</td></tr>
+      <tr><td>R2</td><td><b>AI 半弹层</b> vs <b>对话页</b></td><td>两个壳，若各存会话会出现“刚问过又得重问”</td><td><span class="pill keep">保留统一</span></td><td>半弹层 = 对话轻量壳，共享会话 / 额度 / 解锁；「⤢ 展开」升格不丢消息</td></tr>
+      <tr><td>R3</td><td><b>首读</b> vs <b>更多解读</b> vs <b>深度解读</b></td><td>都在解释命盘，用户分不清该买哪个</td><td><span class="pill keep">分层保留</span></td><td>首读 = 总览（建档交付）；更多解读 = 维度逐条（免费）；深度解读 = 单点深挖（60）</td></tr>
+      <tr><td>R4</td><td><b>流盘</b> vs <b>年报</b></td><td>都讲大运 / 流年，入口重复</td><td><span class="pill keep">分工</span></td><td>流盘 = 免费时间轴与段位；年报 = 年度叙事（160），入口从流盘当前段位进入</td></tr>
+      <tr><td>R5</td><td><b>星盘「合盘」页签</b> vs <b>关系解读</b></td><td>合盘完整长文与 120 报告重复</td><td><span class="pill merge">合并</span></td><td>合盘页签只放免费摘要（冲合 / 相处关键词），完整版统一走 120 关系解读</td></tr>
+      <tr><td>R6</td><td><b>更多解读「同类交流地」</b></td><td>产品暂无社区，点了是死链</td><td><span class="pill del">删除</span></td><td>换成「大家常问」问题 chips，点击进 AI 半弹层</td></tr>
+      <tr><td>R7</td><td><b>我的页报告入口</b> vs <b>报告中心</b></td><td>两个列表，信息重复</td><td><span class="pill keep">收敛</span></td><td>我的页只显示最近 3 条 + 「查看全部」；完整列表只在报告中心</td></tr>
+      <tr><td>R8</td><td><b>日运</b> vs <b>月运</b> vs <b>流盘流日</b></td><td>颗粒度不同，但“今天”出现三次</td><td><span class="pill keep">保留</span></td><td>日运 = 行动建议；月运 = 月节奏；流盘流日 = 查具体日，仅做工具</td></tr>
+    </tbody>
+  </table>
+
+  <h2><span class="no">06</span>断链与补链</h2>
+  <div class="lead">以下 6 处在当前 20 屏里“读到这里就结束”，用户没有下一步可点，或付费后没有反馈闭环。</div>
+  <table>
+    <thead><tr><th>#</th><th>断点</th><th>影响</th><th>新增 / 修补</th><th>落在哪屏</th></tr></thead>
+    <tbody>
+      <tr><td>S1</td><td>无档案新用户进对话</td><td>没有盘可选，直接卡死</td><td>空态首屏「先建档，1 分钟」内联建档，完成后回填对话</td><td>05 对话首屏</td></tr>
+      <tr><td>S2</td><td>今日页看完日运无去处</td><td>免费流量不导流，D1 留存断</td><td>日运卡底部「问问 AI 今天适合做什么」</td><td>01 今日页</td></tr>
+      <tr><td>S3</td><td>月运 / 年报读完即结束</td><td>高价值读者无法转深读</td><td>报告底部「带着这份报告问 AI」+ 引用卡</td><td>03 / 04</td></tr>
+      <tr><td>S4</td><td>深读生成 3 分钟，离开后不知道完成</td><td>解锁了却看不到，退款与差评风险</td><td>对话内进度卡 + 我的红点 + 报告中心「生成中」状态</td><td>07 / 13 / 15</td></tr>
+      <tr><td>S5</td><td>会员 10 次/月不可感知</td><td>权益感知弱，续费动力低</td><td>会员中心与解锁弹层显示「本月剩余 7/10」</td><td>14 / 解锁弹层</td></tr>
+      <tr><td>S6</td><td>关系 120 决策太重</td><td>从 0 直接到 120，转化低</td><td>先给免费合盘摘要（3 个冲合 + 2 条相处关键词）再解锁</td><td>09 / 11</td></tr>
+      <tr><td>S7</td><td>首读读完没有下一步</td><td>首读是最大流量，未承接</td><td>末尾「继续看：你的十神 / 大运」二选一</td><td>16 星盘详情</td></tr>
+      <tr><td>S8</td><td>报告中心只能看，不能问</td><td>回看价值低</td><td>每条报告右侧「继续问」</td><td>13 报告中心</td></tr>
+    </tbody>
+  </table>
+
+  <h2><span class="no">07</span>改删清单（落到 20 屏）</h2>
+  <div class="split">
+    <div class="panel">
+      <h3>删减与合并</h3>
+      <ul>
+        <li><span class="i del">删</span><div><b>对话内周期报告生成</b>：月运 / 年报只保留一处生产地（今日 → 报告中心）</div></li>
+        <li><span class="i del">删</span><div><b>更多解读「同类交流地」</b>：无社区能力，改「大家常问」</div></li>
+        <li><span class="i del">删</span><div><b>会员「人生报告」</b>：已合并进流盘 + 更多解读</div></li>
+        <li><span class="i merge">并</span><div><b>星盘合盘长文</b>：只留免费摘要，完整版走 120 关系解读</div></li>
+        <li><span class="i merge">并</span><div><b>两套对话壳</b>：半弹层共享会话与额度，「⤢」升格</div></li>
+        <li><span class="i merge">并</span><div><b>我的页报告列表</b>：只留最近 3 条，完整列表进报告中心</div></li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>新增功能</h3>
+      <ul>
+        <li><span class="i add">加</span><div><b>对话空态建档</b>：无档案用户内联建档（S1）</div></li>
+        <li><span class="i add">加</span><div><b>今日页问 AI</b>：日运卡底部 CTA，带流日与宜忌（S2）</div></li>
+        <li><span class="i add">加</span><div><b>报告追问上下文卡</b>：月运 / 年报 / 报告中心引用作答（S3 / S8）</div></li>
+        <li><span class="i add">加</span><div><b>生成完成站内通知</b>：对话进度卡 + 红点 + 生成中状态（S4）</div></li>
+        <li><span class="i add">加</span><div><b>会员用量显示</b>：本月剩余次数（S5）</div></li>
+        <li><span class="i add">加</span><div><b>免费合盘摘要</b>：120 前的价值台阶（S6）</div></li>
+        <li><span class="i add">加</span><div><b>首读末尾导流</b>：十神 / 大运二选一（S7）</div></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="no">08</span>收费结构（审计后）</h2>
+  <table>
+    <thead><tr><th>收费点</th><th>触发动作</th><th>价格</th><th>免费钩子</th><th>会员权益</th><th>变更</th></tr></thead>
+    <tbody>
+      <tr><td>首读</td><td>建档完成</td><td class="pricecell">160</td><td>新人赠 240 覆盖</td><td>—</td><td class="mut">不变</td></tr>
+      <tr><td>深度解读</td><td>出框架后解锁</td><td class="pricecell">60</td><td>免费 4 维框架、可改大纲</td><td>10 次 / 月</td><td class="mut">不变</td></tr>
+      <tr><td>月运</td><td>本月试看后</td><td class="pricecell">80</td><td>总评 + 1 维</td><td>免费</td><td class="mut">不变</td></tr>
+      <tr><td>年报</td><td>本年试看后</td><td class="pricecell">160</td><td>总评 + 1 维</td><td>免费</td><td class="mut">不变</td></tr>
+      <tr><td>关系解读</td><td>合盘摘要后</td><td class="pricecell">120</td><td>免费合盘摘要 + 4 维框架</td><td>8 折（96）</td><td><span class="pill add">新增免费摘要</span></td></tr>
+      <tr><td>会员</td><td>会员中心</td><td class="pricecell">25 / 58 / 178</td><td>月运 / 年报免费、深读 10 次</td><td>—</td><td><span class="pill del">移除人生</span></td></tr>
+    </tbody>
+  </table>
+  <div class="note">不新增收费点；审计只做“减少重复生产 + 补免费台阶”，保证每个价格都对应一份唯一交付物。</div>
+
+  <div class="footer">
+    规划基线：<b>趣算算-产品定位与功能规划-V2.md</b> · 设计稿：<b>ui-design/14-v2-product.html</b>（4 模块 20 屏）<br>
+    本文只做链路审计，未改动设计稿；确认后再按 07 的清单逐屏落地。
+  </div>
+</div>
+</body>
+</html>
