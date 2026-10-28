@@ -289,3 +289,71 @@ CREATE INDEX idx_transactions_user_id ON transactions(user_id);
 
 ### 8.3 积分兑换比例
 - 1元 = 10积分
+
+---
+
+## 9. V3 MVP 架构增量（2026-10-28）
+
+本节覆盖前文积分制主线。V3 仍使用 React/Vite + FastAPI，但商业主线改为订阅权益，积分只做历史兼容。
+
+### 9.1 领域边界
+
+```text
+User
+ ├─ Person 1..n
+ │   ├─ chart_snapshot 1..1
+ │   ├─ Report 1..n
+ │   └─ Persona 0..1
+ │       ├─ PersonaConversation 1..n
+ │       │   └─ PersonaMessage 1..n
+ │       └─ PersonaMemory 0..1
+ ├─ Subscription 0..n
+ ├─ UsageCounter 0..n
+ └─ SafetyEvent 0..n
+```
+
+- 解盘 AI 继续使用 `ChatSession/ChatMessage`。
+- 命局人格使用独立的 `PersonaConversation/PersonaMessage`，禁止跨表复制。
+- 报告和人格只通过 `chart_snapshot_service` 读取标准化命盘。
+- 报告异步状态落库；人格会话按条件更新原子限制 20 回合。
+
+### 9.2 迁移链
+
+```text
+010_content_unlocks
+  -> 011_v3_profile_subscription
+  -> 012_v3_reports
+  -> 013_v3_persona
+```
+
+- 011：档案关系、命盘快照、订阅、用量。
+- 012：统一报告与确定性 `identity_key`。
+- 013：人格、独立会话/消息、记忆、安全事件。
+
+SQLite 开发库与 MySQL 8 生产方言均已验证。生产回退优先关闭功能开关，不对已有用户数据执行 downgrade。
+
+### 9.3 权益与并发
+
+- `entitlement_service` 是档案、问答、报告和人格会话的唯一权益入口。
+- 用量键为 `(user_id, metric, period_key, scope_id)`；条件更新保证额度不会并发超发。
+- 报告 identity 使用数据库唯一约束；失败和超时重试使用状态条件更新抢占。
+- 人格回合使用 `user_turn_count < 20` 条件更新，只有一个并发请求可占用第 20 回合。
+
+### 9.4 安全状态机
+
+1. 输入前置检测。
+2. 危机命中后退出角色，返回静态资源，不调用 LLM，不增加用户回合。
+3. 未成年人禁止创建人格。
+4. 会话满两小时后，GET 会话与 SSE 均返回休息提醒。
+5. 输出后置过滤，违规内容不保留原文。
+6. 清空记忆物理删除正文，只保留无正文审计事件。
+
+### 9.5 灰度开关
+
+| 环境变量 | 默认 | 说明 |
+|---|---:|---|
+| `V3_ENABLED` | false | V3 API 与四 Tab 主入口 |
+| `PERSONA_ENABLED` | false | 命局人格 |
+| `OTHER_PERSONA_ENABLED` | false | 他人人格，MVP 禁止 |
+| `POINTS_RECHARGE_ENABLED` | false | 用户积分充值，MVP 关闭 |
+| `SUBSCRIPTION_MOCK_ENABLED` | false | 内部模拟订阅 |

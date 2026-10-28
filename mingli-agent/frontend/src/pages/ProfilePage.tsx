@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useUserStore } from '../store/userStore'
 import { authApi } from '../api/auth'
 import ShareModal from '../components/ShareModal'
 import ContactModal from '../components/ContactModal'
+import { useEntitlementStore } from '../store/entitlementStore'
+import { color, radius } from '../theme/tokens'
 
 /**
  * 我的页（设计稿 04-profile）
@@ -12,6 +14,7 @@ import ContactModal from '../components/ContactModal'
 export default function ProfilePage() {
   const navigate = useNavigate()
   const { user, logout, setUser, sendSmsCode } = useUserStore()
+  const { entitlement, fetchEntitlement } = useEntitlementStore()
 
   const [showShare, setShowShare] = useState(false)
   const [showContact, setShowContact] = useState(false)
@@ -25,6 +28,10 @@ export default function ProfilePage() {
   const [deleting, setDeleting] = useState(false)
 
   const isMobileAccount = !!user?.phone
+
+  useEffect(() => {
+    void fetchEntitlement()
+  }, [fetchEntitlement])
 
   const handleOpenNicknameModal = () => {
     setNickname(user?.name || '')
@@ -121,17 +128,45 @@ export default function ProfilePage() {
         </button>
       </div>
 
-      {/* 积分卡 */}
+      {/* 订阅与用量 */}
+      <button
+        onClick={() => navigate('/subscription')}
+        className="w-full bg-white p-4 shadow-sm mt-3 text-left"
+        style={{ borderRadius: radius.card }}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold" style={{ color: color.ink }}>
+            {entitlement?.plan_code === 'full' ? '全享' : entitlement?.plan_code === 'light' ? '轻享' : '免费计划'}
+          </span>
+          <span className="text-xs" style={{ color: color.brand }}>管理订阅 ›</span>
+        </div>
+        <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+          <div>
+            <div className="text-sm font-bold" style={{ color: color.ink }}>
+              {entitlement?.profile.remaining == null ? '不限' : entitlement?.profile.remaining ?? '—'}
+            </div>
+            <div className="text-[10px] text-gray-400 mt-0.5">档案余量</div>
+          </div>
+          <div>
+            <div className="text-sm font-bold" style={{ color: color.ink }}>
+              {entitlement?.qa_daily.remaining == null ? '不限' : entitlement?.qa_daily.remaining ?? '—'}
+            </div>
+            <div className="text-[10px] text-gray-400 mt-0.5">今日问答</div>
+          </div>
+          <div>
+            <div className="text-sm font-bold" style={{ color: color.ink }}>
+              {entitlement?.persona_session_monthly.remaining == null ? '不限' : entitlement?.persona_session_monthly.remaining ?? '—'}
+            </div>
+            <div className="text-[10px] text-gray-400 mt-0.5">本月会话</div>
+          </div>
+        </div>
+      </button>
+
+      {/* 历史积分卡 */}
       <div className="bg-white rounded-2xl p-4 shadow-sm mt-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-500">积分余额</span>
-          <button
-            onClick={() => navigate('/recharge')}
-            className="text-xs rounded-full px-3 py-1 text-white"
-            style={{ backgroundColor: '#4A4E8F' }}
-          >
-            充值
-          </button>
+          <span className="text-xs text-gray-500">历史积分</span>
+          <span className="text-[11px] text-gray-400">仅保留余额与流水</span>
         </div>
         <div className="mt-1">
           <span className="text-3xl font-bold" style={{ color: '#4A4E8F' }}>{user?.points ?? 0}</span>
@@ -142,7 +177,7 @@ export default function ProfilePage() {
             邀请赚积分 <span>›</span>
           </button>
           <button onClick={() => navigate('/points')} className="text-xs flex items-center gap-0.5 text-gray-500">
-            消费记录 <span>›</span>
+            积分流水 <span>›</span>
           </button>
         </div>
       </div>

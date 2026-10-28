@@ -3,7 +3,7 @@
  *
  * 两段式咨询的第二段：用户从对话里的「解锁专属深度解读」卡进入。
  * 未解锁：展示分析框架大纲（可修改）+ 已选人物 + 解锁正文；
- * 解锁后：扣积分 → 「AI 深度分析中」→ 渲染完整正文 + 免责 + 反馈。
+ * 解锁后：校验订阅权益 → 「AI 深度分析中」→ 渲染完整正文 + 免责 + 反馈。
  *
  * 配色一律取自 src/theme/tokens（全站单一主色系）。
  */
@@ -13,8 +13,6 @@ import { deepReadingApi } from '../api/deepReading'
 import type { DeepReadingDetail, OutlineItem } from '../api/deepReading'
 import { feedbackApi } from '../api/feedback'
 import { FollowupReportView } from '../components/FollowupReportView'
-import RechargeModal from '../components/RechargeModal'
-import { useUserStore } from '../store/userStore'
 import { color, gradient, radius, shadow } from '../theme/tokens'
 
 /** 内容反馈标签（对齐测测：👍 弹正面组，👎 弹负面组） */
@@ -24,7 +22,6 @@ const NEGATIVE_TAGS = ['内容主题不是我想要的', '读不懂/逻辑性差
 export default function DeepReading() {
   const { messageId } = useParams<{ messageId: string }>()
   const navigate = useNavigate()
-  const { fetchUserInfo } = useUserStore()
   const mid = Number(messageId)
 
   const [detail, setDetail] = useState<DeepReadingDetail | null>(null)
@@ -36,7 +33,6 @@ export default function DeepReading() {
   const [saving, setSaving] = useState(false)
 
   const [analyzing, setAnalyzing] = useState(false)
-  const [showRecharge, setShowRecharge] = useState(false)
 
   const [voted, setVoted] = useState<'up' | 'down' | null>(null)
   const [showFeedback, setShowFeedback] = useState(false)
@@ -108,14 +104,14 @@ export default function DeepReading() {
     try {
       const res = await deepReadingApi.unlock(mid)
       setDetail(res)
-      await fetchUserInfo()
     } catch (e: unknown) {
-      const d = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-      const code = (d as { code?: string } | undefined)?.code
-      if (code === 'insufficient_points') {
-        setShowRecharge(true)
+      const data = (e as { response?: { data?: { code?: string; message?: string; detail?: unknown } } })?.response?.data
+      const detailError = data?.detail as { code?: string; message?: string } | undefined
+      const code = data?.code || detailError?.code
+      if (code === 'entitlement_required') {
+        alert(data?.message || detailError?.message || '当前计划不含完整深度解读')
       } else {
-        const msg = typeof d === 'string' ? d : (d as { message?: string } | undefined)?.message
+        const msg = typeof data?.detail === 'string' ? data.detail : data?.message || detailError?.message
         alert(msg || '解锁失败，请稍后重试')
       }
     } finally {
@@ -408,17 +404,10 @@ export default function DeepReading() {
             className="w-full rounded-full py-3"
             style={{ background: gradient.yearHero, color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}
           >
-            解锁正文 · {detail.unlock_points}积分
+            使用订阅权益解锁正文
           </button>
         </div>
       )}
-
-      {/* 充值弹窗（积分不足） */}
-      <RechargeModal
-        isOpen={showRecharge}
-        onClose={() => setShowRecharge(false)}
-        onRechargeSuccess={() => { setShowRecharge(false); fetchUserInfo() }}
-      />
 
       {/* 内容反馈弹层 */}
       {showFeedback && (

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.config import settings
+from app.core.exceptions import V3APIError
 from app.db.session import get_db
 from app.models.order import Order
 from app.models.user import User
@@ -53,6 +54,12 @@ async def create_wechat_order(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """创建充值订单（DB 持久化）。微信未配置时返回 mock=true，前端模拟支付后调 mock-pay 确认"""
+    if not settings.POINTS_RECHARGE_ENABLED:
+        raise V3APIError(
+            410,
+            "points_recharge_disabled",
+            "积分充值已停用，请查看订阅方案",
+        )
     logger.info(f"[payment][入口] 创建订单: user={current_user.id} points={body.points} pay_type={body.pay_type} openid={body.openid}")
 
     order = await payment_service.create_order(db, current_user.id, body.points, "wechat")

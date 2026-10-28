@@ -39,10 +39,28 @@ export interface DailyFortune {
   pressure_level: number
 }
 
+export type EnergyState = 'smooth' | 'steady' | 'contracting'
+
+export interface DailyRhythm {
+  date: string
+  energy_state: EnergyState
+  suitable: string[]
+  notice: string[]
+  action: string
+  basis: string
+  chart_ref: string
+  pressure_level: number
+  source: DailyFortuneSource
+}
+
 export const dailyApi = {
   /** 查询某档案某日运势（date 省略时后端取服务器当日） */
   fortune: (person_id: number, date?: string) =>
     apiClient.get<DailyFortune>('/daily/fortune', {
+      params: date ? { person_id, date } : { person_id },
+    }),
+  rhythm: (person_id: number, date?: string) =>
+    apiClient.get<DailyRhythm>('/daily/rhythm', {
       params: date ? { person_id, date } : { person_id },
     }),
 }

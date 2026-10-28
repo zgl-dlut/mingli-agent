@@ -1,9 +1,8 @@
-import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, Navigate, RouterProvider, useParams } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useUserStore } from './store/userStore'
 import Layout from './components/Layout'
 import AddPerson from './pages/AddPerson'
-import Chat from './pages/Chat'
 import Today from './pages/Today'
 import Chart from './pages/Chart'
 import DeepReading from './pages/DeepReading'
@@ -13,13 +12,20 @@ import LoginPage from './pages/LoginPage'
 import LegalPage from './pages/LegalPage'
 import FeedbackDashboard from './pages/FeedbackDashboard'
 import PointsHistoryPage from './pages/PointsHistoryPage'
-import RechargePage from './pages/RechargePage'
 import UsageDashboard from './pages/UsageDashboard'
 import OrdersDashboard from './pages/OrdersDashboard'
 import EvalDashboard from './pages/EvalDashboard'
 import AdminRechargePage from './pages/AdminRechargePage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import AdminLoginPage from './pages/AdminLoginPage'
+import ReadingHome from './pages/ReadingHome'
+import ReadingChat from './pages/ReadingChat'
+import ReportLibrary from './pages/ReportLibrary'
+import ReportDetail from './pages/ReportDetail'
+import SubscriptionPage from './pages/SubscriptionPage'
+import PersonaHome from './pages/PersonaHome'
+import PersonaChat from './pages/PersonaChat'
+import PersonaMemoryPage from './pages/PersonaMemoryPage'
 import { isApp } from './utils/platform'
 
 /**
@@ -90,6 +96,11 @@ function AppOnlyRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function LegacyChatRedirect() {
+  const { personId } = useParams<{ personId: string }>()
+  return <Navigate to={`/reading/chat/${personId || ''}`} replace />
+}
+
 const router = createBrowserRouter([
   {
     path: '/login',
@@ -137,11 +148,18 @@ const router = createBrowserRouter([
       { path: 'today', element: <AppOnlyRoute><Today /></AppOnlyRoute> },
       { path: 'chart/:personId', element: <AppOnlyRoute><Chart /></AppOnlyRoute> },
       { path: 'deep-reading/:messageId', element: <AppOnlyRoute><DeepReading /></AppOnlyRoute> },
+      { path: 'reading', element: <ReadingHome /> },
+      { path: 'reading/chat/:personId', element: <ReadingChat /> },
+      { path: 'reading/reports', element: <ReportLibrary /> },
+      { path: 'reading/reports/:reportId', element: <ReportDetail /> },
+      { path: 'subscription', element: <SubscriptionPage /> },
+      { path: 'persona', element: <PersonaHome /> },
+      { path: 'persona/chat/:conversationId', element: <PersonaChat /> },
+      { path: 'persona/:personaId/memory', element: <PersonaMemoryPage /> },
       { path: 'profile', element: <ProfilePage /> },
       { path: 'persons', element: <PersonsPage /> },
-      { path: 'chat/:personId', element: <Chat /> },
+      { path: 'chat/:personId', element: <LegacyChatRedirect /> },
       { path: 'points', element: <PointsHistoryPage /> },
-      { path: 'recharge', element: <RechargePage /> },
       { path: 'feedback', element: <FeedbackDashboard /> },
     ],
   },

@@ -432,3 +432,77 @@ ufw allow 443
 - [ ] 管理端可访问
 - [ ] API 接口正常
 - [ ] 自动备份已配置
+
+---
+
+## V3 MVP 发布增量（2026-10-28）
+
+### 发布前备份与迁移
+
+```bash
+# 1. 备份生产数据库
+mysqldump --single-transaction --routines --triggers \
+  -u "$DB_USER" -p "$DB_NAME" > "backup_before_v3_$(date +%Y%m%d_%H%M%S).sql"
+
+# 2. 确认唯一 head
+PYTHONPATH=. alembic heads
+# 预期：013_v3_persona (head)
+
+# 3. 执行迁移
+PYTHONPATH=. alembic upgrade 013_v3_persona
+```
+
+不要从 revision 001 重跑历史迁移，也不要在生产自动执行 downgrade。需要回退时关闭开关并恢复应用版本；只有确认无新增 V3 用户数据时才考虑数据库恢复。
+
+### 首次灰度环境变量
+
+```dotenv
+V3_ENABLED=false
+PERSONA_ENABLED=false
+OTHER_PERSONA_ENABLED=false
+POINTS_RECHARGE_ENABLED=false
+SUBSCRIPTION_MOCK_ENABLED=false
+```
+
+内部测试阶段只对独立测试环境启用：
+
+```dotenv
+V3_ENABLED=true
+PERSONA_ENABLED=true
+SUBSCRIPTION_MOCK_ENABLED=true
+```
+
+生产灰度顺序：
+
+1. 部署代码和 011–013 迁移，保持 `V3_ENABLED=false`。
+2. 验证 `/api/features`、旧聊天、旧报告和历史积分。
+3. 内部账号环境开启 `V3_ENABLED=true`。
+4. 观察报告失败率、用量计数、安全事件和数据库连接。
+5. 再开启 `PERSONA_ENABLED=true`；`OTHER_PERSONA_ENABLED` 保持关闭。
+6. 模拟订阅验收结束后关闭 `SUBSCRIPTION_MOCK_ENABLED`。
+
+### V3 验证命令
+
+```bash
+curl -s https://qusuansuan.com/api/features
+curl -s https://qusuansuan.com/
+
+cd frontend
+npm run typecheck
+npm test -- --run
+npm run build
+npm run e2e
+
+cd ../backend
+python -m pytest tests/v3 -q
+```
+
+### V3 发布检查
+
+- [ ] 数据库已备份，Alembic 为 `013_v3_persona`
+- [ ] `V3_ENABLED` 与 `PERSONA_ENABLED` 按灰度阶段配置
+- [ ] 生产环境 `SUBSCRIPTION_MOCK_ENABLED=false`
+- [ ] 生产环境 `POINTS_RECHARGE_ENABLED=false`
+- [ ] 旧 `/chat/:personId` 可重定向且历史消息可见
+- [ ] 账号注销会删除报告、人格、记忆、会话和安全事件
+- [ ] 390、430、1440 三视口 E2E 截图无溢出

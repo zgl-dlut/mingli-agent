@@ -5,13 +5,17 @@
 """
 import asyncio
 import logging
-from typing import AsyncGenerator
+from typing import Annotated, Any, AsyncGenerator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from typing import Any
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import get_current_user
+from app.db.session import get_db
+from app.models.user import User
+from app.services.entitlement_service import consume_usage
 from app.services.ai_service import generate_ai_response
 from app.services.prompt_builder import build_commercial_prompt
 from app.services.skill_prompts import validate_user_question
@@ -52,7 +56,11 @@ async def validate_question(request: ValidateRequest):
 
 
 @router.post("/analyze-stream")
-async def analyze_stream(request: AnalyzeStreamRequest):
+async def analyze_stream(
+    request: AnalyzeStreamRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     """
     无状态的 AI 报告生成端点
     - 首次解读：用 build_commercial_prompt 构建完整报告 prompt
@@ -60,6 +68,12 @@ async def analyze_stream(request: AnalyzeStreamRequest):
     """
     if not request.bazi_data:
         raise HTTPException(status_code=400, detail="缺少 bazi_data 命理分析数据")
+
+    if not request.is_first_reading:
+        is_valid, _ = validate_user_question(request.question)
+        if is_valid:
+            await consume_usage(db, current_user.id, "qa_daily")
+            await db.commit()
 
     try:
         if request.is_first_reading:
@@ -156,7 +170,12 @@ async def analyze_stream(request: AnalyzeStreamRequest):
 
 
 @router.post("/analyze-jobs/{job_id}")
-async def analyze_job_stream(job_id: str, request: AnalyzeStreamRequest):
+async def analyze_job_stream(
+    job_id: str,
+    request: AnalyzeStreamRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     """
     基于 job_id 的异步分析任务流式接口
     - 首次调用会创建后台任务并立即返回流式响应
@@ -166,7 +185,20 @@ async def analyze_job_stream(job_id: str, request: AnalyzeStreamRequest):
     if not request.bazi_data:
         raise HTTPException(status_code=400, detail="缺少 bazi_data 命理分析数据")
 
-    job = create_job(job_id, request.model_dump())
+    existing_job = get_job(job_id)
+    if existing_job:
+        if existing_job.request_data.get("_user_id") != current_user.id:
+            raise HTTPException(status_code=404, detail="任务不存在或已过期")
+        job = existing_job
+    else:
+        if not request.is_first_reading:
+            is_valid, _ = validate_user_question(request.question)
+            if is_valid:
+                await consume_usage(db, current_user.id, "qa_daily")
+                await db.commit()
+        payload = request.model_dump()
+        payload["_user_id"] = current_user.id
+        job = create_job(job_id, payload)
 
     # 若任务尚未开始或仍在运行，启动后台生成（幂等）
     if job.status in ("pending",):
@@ -188,13 +220,16 @@ async def analyze_job_stream(job_id: str, request: AnalyzeStreamRequest):
 
 
 @router.get("/analyze-jobs/{job_id}")
-async def analyze_job_result(job_id: str):
+async def analyze_job_result(
+    job_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     """
     查询异步分析任务状态/结果
     用于断线重连后前端轮询或主动拉取已完成的任务
     """
     job = get_job(job_id)
-    if not job:
+    if not job or job.request_data.get("_user_id") != current_user.id:
         raise HTTPException(status_code=404, detail="任务不存在或已过期")
     return {
         "job_id": job.job_id,

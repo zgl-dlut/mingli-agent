@@ -16,6 +16,15 @@ from app.models.person import Person
 from app.models.session import ChatSession
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.models.content_unlock import ContentUnlock
+from app.models.report import Report
+from app.models.subscription import Subscription
+from app.models.usage_counter import UsageCounter
+from app.models.persona import Persona
+from app.models.persona_conversation import PersonaConversation
+from app.models.persona_message import PersonaMessage
+from app.models.persona_memory import PersonaMemory
+from app.models.safety_event import SafetyEvent
 from app.services.payment_service import get_transactions
 
 router = APIRouter(prefix="/api/user", tags=["user"])
@@ -117,7 +126,7 @@ async def delete_account(
 ):
     """账号注销：短信验证身份后，删除全部个人数据并匿名化账号。
 
-    - 直接删除：persons（含生辰/排盘）、chat_sessions、chat_messages
+    - 直接删除：档案、两套对话、报告、人格记忆、安全事件、订阅和用量
     - 解除关联：badcases.person_id 置空（质量改进记录保留但不可回溯到个人）
     - 匿名保留：transactions/orders/ai_usage_logs（财务/用量依法保留，主体变为匿名账号）
     - users 行匿名化：手机号/微信openid/邮箱/昵称/邀请关系/积分全部清除，
@@ -148,7 +157,26 @@ async def delete_account(
             ).scalars()
         )
 
-    # 3. 删除对话消息 → 会话 → 人物（顺序解除逻辑归属）
+    # 3. 删除 V3 人格、报告、权益数据（先子表后主体）
+    await db.execute(
+        delete(PersonaMessage).where(PersonaMessage.user_id == current_user.id)
+    )
+    await db.execute(
+        delete(PersonaMemory).where(PersonaMemory.user_id == current_user.id)
+    )
+    await db.execute(
+        delete(PersonaConversation).where(
+            PersonaConversation.user_id == current_user.id
+        )
+    )
+    await db.execute(delete(SafetyEvent).where(SafetyEvent.user_id == current_user.id))
+    await db.execute(delete(Persona).where(Persona.user_id == current_user.id))
+    await db.execute(delete(Report).where(Report.user_id == current_user.id))
+    await db.execute(delete(UsageCounter).where(UsageCounter.user_id == current_user.id))
+    await db.execute(delete(Subscription).where(Subscription.user_id == current_user.id))
+    await db.execute(delete(ContentUnlock).where(ContentUnlock.user_id == current_user.id))
+
+    # 4. 删除旧解盘消息 → 会话 → 人物（顺序解除逻辑归属）
     if session_ids:
         await db.execute(delete(ChatMessage).where(ChatMessage.session_id.in_(session_ids)))
     if person_ids:
@@ -159,7 +187,7 @@ async def delete_account(
             update(BadCase).where(BadCase.person_id.in_(person_ids)).values(person_id=None)
         )
 
-    # 4. 清洗他人（邀请人）流水中残留的本人脱敏手机号
+    # 5. 清洗他人（邀请人）流水中残留的本人脱敏手机号
     if _MOBILE_RE.match(phone):
         masked_phone = f"{phone[:3]}****{phone[-4:]}"
         linked_txs = (
@@ -173,7 +201,7 @@ async def delete_account(
         for tx in linked_txs:
             tx.description = tx.description.replace(masked_phone, "已注销用户")
 
-    # 5. 账号匿名化（墓碑行：id 保留供财务流水关联，身份字段全部清除）
+    # 6. 账号匿名化（墓碑行：id 保留供财务流水关联，身份字段全部清除）
     current_user.phone = f"deleted_{current_user.id}_{int(time.time())}"
     current_user.email = None
     current_user.hashed_password = None

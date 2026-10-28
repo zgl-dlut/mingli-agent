@@ -2,7 +2,7 @@
 
 - GET  /api/deep-reading/{message_id}         查看某条大纲消息：框架 + 是否已解锁 + 正文
 - PATCH /api/deep-reading/{message_id}        修改大纲（仅未解锁时允许）
-- POST /api/deep-reading/{message_id}/unlock  扣积分解锁正文（幂等：已解锁直接返回，不重复扣费）
+- POST /api/deep-reading/{message_id}/unlock  按订阅权益解锁正文（存量积分解锁继续有效）
 
 契约（与前端 src/api/deepReading.ts 对齐）：
 - 字段全英文 snake_case
@@ -23,7 +23,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
-from app.config import settings
 from app.core.exceptions import PermissionDenied, ResourceNotFound
 from app.db.session import async_session, get_db
 from app.models.content_unlock import ContentUnlock
@@ -33,7 +32,7 @@ from app.models.session import ChatSession
 from app.models.usage_log import AiUsageLog
 from app.models.user import User
 from app.services.followup_structured import generate_followup_structured
-from app.services.payment_service import check_points, deduct_points
+from app.services.entitlement_service import require_report_access
 from app.skills.orchestrator import generate_full_analysis
 
 logger = logging.getLogger(__name__)
@@ -124,7 +123,7 @@ def _to_response(message_id: int, session: ChatSession, person: Person, outline:
         unlocked=isinstance(detail, dict),
         generating=generating,
         report=detail if isinstance(detail, dict) else None,
-        unlock_points=settings.POINTS_DEEP_READING,
+        unlock_points=0,
     )
 
 
@@ -195,19 +194,15 @@ async def unlock_deep_reading(
     if isinstance(outline.get("detail"), dict) or outline.get("generating"):
         return _to_response(msg.id, session, person, outline)
 
-    required = settings.POINTS_DEEP_READING
-    if not await check_points(db, current_user.id, required):
-        raise HTTPException(status_code=400, detail={
-            "code": "insufficient_points",
-            "required": required,
-            "message": f"积分不足，解锁深度解读需要{required}积分",
-        })
-
-    await deduct_points(
-        db, current_user.id, required,
-        f"深度解读解锁: {str(outline.get('question') or '')[:30]}",
-        biz_type="deep_reading",
+    legacy_unlock = await db.execute(
+        select(ContentUnlock).where(
+            ContentUnlock.user_id == current_user.id,
+            ContentUnlock.message_id == message_id,
+        )
     )
+    has_legacy_access = legacy_unlock.scalar_one_or_none() is not None
+    if not has_legacy_access:
+        await require_report_access(db, current_user.id, "qa_reading")
 
     # 标记生成中，立即返回；正文由后台任务异步生成（约3分钟）
     outline["generating"] = True
@@ -258,7 +253,8 @@ async def unlock_deep_reading(
             person_location=person.birth_location,
             person_lng=person.birth_lng,
             person_lat=person.birth_lat,
-            points_cost=required,
+            unlock_type="legacy" if has_legacy_access else "subscription",
+            points_cost=0,
         )
     )
     _generating_deep_reading[msg.id] = task
@@ -281,6 +277,7 @@ async def _generate_and_save_deep_reading(
     person_location: str,
     person_lng: float,
     person_lat: float,
+    unlock_type: str,
     points_cost: int,
 ) -> None:
     """后台生成深度解读正文并存库，独立于 HTTP 连接。客户端返回后任务继续运行。"""
@@ -338,10 +335,12 @@ async def _generate_and_save_deep_reading(
                     wdb.add(ContentUnlock(
                         user_id=user_id,
                         message_id=message_id,
-                        unlock_type="points",
+                        unlock_type=unlock_type,
                         points_cost=points_cost,
                     ))
                 await wdb.commit()
+                from app.services.legacy_report_adapter import import_legacy_reports
+                await import_legacy_reports(wdb, user_id)
 
         # 用量落库（不影响主流程）
         if detail:

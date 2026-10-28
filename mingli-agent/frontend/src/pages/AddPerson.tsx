@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePersonStore } from '../store/personStore'
 import { useUserStore } from '../store/userStore'
-import RechargeModal from '../components/RechargeModal'
 import { chinaAreas } from '../data/chinaAreas'
 import { getCityCoord } from '../utils/cityCoords'
 import { lunarToSolar, isLeapMonthOf } from '../utils/lunarConvert'
@@ -22,7 +21,7 @@ function getMonthDays(year: number, month: number): number {
 
 export default function AddPerson() {
   const { createPerson, persons } = usePersonStore()
-  const { user, fetchUserInfo } = useUserStore()
+  const { fetchUserInfo } = useUserStore()
   const navigate = useNavigate()
 
   const [gender, setGender] = useState<'male' | 'female'>('male')
@@ -37,9 +36,6 @@ export default function AddPerson() {
   const [isLeapMonth, setIsLeapMonth] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-
-  // 弹层状态
-  const [isRechargeOpen, setIsRechargeOpen] = useState(false)
 
   // 当前省份下的城市列表
   const cityList = useMemo(() => {
@@ -335,37 +331,19 @@ export default function AddPerson() {
 
       {/* 提交按钮 */}
       <div className="mt-4 px-1">
-        {/* 积分提示 */}
         <div className="text-center text-gray-400 text-[11px] mb-2">
-          本次分析消耗 <span className="text-primary-600 font-bold">160</span> 积分，当前余额 <span className="text-primary-600 font-bold">{user?.points ?? 0}</span> 积分
+          基础命盘与基础解读免费生成
         </div>
 
-        {(user?.points ?? 0) < 160 ? (
-          <button
-            type="button"
-            onClick={() => setIsRechargeOpen(true)}
-            className="w-full py-2.5 rounded-xl font-medium text-sm transition-all"
-            style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
-          >
-            去充值
-          </button>
-        ) : (
-          <button
-            onClick={handleSubmit}
-            disabled={isLoading || !isFormValid}
-            className="w-full py-2.5 rounded-xl font-medium text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
-          >
-            {isLoading ? '正在创建...' : '确认分析'}
-          </button>
-        )}
+        <button
+          onClick={handleSubmit}
+          disabled={isLoading || !isFormValid}
+          className="w-full py-2.5 rounded-xl font-medium text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
+        >
+          {isLoading ? '正在创建...' : '确认创建档案'}
+        </button>
       </div>
-
-      {/* 充值弹层 */}
-      <RechargeModal
-        isOpen={isRechargeOpen}
-        onClose={() => setIsRechargeOpen(false)}
-      />
     </div>
   )
 }

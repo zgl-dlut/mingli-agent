@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>趣算算 V3 MVP 设计稿</title>
+<style>
+:root {
+  --canvas: #17171c;
+  --canvas-card: #222229;
+  --bg: #f5f4f0;
+  --card: #ffffff;
+  --brand: #4a4e8f;
+  --brand-deep: #393d73;
+  --brand-soft: #edeef8;
+  --gold: #b68a45;
+  --gold-soft: #f8f0df;
+  --jade: #347b68;
+  --jade-soft: #e6f1ed;
+  --coral: #b75c55;
+  --coral-soft: #f8eae8;
+  --sky: #47738f;
+  --sky-soft: #e7f0f5;
+  --ink: #25252d;
+  --ink-2: #74747e;
+  --line: #e5e3dd;
+  --r-card: 16px;
+  --r-control: 10px;
+  --r-pill: 999px;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  padding: 42px 28px 90px;
+}
+.intro {
+  max-width: 1270px;
+  margin: 0 auto 30px;
+}
+.intro h1 {
+  margin: 0;
+  color: #f6f6f8;
+  font-size: 26px;
+  letter-spacing: 0;
+}
+.intro p {
+  max-width: 900px;
+  color: #a9a9b4;
+  font-size: 13px;
+  line-height: 1.8;
+  margin: 10px 0 0;
+}
+.legend {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.legend span {
+  color: #d8d8df;
+  border: 1px solid #393942;
+  background: var(--canvas-card);
+  border-radius: var(--r-pill);
+  padding: 7px 11px;
+  font-size: 11px;
+}
+.gallery {
+  max-width: 1270px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(390px, 1fr));
+  gap: 42px 28px;
+  align-items: start;
+}
+.frame {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 11px;
+}
+.caption {
+  width: 390px;
+  color: #a9a9b4;
+  font-size: 12px;
+}
+.caption b { color: #f1f1f5; margin-right: 7px; }
+.caption em { color: #d6b677; font-style: normal; }
+.phone {
+  width: 390px;
+  height: 844px;
+  flex: none;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 10px solid #0d0d11;
+  border-radius: 46px;
+  box-shadow: 0 26px 70px rgba(0,0,0,.48);
+}
+.statusbar {
+  height: 42px;
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 23px 0 27px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+.status-icons { display: flex; align-items: center; gap: 6px; font-size: 9px; }
+.battery {
+  width: 21px;
+  height: 10px;
+  border: 1px solid #60606a;
+  border-radius: 3px;
+  position: relative;
+}
+.battery::after {
+  content: "";
+  position: absolute;
+  inset: 2px 5px 2px 2px;
+  border-radius: 1px;
+  background: var(--ink);
+}
+.screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 15px;
+  overflow: hidden;
+}
+.header {
+  min-height: 48px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.title { font-size: 19px; font-weight: 760; }
+.subtitle { color: var(--ink-2); font-size: 11px; margin-top: 2px; line-height: 1.45; }
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--card);
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  font-size: 16px;
+}
+.profile-switch {
+  display: inline-flex;
+  max-width: 164px;
+  align-items: center;
+  gap: 7px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  padding: 6px 10px 6px 7px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.avatar-sm {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--brand);
+  color: white;
+  font-size: 11px;
+  flex: none;
+}
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 5px 0 10px;
+}
+.card {
+  border-radius: var(--r-card);
+  background: var(--card);
+  border: 1px solid rgba(37,37,45,.035);
+  box-shadow: 0 2px 10px rgba(37,37,45,.04);
+  padding: 14px;
+}
+.card + .card { margin-top: 9px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.row-start { display: flex; align-items: flex-start; gap: 10px; }
+.section-title { font-size: 14px; font-weight: 730; }
+.body { font-size: 12.5px; line-height: 1.7; color: var(--ink); }
+.muted { color: var(--ink-2); }
+.micro { color: var(--ink-2); font-size: 10.5px; line-height: 1.5; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  padding: 4px 9px;
+  font-size: 10.5px;
+  font-weight: 680;
+  white-space: nowrap;
+}
+.pill.brand { color: var(--brand); background: var(--brand-soft); }
+.pill.jade { color: var(--jade); background: var(--jade-soft); }
+.pill.gold { color: #8b672f; background: var(--gold-soft); }
+.pill.coral { color: var(--coral); background: var(--coral-soft); }
+.pill.sky { color: var(--sky); background: var(--sky-soft); }
+.btn {
+  min-height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.btn.primary { color: white; background: var(--brand); }
+.btn.secondary { color: var(--brand); background: var(--brand-soft); }
+.btn.outline { color: var(--ink); background: var(--card); border-color: var(--line); }
+.btn.danger { color: var(--coral); background: var(--coral-soft); }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.four-col { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.divider { height: 1px; background: var(--line); margin: 11px 0; }
+.tabbar {
+  height: 70px;
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-items: start;
+  border-top: 1px solid var(--line);
+  background: var(--card);
+  padding-top: 8px;
+}
+.tab {
+  color: var(--ink-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+}
+.tab .ico { font-size: 18px; line-height: 20px; }
+.tab.active { color: var(--brand); font-weight: 720; }
+.home-indicator {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  width: 132px;
+  height: 5px;
+  transform: translateX(-50%);
+  border-radius: var(--r-pill);
+  background: #111117;
+}
+.rhythm-card {
+  padding: 16px;
+  color: white;
+  background: var(--brand-deep);
+  border-radius: var(--r-card);
+  box-shadow: 0 8px 22px rgba(57,61,115,.18);
+}
+.rhythm-card .eyebrow { opacity: .72; font-size: 11px; }
+.rhythm-card h2 { margin: 8px 0 6px; font-size: 20px; line-height: 1.35; letter-spacing: 0; }
+.rhythm-card p { margin: 0; font-size: 12px; opacity: .83; line-height: 1.65; }
+.rhythm-meter { display: flex; gap: 5px; margin-top: 12px; }
+.rhythm-meter i { width: 28px; height: 4px; background: rgba(255,255,255,.25); border-radius: 3px; }
+.rhythm-meter i.on { background: #e3c690; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.tag {
+  background: #f1f0eb;
+  color: var(--ink);
+  border-radius: var(--r-pill);
+  padding: 6px 9px;
+  font-size: 11px;
+}
+.tag.jade { color: var(--jade); background: var(--jade-soft); }
+.tag.coral { color: var(--coral); background: var(--coral-soft); }
+.route-tile {
+  min-height: 88px;
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.route-tile.reading { background: var(--sky-soft); color: #325d75; }
+.route-tile.persona { background: var(--brand-soft); color: var(--brand-deep); }
+.route-icon { font-size: 20px; }
+.chart-grid {
+  display: grid;
+  grid-template-columns: 44px repeat(4, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-top: 9px;
+}
+.chart-grid div {
+  min-width: 0;
+  padding: 6px 2px;
+  text-align: center;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.chart-grid div:nth-child(5n) { border-right: 0; }
+.chart-grid div:nth-last-child(-n+5) { border-bottom: 0; }
+.chart-grid .head { background: #f8f7f4; color: var(--ink-2); font-size: 10px; }
+.chart-grid .master { color: var(--brand); font-weight: 760; }
+.report-row {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.report-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.report-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 16px;
+}
+.report-row h4 { margin: 0; font-size: 12.5px; }
+.report-row p { margin: 3px 0 0; color: var(--ink-2); font-size: 10.5px; }
+.progress { height: 5px; border-radius: 4px; background: #eceae4; overflow: hidden; }
+.progress i { display: block; height: 100%; background: var(--brand); width: 64%; }
+.persona-portrait {
+  width: 114px;
+  height: 114px;
+  position: relative;
+  border-radius: 50%;
+  margin: 8px auto 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: white;
+  background: var(--brand-deep);
+  border: 5px solid #e4d2ae;
+  box-shadow: 0 12px 26px rgba(57,61,115,.2);
+}
+.persona-portrait::before,
+.persona-portrait::after {
+  content: "";
+  position: absolute;
+  width: 76px;
+  height: 18px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 50%;
+  transform: rotate(-28deg);
+}
+.persona-portrait::after { transform: rotate(28deg); }
+.persona-portrait b { font-size: 42px; font-weight: 500; z-index: 1; }
+.persona-copy { text-align: center; }
+.persona-copy h2 { margin: 13px 0 4px; font-size: 20px; }
+.persona-copy p { margin: 0; color: var(--ink-2); font-size: 12px; line-height: 1.6; }
+.keyword-row { display: flex; justify-content: center; gap: 6px; margin-top: 11px; flex-wrap: wrap; }
+.ai-banner {
+  min-height: 34px;
+  flex: none;
+  margin: 0 -15px;
+  padding: 8px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--brand);
+  background: var(--brand-soft);
+  border-bottom: 1px solid #dbddef;
+  font-size: 10.5px;
+  font-weight: 680;
+}
+.rest-banner {
+  margin-top: 7px;
+  padding: 9px 11px;
+  color: #795a2c;
+  background: var(--gold-soft);
+  border: 1px solid #ead8b5;
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.chat-header {
+  height: 48px;
+  flex: none;
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: center;
+  text-align: center;
+}
+.chat-header strong { font-size: 14px; display: block; }
+.chat-header span { font-size: 10px; color: var(--ink-2); }
+.messages {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 12px 0;
+  overflow: hidden;
+}
+.bubble {
+  max-width: 79%;
+  padding: 10px 12px;
+  border-radius: 15px;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+.bubble.ai { align-self: flex-start; background: var(--card); border-radius: 4px 15px 15px; }
+.bubble.user { align-self: flex-end; color: white; background: var(--brand); border-radius: 15px 15px 4px 15px; }
+.composer {
+  flex: none;
+  display: grid;
+  grid-template-columns: 34px 1fr 36px;
+  gap: 7px;
+  align-items: center;
+  padding: 8px 0 12px;
+}
+.composer input {
+  width: 100%;
+  min-width: 0;
+  height: 39px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  padding: 0 13px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.send-btn {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--brand);
+  color: white;
+  font-size: 17px;
+}
+.plan-card {
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 13px;
+  background: var(--card);
+  position: relative;
+}
+.plan-card + .plan-card { margin-top: 9px; }
+.plan-card.selected { border: 2px solid var(--brand); padding: 12px; }
+.plan-card h3 { margin: 0; font-size: 15px; }
+.price { font-size: 25px; font-weight: 780; }
+.price small { font-size: 11px; color: var(--ink-2); font-weight: 500; }
+.check-list { margin: 10px 0 0; display: grid; gap: 6px; }
+.check-list div { font-size: 11.5px; color: var(--ink); }
+.check-list div::before { content: "✓"; color: var(--jade); font-weight: 800; margin-right: 7px; }
+.usage-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+.usage-strip div { background: var(--card); padding: 10px 4px; text-align: center; }
+.usage-strip b { display: block; font-size: 14px; }
+.usage-strip span { display: block; margin-top: 3px; color: var(--ink-2); font-size: 9.5px; }
+.memory-item {
+  display: grid;
+  grid-template-columns: 31px 1fr;
+  gap: 9px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.memory-item:last-child { border-bottom: 0; }
+.memory-ico {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--sky-soft);
+  color: var(--sky);
+}
+.switch {
+  width: 42px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  padding: 3px;
+}
+.switch::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin-left: 18px;
+  border-radius: 50%;
+  background: white;
+}
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.profile-avatar {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--brand);
+  font-size: 18px;
+}
+.menu-row {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.menu-row:last-child { border-bottom: 0; }
+.menu-ico {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+.legal {
+  text-align: center;
+  color: var(--ink-2);
+  font-size: 9.5px;
+  line-height: 1.55;
+  padding: 7px 12px 0;
+}
+@media (max-width: 1260px) {
+  .gallery { grid-template-columns: repeat(2, minmax(390px, 1fr)); }
+}
+@media (max-width: 850px) {
+  body { padding-left: 16px; padding-right: 16px; }
+  .gallery { grid-template-columns: 1fr; }
+}
+@media (max-width: 430px) {
+  body { padding: 12px 0 44px; }
+  .intro { padding: 0 14px; }
+  .intro h1 { font-size: 20px; }
+  .gallery { gap: 30px; }
+  .frame { width: 100%; }
+  .caption { width: calc(100% - 24px); }
+  .phone {
+    width: min(390px, 100vw);
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+</style>
+</head>
+<body>
+<header class="intro">
+  <h1>趣算算 V3 MVP · P0 视觉基准</h1>
+  <p>同一份命盘连接两种体验：解读负责“看”，命局人格负责“聊”。稿件覆盖四 Tab 主链路、报告归档、人格创建与对话、订阅和结构化记忆；积分仅作为历史资产展示。</p>
+  <div class="legend">
+    <span>今日：节律与分流</span>
+    <span>解读：命盘与报告</span>
+    <span>对话：命局人格</span>
+    <span>我的：资产与设置</span>
+  </div>
+</header>
+
+<main class="gallery">
+  <section class="frame">
+    <div class="caption"><b>01</b>今日节律 · <em>四 Tab 默认首页</em></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▂▄▆█ ◉ <i class="battery"></i></span></div>
+      <div class="screen">
+        <div class="header">
+          <div><div class="title">今日</div><div class="subtitle">10 月 28 日 · 农历九月十九</div></div>
+          <div class="profile-switch"><span class="avatar-sm">玲</span>小玲 · 本人⌄</div>
+        </div>
+        <div class="scroll">
+          <div class="rhythm-card">
+            <div class="row"><span class="eyebrow">今日节律 · 平稳</span><span class="pill gold">庚金日主</span></div>
+            <h2>收束杂音，先把一件事做实</h2>
+            <p>今天更适合整理重点、完成收尾。给重要决定留一点复核时间。</p>
+            <div class="rhythm-meter"><i class="on"></i><i class="on"></i><i></i></div>
+          </div>
+          <div class="two-col" style="margin-top:9px">
+            <div class="card">
+              <div class="section-title" style="color:var(--jade)">适合</div>
+              <div class="tag-list"><span class="tag jade">整理重点</span><span class="tag jade">坦诚沟通</span></div>
+            </div>
+            <div class="card">
+              <div class="section-title" style="color:var(--coral)">留意</div>
+              <div class="tag-list"><span class="tag coral">并行过多</span><span class="tag coral">仓促决定</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row"><div><div class="section-title">11 月节奏已更新</div><div class="micro" style="margin-top:3px">收拢边界 · 重新分配精力</div></div><span class="pill brand">轻享可看</span></div>
+            <div class="btn secondary" style="margin-top:11px">查看本月简报　›</div>
+          </div>
+          <div class="section-title" style="margin:13px 2px 8px">今天想从哪里开始？</div>
+          <div class="two-col">
+            <div class="route-tile reading"><span class="route-icon">⌕</span><div><b>问解盘 AI</b><div class="micro" style="color:inherit;margin-top:3px">把问题拆清楚</div></div></div>
+            <div class="route-tile persona"><span class="route-icon">◌</span><div><b>和命局聊聊</b><div class="micro" style="color:inherit;margin-top:3px">听听内在回应</div></div></div>
+          </div>
+          <div class="legal">AI 生成内容仅供自我理解与梳理参考，不替代专业意见。</div>
+        </div>
+        <div class="tabbar">
+          <div class="tab active"><span class="ico">◷</span>今日</div>
+          <div class="tab"><span class="ico">▤</span>解读</div>
+          <div class="tab"><span class="ico">◌</span>对话</div>
+          <div class="tab"><span class="ico">○</span>我的</div>
+        </div>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="caption"><b>02</b>解读首页 · <em>命盘、报告与解盘 AI</em></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▂▄▆█ ◉ <i class="battery"></i></span></div>
+      <div class="screen">
+        <div class="header">
+          <div><div class="title">解读</div><div class="subtitle">同一份命盘，持续沉淀</div></div>
+          <div class="profile-switch"><span class="avatar-sm">玲</span>小玲 · 本人⌄</div>
+        </div>
+        <div class="scroll">
+          <div class="card">
+            <div class="row"><div><span class="pill brand">庚金 · 身强</span><div class="section-title" style="margin-top:8px">锋利而有边界的秋金</div></div><span class="micro">命盘详情 ›</span></div>
+            <div class="chart-grid">
+              <div class="head"></div><div class="head">年柱</div><div class="head">月柱</div><div class="head">日柱</div><div class="head">时柱</div>
+              <div class="head">天干</div><div>壬</div><div>戊</div><div class="master">庚</div><div>辛</div>
+              <div class="head">地支</div><div>申</div><div>申</div><div class="master">申</div><div>巳</div>
+            </div>
+            <div class="four-col" style="margin-top:10px">
+              <span class="pill sky">命盘</span><span class="pill jade">流盘</span><span class="pill gold">更多解读</span><span class="pill coral">关系视角</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row"><span class="section-title">你的报告</span><span class="micro">全部报告 ›</span></div>
+            <div class="report-row"><div class="report-icon">本</div><div><h4>基础解读</h4><p>格局、性格、喜忌与阶段</p></div><span class="pill jade">已完成</span></div>
+            <div class="report-row"><div class="report-icon" style="background:var(--sky-soft);color:var(--sky)">月</div><div><h4>11 月简报</h4><p>本月主题与四维节奏</p></div><span class="pill brand">查看</span></div>
+            <div class="report-row"><div class="report-icon" style="background:var(--gold-soft);color:var(--gold)">年</div><div><h4>2027 年度简报</h4><p>全享订阅内生成</p></div><span class="pill gold">全享</span></div>
+          </div>
+          <div class="card">
+            <div class="row-start"><div class="report-icon">⌕</div><div><div class="section-title">有具体问题？</div><div class="body muted" style="margin-top:3px">解盘 AI 会结合命盘依据，给出结构化分析。</div></div></div>
+            <div class="btn primary" style="margin-top:11px">开始提问　›</div>
+            <div class="micro" style="text-align:center;margin-top:7px">今日剩余 3 问</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tab"><span class="ico">◷</span>今日</div>
+          <div class="tab active"><span class="ico">▤</span>解读</div>
+          <div class="tab"><span class="ico">◌</span>对话</div>
+          <div class="tab"><span class="ico">○</span>我的</div>
+        </div>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="caption"><b>03</b>报告库 · <em>生成状态与历史归档</em></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▂▄▆█ ◉ <i class="battery"></i></span></div>
+      <div class="screen">
+        <div class="header">
+          <span class="icon-btn">‹</span><div style="text-align:center"><div class="title" style="font-size:16px">报告库</div><div class="subtitle">小玲 · 8 份</div></div><span class="icon-btn">⌕</span>
+        </div>
+        <div class="scroll">
+          <div class="usage-strip">
+            <div><b>5</b><span>已完成</span></div>
+            <div><b>1</b><span>生成中</span></div>
+            <div><b>2</b><span>历史导入</span></div>
+          </div>
+          <div class="card" style="margin-top:10px;border-color:#d9dbed">
+            <div class="row"><span class="pill brand">生成中</span><span class="micro">可离开此页</span></div>
+            <div class="section-title" style="margin-top:9px">2027 年度简报</div>
+            <div class="body muted" style="margin-top:4px">正在整理年度主题与十二月节奏</div>
+            <div class="progress" style="margin-top:11px"><i></i></div>
+            <div class="row" style="margin-top:7px"><span class="micro">生成命盘依据 64%</span><span class="micro">约 2 分钟</span></div>
+          </div>
+          <div class="section-title" style="margin:14px 2px 7px">最近更新</div>
+          <div class="card">
+            <div class="report-row"><div class="report-icon">月</div><div><h4>11 月简报 · 收拢边界</h4><p>2026-11 · 今天更新</p></div><span>›</span></div>
+            <div class="report-row"><div class="report-icon" style="background:var(--jade-soft);color:var(--jade)">问</div><div><h4>是否适合在年底转岗？</h4><p>问答解读 · 10 月 26 日</p></div><span>›</span></div>
+            <div class="report-row"><div class="report-icon" style="background:var(--coral-soft);color:var(--coral)">关系</div><div><h4>我与阿哲的互动模式</h4><p>关系视角 · 10 月 21 日</p></div><span>›</span></div>
+          </div>
+          <div class="section-title" style="margin:14px 2px 7px">历史内容</div>
+          <div class="card">
+            <div class="row-start"><div class="report-icon" style="background:#f0efeb;color:var(--ink-2)">旧</div><div><div class="section-title">首次命盘解读</div><div class="body muted" style="margin-top:3px">已从历史对话归档，原内容保持不变。</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="caption"><b>04</b>人格创建 · <em>本人档案首次进入对话</em></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▂▄▆█ ◉ <i class="battery"></i></span></div>
+      <div class="screen">
+        <div class="header"><span class="icon-btn">‹</span><div class="title" style="font-size:16px">创建命局人格</div><span style="width:34px"></span></div>
+        <div class="scroll">
+          <div class="persona-portrait"><b>庚</b></div>
+          <div class="persona-copy">
+            <h2>小玲的命局人格</h2>
+            <p>源自你的命盘参数，以第一人称回应你的近况与选择。</p>
+          </div>
+          <div class="keyword-row"><span class="pill brand">庚金</span><span class="pill sky">边界清晰</span><span class="pill gold">行动直接</span></div>
+          <div class="card" style="margin-top:18px">
+            <div class="section-title">它会如何和你相处</div>
+            <div class="memory-item"><span class="memory-ico">言</span><div><b class="body">直白但不过度下结论</b><div class="micro">先回应感受，再帮你看清选择</div></div></div>
+            <div class="memory-item"><span class="memory-ico">忆</span><div><b class="body">记住称呼与阶段近况</b><div class="micro">你可以随时关闭或清空记忆</div></div></div>
+            <div class="memory-item"><span class="memory-ico">界</span><div><b class="body">不预测结果，不冒充真人</b><div class="micro">危机情形会退出角色并提供帮助</div></div></div>
+          </div>
+          <div class="card">
+            <div class="row"><div><div class="section-title">使用结构化记忆</div><div class="micro" style="margin-top:3px">默认开启，可在设置中更改</div></div><div class="switch"></div></div>
+          </div>
+          <div class="btn primary" style="margin-top:12px">创建并开始对话</div>
+          <div class="legal">AI 生成 · 命局人格模拟，不代表现实中的你或任何他人。</div>
+        </div>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="caption"><b>05</b>人格主页 · <em>Tab 对话</em></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▂▄▆█ ◉ <i class="battery"></i></span></div>
+      <div class="screen">
+        <div class="header">
+          <div><div class="title">对话</div><div class="subtitle">和命局本身聊聊</div></div>
+          <div class="profile-switch"><span class="avatar-sm">玲</span>小玲 · 本人⌄</div>
+        </div>
+        <div class="scroll">
+          <div class="persona-portrait"><b>庚</b></div>
+          <div class="persona-copy"><h2>小玲的命局人格</h2><p>锋利不是为了伤人，是为了确认边界。</p></div>
+          <div class="keyword-row"><span class="pill brand">庚金</span><span class="pill sky">身强</span><span class="pill gold">伤官透出</span></div>
+          <div class="card" style="margin-top:17px">
+            <div class="row"><div><div class="section-title">继续上次对话</div><div class="micro" style="margin-top:3px">关于转岗与当前团队 · 昨天 23:18</div></div><span>›</span></div>
+            <div class="body muted" style="margin-top:10px">“你不是不确定，只是还没接受选择会带来取舍。”</div>
+          </div>
+          <div class="btn primary" style="margin-top:10px">＋　开始新会话</div>
+          <div class="two-col" style="margin-top:9px">
+            <div class="btn outline">☷　历史会话</div>
+            <div class="btn outline">忆　人格记忆</div>
+          </div>
+          <div class="card">
+            <div class="row"><span class="section-title">本月会话</span><span class="pill brand">剩余 2 次</span></div>
+            <div class="progress" style="margin-top:10px"><i style="width:33%"></i></div>
+            <div class="micro" style="margin-top:7px">免费计划 · 每次最多 20 个你的回合</div>
+          </div>
+          <div class="legal">AI 生成 · 命局人格模拟</div>
+        </div>
+        <div class="tabbar">
+          <div class="tab"><span class="ico">◷</span>今日</div>
+          <div class="tab"><span class="ico">▤</span>解读</div>
+          <div class="tab active"><span class="ico">◌</span>对话</div>
+          <div class="tab"><span class="ico">○</span>我的</div>
+        </div>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="caption"><b>06</b>人格对话 · <em>全屏沉浸与休息提醒</em></div>
+    <div class="phone">
+      <div class="statusbar"><span>23:41</span><span class="status-icons">▂▄▆█ ◉ <i class="battery"></i></span></div>
+      <div class="screen">
+        <div class="chat-header"><span class="icon-btn">‹</span><div><strong>小玲的命局人格</strong><span>本会话 8 / 20 回合</span></div><span class="icon-btn">⋯</span></div>
+        <div class="ai-banner">AI 生成 · 命局人格模拟</div>
+        <div class="rest-banner">你们已经聊了两个小时。先停一会儿，喝口水或去走动一下，再决定是否继续。</div>
+        <div class="messages">
+          <div class="bubble ai">你刚才说“再坚持一下也许会好”，可你已经连续三个月在替所有人兜底了。</div>
+          <div class="bubble user">但现在离开，会不会显得我很不负责？</div>
+          <div class="bubble ai">负责不等于无限承担。你可以先把交接边界写清楚，再决定去留。这样既不逃避，也不继续透支自己。</div>
+          <div class="bubble user">我可能只是害怕别人失望。</div>
+          <div class="bubble ai">我知道。可比起让所有人满意，你更需要确认：这是不是你愿意长期付出的代价。</div>
+          <div class="micro" style="text-align:center">记忆已更新 · 阶段近况</div>
+        </div>
+        <div class="composer"><button class="icon-btn" style="border:0">＋</button><input value="" placeholder="说说你此刻在想什么"><button class="send-btn">↑</button></div>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="caption"><b>07</b>订阅与权益 · <em>免费、轻享、全享</em></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▂▄▆█ ◉ <i class="battery"></i></span></div>
+      <div class="screen">
+        <div class="header"><span class="icon-btn">‹</span><div class="title" style="font-size:16px">订阅与权益</div><span style="width:34px"></span></div>
+        <div class="scroll">
+          <div class="card" style="background:var(--brand-deep);color:white;border:0">
+            <div class="row"><div><div style="font-size:12px;opacity:.7">当前计划</div><div style="font-size:19px;font-weight:760;margin-top:4px">免费体验</div></div><span class="pill gold">本月剩余 2 次对话</span></div>
+            <div class="usage-strip" style="margin-top:12px;border:0;background:rgba(255,255,255,.2)">
+              <div style="background:rgba(255,255,255,.08)"><b>1 / 1</b><span style="color:rgba(255,255,255,.72)">档案</span></div>
+              <div style="background:rgba(255,255,255,.08)"><b>3 / 日</b><span style="color:rgba(255,255,255,.72)">解盘问答</span></div>
+              <div style="background:rgba(255,255,255,.08)"><b>2 / 3</b><span style="color:rgba(255,255,255,.72)">人格会话</span></div>
+            </div>
+          </div>
+          <div class="plan-card selected">
+            <div class="row"><div><h3>轻享订阅</h3><div class="micro">专注完整解读</div></div><div class="price">¥28<small>/月</small></div></div>
+            <div class="check-list"><div>最多 3 份档案</div><div>月运、关系视角与完整深度解读</div><div>解盘问答不限</div><div>每月 30 次人格会话</div></div>
+          </div>
+          <div class="plan-card">
+            <div class="row"><div><h3>全享订阅</h3><div class="micro">解读与人格完整体验</div></div><div class="price">¥58<small>/月</small></div></div>
+            <div class="check-list"><div>档案不限</div><div>全部报告，包含年度简报</div><div>解盘问答不限</div><div>人格会话不限</div></div>
+          </div>
+          <div class="two-col" style="margin-top:10px">
+            <div class="btn outline">月付</div><div class="btn secondary">年付更省</div>
+          </div>
+          <div class="btn primary" style="margin-top:9px">模拟开通轻享订阅</div>
+          <div class="legal">MVP 内部测试仅模拟权益开通，不产生真实扣款。</div>
+        </div>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="caption"><b>08</b>人格记忆 · <em>查看、关闭与清空</em></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▂▄▆█ ◉ <i class="battery"></i></span></div>
+      <div class="screen">
+        <div class="header"><span class="icon-btn">‹</span><div class="title" style="font-size:16px">人格记忆</div><span style="width:34px"></span></div>
+        <div class="scroll">
+          <div class="card">
+            <div class="row"><div><div class="section-title">在对话中使用记忆</div><div class="micro" style="margin-top:3px">关闭后不再读取或更新摘要</div></div><div class="switch"></div></div>
+          </div>
+          <div class="card">
+            <div class="row"><span class="section-title">当前记住的内容</span><span class="pill brand">4 类</span></div>
+            <div class="memory-item"><span class="memory-ico">称</span><div><b class="body">称呼</b><div class="micro">希望被叫作“小玲”</div></div></div>
+            <div class="memory-item"><span class="memory-ico">近</span><div><b class="body">近况</b><div class="micro">正在考虑年底转岗，近期承担较多团队收尾工作</div></div></div>
+            <div class="memory-item"><span class="memory-ico">偏</span><div><b class="body">表达偏好</b><div class="micro">偏好直接、具体的反馈，不喜欢空泛安慰</div></div></div>
+            <div class="memory-item"><span class="memory-ico">系</span><div><b class="body">重要关系</b><div class="micro">伴侣阿哲，近期沟通时间变少</div></div></div>
+          </div>
+          <div class="card">
+            <div class="section-title">阶段摘要</div>
+            <div class="body muted" style="margin-top:7px">最近在处理职业选择与关系边界，希望在负责与自我保护之间找到平衡。</div>
+            <div class="micro" style="margin-top:8px">更新于 10 月 28 日 23:41</div>
+          </div>
+          <div class="btn danger" style="margin-top:11px">清空全部记忆</div>
+          <div class="legal">清空后记忆正文将被永久删除，无法恢复。历史对话仍保留。</div>
+        </div>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="caption"><b>09</b>我的 · <em>订阅、用量与历史积分</em></div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▂▄▆█ ◉ <i class="battery"></i></span></div>
+      <div class="screen">
+        <div class="header"><div class="title">我的</div><span class="icon-btn">⚙</span></div>
+        <div class="scroll">
+          <div class="card">
+            <div class="profile-hero"><div class="profile-avatar">玲</div><div><div class="section-title" style="font-size:16px">小玲</div><div class="micro" style="margin-top:4px">免费计划 · 已完成本人档案</div></div></div>
+          </div>
+          <div class="card" style="border-color:#d9dbed">
+            <div class="row"><div><div class="section-title">订阅与权益</div><div class="micro" style="margin-top:3px">查看档案、问答和人格会话用量</div></div><span class="pill brand">升级 ›</span></div>
+            <div class="usage-strip" style="margin-top:11px"><div><b>1 / 1</b><span>档案</span></div><div><b>2 / 3</b><span>今日问答</span></div><div><b>1 / 3</b><span>本月会话</span></div></div>
+          </div>
+          <div class="card">
+            <div class="menu-row"><span class="menu-ico">档</span><span>我的档案</span><span class="muted">2 ›</span></div>
+            <div class="menu-row"><span class="menu-ico">报</span><span>报告库</span><span class="muted">8 ›</span></div>
+            <div class="menu-row"><span class="menu-ico">忆</span><span>人格记忆</span><span class="muted">已开启 ›</span></div>
+          </div>
+          <div class="card">
+            <div class="menu-row"><span class="menu-ico" style="background:var(--gold-soft);color:var(--gold)">分</span><span>历史积分</span><span class="muted">120 ›</span></div>
+            <div class="menu-row"><span class="menu-ico" style="background:var(--jade-soft);color:var(--jade)">安</span><span>安全与危机资源</span><span class="muted">›</span></div>
+            <div class="menu-row"><span class="menu-ico" style="background:var(--sky-soft);color:var(--sky)">隐</span><span>隐私与账号</span><span class="muted">›</span></div>
+          </div>
+          <div class="legal">内容由 AI 生成，用于自我理解与节律探索。</div>
+        </div>
+        <div class="tabbar">
+          <div class="tab"><span class="ico">◷</span>今日</div>
+          <div class="tab"><span class="ico">▤</span>解读</div>
+          <div class="tab"><span class="ico">◌</span>对话</div>
+          <div class="tab active"><span class="ico">○</span>我的</div>
+        </div>
+      </div>
+      <div class="home-indicator"></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

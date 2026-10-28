@@ -4,6 +4,7 @@ import Header from './Header'
 import TabBar from './TabBar'
 import { usePersonStore } from '../store/personStore'
 import { useUserStore } from '../store/userStore'
+import { useFeatureStore } from '../store/featureStore'
 
 /**
  * 全局布局
@@ -15,14 +16,20 @@ export default function Layout() {
   const location = useLocation()
   const { fetchPersons } = usePersonStore()
   const { fetchUserInfo } = useUserStore()
+  const { fetchFeatures } = useFeatureStore()
 
   const isAdminArea = location.pathname.startsWith('/admin')
   // 对话页自带标题栏（返回 + 人名 + 命格箴言），不再叠加通用 Header
-  const isChatPage = location.pathname.startsWith('/chat')
+  const isChatPage = location.pathname.startsWith('/chat') || location.pathname.startsWith('/reading/chat')
+  const isFullScreenReading =
+    location.pathname.startsWith('/reading/reports/') ||
+    location.pathname.startsWith('/deep-reading/') ||
+    location.pathname.startsWith('/persona/chat/')
 
   useEffect(() => {
     fetchPersons()
     fetchUserInfo()
+    void fetchFeatures()
     // 页面重新可见或获得焦点时同步后端数据（处理后端直接删除等场景）
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -40,7 +47,7 @@ export default function Layout() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', handleFocus)
     }
-  }, [])
+  }, [fetchFeatures, fetchPersons, fetchUserInfo])
 
   return (
     <div
@@ -53,7 +60,7 @@ export default function Layout() {
         style={isAdminArea ? { height: '100%' } : { maxWidth: '430px', backgroundColor: '#F7F5F0', boxShadow: '0 0 24px rgba(43,43,51,0.10)' }}
       >
         {/* 通用Header - 常驻容器顶部（对话页除外，其自带标题栏） */}
-        {!isChatPage && <Header />}
+        {!isChatPage && !isFullScreenReading && <Header />}
 
         {/* 页面内容：容器内独立滚动 */}
         <main className="flex-1 overflow-y-auto" style={isChatPage ? { display: 'flex', flexDirection: 'column', overflow: 'hidden' } : undefined}>
@@ -61,7 +68,7 @@ export default function Layout() {
         </main>
 
         {/* 底部常驻 Tab 栏（用户区） */}
-        {!isAdminArea && <TabBar />}
+        {!isAdminArea && !isFullScreenReading && <TabBar />}
       </div>
     </div>
   )

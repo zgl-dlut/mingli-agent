@@ -1,10 +1,11 @@
 import { useLocation, useNavigate } from 'react-router-dom'
+import { color } from '../theme/tokens'
+import { useFeatureStore } from '../store/featureStore'
 import { usePersonStore } from '../store/personStore'
 import { useChatStore } from '../store/chatStore'
-import { color } from '../theme/tokens'
 
 /**
- * 底部常驻 Tab 栏（设计稿 00-index 主导航）：今日 / 对话 / 我的
+ * 底部常驻 Tab 栏：今日 / 解读 / 对话 / 我的
  * 纯 App 形态，仅在用户区渲染（admin 后台不渲染，由 Layout 控制）。
  */
 
@@ -28,6 +29,17 @@ const TABS: TabItem[] = [
     isActive: (p) => p === '/today',
   },
   {
+    key: 'reading',
+    label: '解读',
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 4.5h11.5A2.5 2.5 0 0 1 19 7v12.5H7.5A2.5 2.5 0 0 1 5 17z" />
+        <path d="M5 17a2.5 2.5 0 0 1 2.5-2.5H19M9 8h6M9 11h4" />
+      </svg>
+    ),
+    isActive: (p) => p.startsWith('/reading') || p.startsWith('/deep-reading') || p.startsWith('/chart'),
+  },
+  {
     key: 'chat',
     label: '对话',
     icon: (
@@ -35,7 +47,7 @@ const TABS: TabItem[] = [
         <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H5.6L3 21.2V11.5A7.5 7.5 0 0 1 10.5 4h2A7.5 7.5 0 0 1 20 11.5z" />
       </svg>
     ),
-    isActive: (p) => p.startsWith('/chat'),
+    isActive: (p) => p.startsWith('/persona'),
   },
   {
     key: 'profile',
@@ -53,8 +65,11 @@ const TABS: TabItem[] = [
 export default function TabBar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { persons } = usePersonStore()
-  const { currentPersonId } = useChatStore()
+  const features = useFeatureStore((state) => state.features)
+  const persons = usePersonStore((state) => state.persons)
+  const currentPersonId = useChatStore((state) => state.currentPersonId)
+  const v3Enabled = features?.v3_enabled === true
+  const visibleTabs = v3Enabled ? TABS : TABS.filter((tab) => tab.key !== 'reading')
 
   const handleTabPress = (key: string) => {
     if (key === 'today') {
@@ -62,9 +77,16 @@ export default function TabBar() {
       return
     }
     if (key === 'chat') {
-      // 优先回到当前会话，其次第一个档案；无档案则去首页建档
-      const targetId = currentPersonId ?? persons[0]?.id
-      navigate(targetId ? `/chat/${targetId}` : '/')
+      if (v3Enabled) {
+        navigate('/persona')
+      } else {
+        const personId = currentPersonId ?? persons[0]?.id
+        navigate(personId ? `/chat/${personId}` : '/')
+      }
+      return
+    }
+    if (key === 'reading') {
+      navigate('/reading')
       return
     }
     navigate('/profile')
@@ -79,8 +101,10 @@ export default function TabBar() {
         padding: '7px 0 max(10px, env(safe-area-inset-bottom))',
       }}
     >
-      {TABS.map((tab) => {
-        const active = tab.isActive(location.pathname)
+      {visibleTabs.map((tab) => {
+        const active = tab.key === 'chat' && !v3Enabled
+          ? location.pathname.startsWith('/reading/chat') || location.pathname.startsWith('/chat')
+          : tab.isActive(location.pathname)
         return (
           <button
             key={tab.key}

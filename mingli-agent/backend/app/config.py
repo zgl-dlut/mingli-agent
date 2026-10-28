@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     # 分享赚积分：每邀请1个新用户注册，邀请人获得的积分
     SHARE_REWARD_POINTS: int = 80
 
+    # V3 灰度开关
+    V3_ENABLED: bool = False
+    PERSONA_ENABLED: bool = False
+    OTHER_PERSONA_ENABLED: bool = False
+    POINTS_RECHARGE_ENABLED: bool = False
+    SUBSCRIPTION_MOCK_ENABLED: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

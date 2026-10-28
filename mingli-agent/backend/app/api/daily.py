@@ -23,6 +23,7 @@ from app.db.session import get_db
 from app.models.person import Person
 from app.models.user import User
 from app.services.daily_fortune_service import generate_daily_fortune
+from app.services.feature_flag_service import require_v3_enabled
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/daily", tags=["daily"])
@@ -57,6 +58,18 @@ class DailyFortuneResponse(BaseModel):
     pressure_level: int        # 0~100
 
 
+class DailyRhythmResponse(BaseModel):
+    date: str
+    energy_state: str          # smooth | steady | contracting
+    suitable: List[str]
+    notice: List[str]
+    action: str
+    basis: str
+    chart_ref: str
+    pressure_level: int
+    source: FortuneSource
+
+
 # ============================================================
 # 当日缓存：同一天同一档案不重复调 LLM
 # ============================================================
@@ -82,6 +95,11 @@ def _validate_date(date_str: str) -> str:
         return _date.fromisoformat(date_str).isoformat()
     except ValueError:
         raise HTTPException(status_code=400, detail="date 需为 YYYY-MM-DD 格式")
+
+
+def _rhythm_safe_text(value: str, fallback: str) -> str:
+    blocked = ("吉", "凶", "宜", "忌", "算命", "改运", "化解")
+    return fallback if any(term in (value or "") for term in blocked) else value
 
 
 @router.get("/fortune", response_model=DailyFortuneResponse)
@@ -137,3 +155,48 @@ async def get_daily_fortune(
     _cache_prune(_date.today().isoformat())
     _CACHE[cache_key] = fortune
     return fortune
+
+
+@router.get("/rhythm", response_model=DailyRhythmResponse)
+async def get_daily_rhythm(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    person_id: Annotated[int, Query(gt=0, description="档案 ID")],
+    date: Annotated[Optional[str], Query(description="YYYY-MM-DD，默认服务器当日")] = None,
+):
+    await require_v3_enabled()
+    fortune = await get_daily_fortune(
+        db=db,
+        current_user=current_user,
+        person_id=person_id,
+        date=date,
+    )
+    grade = fortune["grade"] if isinstance(fortune, dict) else fortune.grade
+    advice = fortune["advice"] if isinstance(fortune, dict) else fortune.advice
+    source = fortune["source"] if isinstance(fortune, dict) else fortune.source
+    return DailyRhythmResponse(
+        date=fortune["date"] if isinstance(fortune, dict) else fortune.date,
+        energy_state={
+            "good": "smooth",
+            "neutral": "steady",
+            "caution": "contracting",
+        }.get(grade, "steady"),
+        suitable=fortune["yi"] if isinstance(fortune, dict) else fortune.yi,
+        notice=fortune["ji"] if isinstance(fortune, dict) else fortune.ji,
+        action=_rhythm_safe_text(
+            advice["action"] if isinstance(advice, dict) else advice.action,
+            "今天先稳住节奏，完成计划内最重要的一件事。",
+        ),
+        basis=_rhythm_safe_text(
+            advice["basis"] if isinstance(advice, dict) else advice.basis,
+            "今天更适合专注、整理和照顾自己的状态。",
+        ),
+        chart_ref=_rhythm_safe_text(
+            advice["chart_ref"] if isinstance(advice, dict) else advice.chart_ref,
+            "基于当日节奏与命盘关系",
+        ),
+        pressure_level=(
+            fortune["pressure_level"] if isinstance(fortune, dict) else fortune.pressure_level
+        ),
+        source=source,
+    )

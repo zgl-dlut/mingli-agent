@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
-from app.config import settings, PROMPT_VERSION
+from app.config import PROMPT_VERSION
 from app.core.exceptions import PermissionDenied, ResourceNotFound
 from app.core.lunar_utils import get_display_birth_date
 from app.db.session import get_db, async_session
@@ -23,7 +23,7 @@ from app.services.ai_service import generate_first_reading_structured
 from app.services.followup_structured import generate_followup_structured
 from app.services.date_select_agent import generate_date_select, is_date_select_intent_async
 from app.services.deep_reading_service import generate_outline
-from app.services.payment_service import deduct_points
+from app.services.entitlement_service import consume_usage
 from app.services.skill_prompts import validate_user_question
 from app.services.format_normalizer import normalize_output  # 首次报告仍用
 from app.skills.orchestrator import generate_full_analysis
@@ -200,17 +200,9 @@ async def send_message(
         and (last_msg.content or "").strip() == (request.content or "").strip()
     )
 
-    # 计费规则（对齐测测两段式交互）：
-    # - mode=outline（App 端）：提问出分析框架免费，仅在「解锁深度解读正文」时扣 POINTS_DEEP_READING
-    # - mode=full（H5/PC 端）：维持追问扣 POINTS_FOLLOW_UP
-    is_outline_mode = request.mode == "outline"
+    # V3 统一按每日解盘问答次数计量；重试未回答的问题不重复消耗。
     if not is_retry_unanswered:
-        if not is_outline_mode:
-            await deduct_points(
-                db, current_user.id, settings.POINTS_FOLLOW_UP,
-                f"追问: {request.content[:30]}...",
-                biz_type="followup",
-            )
+        await consume_usage(db, current_user.id, "qa_daily")
 
         # 去重检查：10秒内相同的用户消息不重复保存（防止前端双击/竞态重复提交）
         # 超过10秒后允许用户合法重复追问相同问题，避免吞掉用户消息导致前端不显示
@@ -231,7 +223,8 @@ async def send_message(
                 content=request.content,
             )
             db.add(user_message)
-            await db.commit()
+        # 无论消息是否被 10 秒去重，都要提交已消费的用量，避免重复请求绕过额度。
+        await db.commit()
     # else: 重试未回答的上一条问题，不扣费、不存重复 user 消息，直接用已有消息生成
 
     history_result = await db.execute(

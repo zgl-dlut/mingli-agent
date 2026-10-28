@@ -3,6 +3,9 @@ import { authApi, type UserInfo } from '../api/auth'
 import { useChatStore } from './chatStore'
 import { usePersonStore } from './personStore'
 import { useTransactionStore } from './transactionStore'
+import { useEntitlementStore } from './entitlementStore'
+import { useReportStore } from './reportStore'
+import { usePersonaStore } from './personaStore'
 
 interface UserState {
   user: UserInfo | null
@@ -116,6 +119,9 @@ export const useUserStore = create<UserState>((set, get) => ({
     useChatStore.getState().deleteAllChats()
     usePersonStore.getState().clearPersons()
     useTransactionStore.getState().clearTransactions()
+    useEntitlementStore.getState().clearEntitlement()
+    useReportStore.getState().clearReports()
+    usePersonaStore.getState().clearPersonaData()
     set({ user: null, token: null, isLoggedIn: false })
   },
 

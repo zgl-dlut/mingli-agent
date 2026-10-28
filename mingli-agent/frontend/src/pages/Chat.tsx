@@ -5,7 +5,6 @@ import { usePersonStore } from '../store/personStore'
 import { useUserStore } from '../store/userStore'
 import { chatApi } from '../api/chat'
 import { personApi } from '../api/person'
-import RechargeModal from '../components/RechargeModal'
 import type { Person } from '../types'
 import { analyzeBazi, AnalyzeResult } from '../api/bazi'
 import { FollowupReportView, isStructuredReport } from '../components/FollowupReportView'
@@ -213,7 +212,6 @@ export default function Chat() {
   const [baziResult, setBaziResult] = useState<AnalyzeResult | null>(null)
   const [, setBaziLoading] = useState(false)
   const [cardPhase, setCardPhase] = useState<'loading' | 'done' | 'error'>('loading')
-  const [isRechargeOpen, setIsRechargeOpen] = useState(false)
   // 生成进度相关状态（按人独立，支持并发生成）
   const [, setProgressMap] = useState<Record<number, { percent: number; time: string }>>({})
   // Agent 步骤进度状态（按人）：择日 Agent 执行时展示工具步骤列表，可折叠
@@ -1134,7 +1132,7 @@ export default function Chat() {
 
     const question = normalizedInput
 
-    // 重试判定：上一条消息是相同内容的 user 消息（中断后重问），重试时跳过积分门槛
+    // 重试判定：上一条消息是相同内容的 user 消息（中断后重问），重试不重复消耗额度
     const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null
     const isRetryOfUnanswered = !!(
       lastMsg
@@ -1142,13 +1140,6 @@ export default function Chat() {
       && lastMsg.content.replace(/\s+/g, ' ').trim() === question
       && question.length > 0
     )
-
-    if (!isRetryOfUnanswered && (user?.points ?? 0) < 40) {
-      logger.warn(`[${callId}] 积分不足`, { points: user?.points })
-      setIsRechargeOpen(true)
-      isSendingMapRef.current.set(pid, false)
-      return
-    }
 
     setInputValue('')
 
@@ -1199,7 +1190,7 @@ export default function Chat() {
       dlog(`调用sendMessageStream sid=${sessionId} isRetry=${isRetryOfUnanswered}`)
       logger.info(`[${callId}] 请求初始化完成，调用 sendMessageStream`, { sessionId, questionLen: question.length, isRetry: isRetryOfUnanswered })
 
-      // 使用 sendMessageStream：后端扣积分 + 存用户消息 + 流式返回 + 存 AI 回复
+      // 使用 sendMessageStream：后端校验权益 + 存用户消息 + 流式返回 + 存 AI 回复
       // App 端走两段式（mode=outline，先返回分析框架）；H5/PC 端保持全文（mode=full）
       let acc = ''
       let saved = false
@@ -1215,6 +1206,17 @@ export default function Chat() {
         isSendingMapRef.current.set(pid, false)
         abortControllersRef.current.delete(pid)
         alert('正在生成中，请稍候完成后再发送新问题')
+        return
+      }
+      if (response.status === 403) {
+        const payload = await response.json().catch(() => ({}))
+        setPersonGenerating(pid, false)
+        stopProgress(pid)
+        setPendingUserMsg(null)
+        setPendingUserMsgPid(null)
+        isSendingMapRef.current.set(pid, false)
+        abortControllersRef.current.delete(pid)
+        alert(payload?.message || '今日解盘问答额度已用完')
         return
       }
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -1762,30 +1764,18 @@ export default function Chat() {
               }}
               className="flex-1 px-4 py-2.5 border border-brand-inputBorder rounded-full focus:ring-2 focus:ring-brand-gold/50 focus:border-brand-gold outline-none transition-all bg-brand-bgInput text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
-            {/* App 端提问出框架免费，无需校验积分；H5/PC 追问扣 40 积分，不足时引导充值 */}
-            {!isApp() && (user?.points ?? 0) < 40 && !isRetryOfUnanswered ? (
-              <button
-                type="button"
-                onClick={() => setIsRechargeOpen(true)}
-                className="px-5 h-10 rounded-full text-sm font-medium transition-all whitespace-nowrap"
-                style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
-              >
-                去充值
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={!!person && isPersonGenerating(person.id)}
-                onClick={(e) => {
-                  logger.info('[Button] 追问按钮点击', { timeStamp: e.timeStamp, inputLen: inputValue.trim().length })
-                  handleSend()
-                }}
-                className="px-5 h-10 rounded-full text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
-              >
-                追问
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={!!person && isPersonGenerating(person.id)}
+              onClick={(e) => {
+                logger.info('[Button] 追问按钮点击', { timeStamp: e.timeStamp, inputLen: inputValue.trim().length })
+                handleSend()
+              }}
+              className="px-5 h-10 rounded-full text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              style={{ backgroundColor: '#4A4E8F', color: '#FFFFFF' }}
+            >
+              追问
+            </button>
           </div>
         </div>
       )}
@@ -1797,12 +1787,6 @@ export default function Chat() {
           正在聆听，再点一下话筒结束并转成文字（最长60秒）
         </div>
       )}
-
-      {/* 充值弹层 */}
-      <RechargeModal
-        isOpen={isRechargeOpen}
-        onClose={() => setIsRechargeOpen(false)}
-      />
     </div>
   )
 }

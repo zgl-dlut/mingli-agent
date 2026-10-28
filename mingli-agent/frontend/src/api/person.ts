@@ -15,6 +15,10 @@ export interface PersonResponse {
   calendar_type?: string
   province?: string
   city?: string
+  is_self: boolean
+  relationship_type: string
+  relationship_note?: string | null
+  chart_snapshot_version?: string | null
   session_id: number | null
   bazi_data?: Record<string, unknown> | null
   created_at: string
@@ -31,6 +35,10 @@ export interface CreatePersonRequest {
   calendar_type: 'solar' | 'lunar'
   province: string
   city: string
+  is_self?: boolean
+  relationship_type?: string
+  relationship_note?: string
+  consent_confirmed?: boolean
 }
 
 export interface CreatePersonResult {

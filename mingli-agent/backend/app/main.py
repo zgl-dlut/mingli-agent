@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
@@ -25,6 +26,11 @@ from app.api.wx_jssdk import router as wx_jssdk_router
 from app.api.daily import router as daily_router
 from app.api.chart import router as chart_router
 from app.api.deep_reading import router as deep_reading_router
+from app.api.subscription import router as subscription_router
+from app.api.report import router as report_router
+from app.api.persona import router as persona_router
+from app.core.exceptions import V3APIError
+from app.services.feature_flag_service import feature_snapshot
 
 
 @asynccontextmanager
@@ -54,6 +60,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="命理Agent API", version="2.0.0", lifespan=lifespan)
 
+
+@app.exception_handler(V3APIError)
+async def handle_v3_api_error(_, exc: V3APIError):
+    return JSONResponse(status_code=exc.status_code, content=exc.payload)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -78,12 +89,20 @@ app.include_router(wx_jssdk_router)
 app.include_router(daily_router)
 app.include_router(chart_router)
 app.include_router(deep_reading_router)
+app.include_router(subscription_router)
+app.include_router(report_router)
+app.include_router(persona_router)
 
 
 @app.get("/api/skills")
 async def list_skills():
     """列出所有已注册的 Skill"""
     return [meta.model_dump() for meta in registry.list_skills()]
+
+
+@app.get("/api/features")
+async def get_features():
+    return feature_snapshot()
 
 
 @app.get("/")

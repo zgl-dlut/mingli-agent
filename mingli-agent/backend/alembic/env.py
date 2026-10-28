@@ -15,6 +15,14 @@ from app.models.message import ChatMessage
 from app.models.order import Order
 from app.models.transaction import Transaction
 from app.models.content_unlock import ContentUnlock
+from app.models.subscription import Subscription
+from app.models.usage_counter import UsageCounter
+from app.models.report import Report
+from app.models.persona import Persona
+from app.models.persona_conversation import PersonaConversation
+from app.models.persona_message import PersonaMessage
+from app.models.persona_memory import PersonaMemory
+from app.models.safety_event import SafetyEvent
 
 config = context.config
 

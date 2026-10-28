@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -12,12 +12,16 @@ from app.core.lunar_utils import get_display_birth_date
 from app.db.session import get_db
 from app.models.person import Person
 from app.models.user import User
-from app.services.bazi_service import calculate_bazi, normalize_gender
+from app.services.bazi_service import normalize_gender
 from app.services.astrology_service import calculate_astrology
-from app.services.payment_service import deduct_points
+from app.services.chart_snapshot_service import (
+    build_chart_snapshot,
+    get_or_create_chart_snapshot,
+)
+from app.services.entitlement_service import require_profile_slot
+from app.services.person_profile_service import resolve_profile_relationship
 
 logger = logging.getLogger(__name__)
-from app.config import settings
 from app.skills.orchestrator import generate_full_analysis
 
 router = APIRouter(prefix="/api/persons", tags=["persons"])
@@ -34,6 +38,10 @@ class PersonRequest(BaseModel):
     calendar_type: str = 'solar'
     province: str = ''
     city: str = ''
+    is_self: Optional[bool] = None
+    relationship_type: Optional[str] = None
+    relationship_note: Optional[str] = None
+    consent_confirmed: Optional[bool] = None
 
     @field_validator("gender")
     @classmethod
@@ -54,6 +62,9 @@ class PersonResponse(BaseModel):
     calendar_type: str = 'solar'
     province: str = ''
     city: str = ''
+    is_self: bool = False
+    relationship_type: str = "other"
+    relationship_note: Optional[str] = None
     created_at: str
 
 
@@ -77,6 +88,16 @@ async def create_person(
     if dup:
         logger.info(f"[person] 重复创建检测: user={current_user.id} 已有相同生辰 person_id={dup.id}，跳过扣费")
         return {"person": dup, "duplicated": True}
+
+    await require_profile_slot(db, current_user.id)
+
+    is_self, relationship_type, consent_confirmed_at = await resolve_profile_relationship(
+        db=db,
+        user_id=current_user.id,
+        requested_is_self=request.is_self,
+        relationship_type=request.relationship_type,
+        consent_confirmed=request.consent_confirmed,
+    )
 
     # 先生成排盘数据，成功后再扣费，避免排盘失败却已扣积分
     try:
@@ -112,19 +133,19 @@ async def create_person(
         province=request.province,
         city=request.city,
         bazi_data_json=bazi_data,
+        is_self=is_self,
+        relationship_type=relationship_type,
+        relationship_note=request.relationship_note,
+        consent_confirmed_at=consent_confirmed_at,
     )
+    snapshot = build_chart_snapshot(person, bazi_data)
+    person.chart_snapshot_json = snapshot.model_dump(mode="json")
+    person.chart_snapshot_version = snapshot.version
+    person.chart_snapshot_updated_at = snapshot.generated_at
     db.add(person)
     await db.commit()
     await db.refresh(person)
 
-    # 排盘和人物创建成功后再扣费
-    await deduct_points(
-        db, current_user.id, settings.POINTS_FIRST_READING,
-        f"创建人物{request.name}，生成命盘",
-        biz_type="first_reading",
-    )
-    
-    from app.services.ai_service import generate_first_reading
     from app.models.session import ChatSession
     from app.models.message import ChatMessage
     
@@ -160,6 +181,10 @@ async def create_person(
             "calendar_type": person.calendar_type,
             "province": person.province,
             "city": person.city,
+            "is_self": person.is_self,
+            "relationship_type": person.relationship_type,
+            "relationship_note": person.relationship_note,
+            "chart_snapshot_version": person.chart_snapshot_version,
         },
         "session_id": session.id,
         "bazi_data": bazi_data,
@@ -213,8 +238,12 @@ async def get_persons(
             "calendar_type": person.calendar_type,
             "province": person.province,
             "city": person.city,
+            "is_self": person.is_self,
+            "relationship_type": person.relationship_type,
+            "relationship_note": person.relationship_note,
             "session_id": session.id if session else None,
             "bazi_data": bazi_data,
+            "chart_snapshot_version": person.chart_snapshot_version,
             "created_at": person.created_at.isoformat(),
         })
     
@@ -269,10 +298,35 @@ async def get_person(
         "calendar_type": person.calendar_type,
         "province": person.province,
         "city": person.city,
+        "is_self": person.is_self,
+        "relationship_type": person.relationship_type,
+        "relationship_note": person.relationship_note,
         "session_id": session.id if session else None,
         "bazi_data": bazi_data,
+        "chart_snapshot_version": person.chart_snapshot_version,
         "created_at": person.created_at.isoformat(),
     }
+
+
+@router.get("/{person_id}/chart-snapshot")
+async def get_person_chart_snapshot(
+    person_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    result = await db.execute(
+        select(Person).where(
+            Person.id == person_id,
+            Person.user_id == current_user.id,
+        )
+    )
+    person = result.scalar_one_or_none()
+    if not person:
+        raise ResourceNotFound("人物不存在")
+
+    snapshot = await get_or_create_chart_snapshot(db, person)
+    await db.commit()
+    return snapshot.model_dump(mode="json")
 
 
 @router.put("/{person_id}")
@@ -289,7 +343,46 @@ async def update_person(
         raise ResourceNotFound("人物不存在")
     if person.user_id != current_user.id:
         raise PermissionDenied("无权访问")
-    
+
+    relationship_fields_supplied = any(
+        value is not None
+        for value in (
+            request.is_self,
+            request.relationship_type,
+            request.consent_confirmed,
+        )
+    )
+    if relationship_fields_supplied:
+        is_self, relationship_type, consent_confirmed_at = await resolve_profile_relationship(
+            db=db,
+            user_id=current_user.id,
+            requested_is_self=request.is_self if request.is_self is not None else person.is_self,
+            relationship_type=request.relationship_type or person.relationship_type,
+            consent_confirmed=(
+                request.consent_confirmed
+                if request.consent_confirmed is not None
+                else person.consent_confirmed_at is not None
+            ),
+            exclude_person_id=person.id,
+        )
+        person.is_self = is_self
+        person.relationship_type = relationship_type
+        if consent_confirmed_at or person.consent_confirmed_at is None:
+            person.consent_confirmed_at = consent_confirmed_at
+    if request.relationship_note is not None:
+        person.relationship_note = request.relationship_note
+
+    birth_changed = any(
+        (
+            person.gender != request.gender,
+            person.birth_date != request.birth_date,
+            person.birth_time != request.birth_time,
+            person.birth_location != request.birth_location,
+            person.birth_lat != request.birth_lat,
+            person.birth_lng != request.birth_lng,
+            person.calendar_type != request.calendar_type,
+        )
+    )
     person.name = request.name
     person.gender = request.gender
     person.birth_date = request.birth_date
@@ -300,7 +393,42 @@ async def update_person(
     person.calendar_type = request.calendar_type
     person.province = request.province
     person.city = request.city
-    
+
+    if birth_changed:
+        bazi_data = generate_full_analysis(
+            birth_date=person.birth_date,
+            birth_time=person.birth_time,
+            longitude=person.birth_lng,
+            latitude=person.birth_lat,
+            gender=person.gender,
+            location=person.birth_location,
+        )
+        astro_chart = calculate_astrology(
+            birth_date=person.birth_date,
+            birth_time=person.birth_time,
+            latitude=person.birth_lat,
+            longitude=person.birth_lng,
+        )
+        person.bazi_data_json = bazi_data
+        person.chart_snapshot_json = None
+        person.chart_snapshot_version = None
+        person.chart_snapshot_updated_at = None
+
+        from app.models.session import ChatSession
+
+        session_result = await db.execute(
+            select(ChatSession).where(ChatSession.person_id == person.id)
+        )
+        session = session_result.scalar_one_or_none()
+        if session:
+            session.bazi_data_json = bazi_data
+            session.astro_data_json = astro_chart.model_dump()
+
+        snapshot = build_chart_snapshot(person, bazi_data)
+        person.chart_snapshot_json = snapshot.model_dump(mode="json")
+        person.chart_snapshot_version = snapshot.version
+        person.chart_snapshot_updated_at = snapshot.generated_at
+
     await db.commit()
     await db.refresh(person)
     
@@ -316,6 +444,10 @@ async def update_person(
         "calendar_type": person.calendar_type,
         "province": person.province,
         "city": person.city,
+        "is_self": person.is_self,
+        "relationship_type": person.relationship_type,
+        "relationship_note": person.relationship_note,
+        "chart_snapshot_version": person.chart_snapshot_version,
     }
 
 
